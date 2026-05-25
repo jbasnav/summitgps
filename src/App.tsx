@@ -58,6 +58,8 @@ export default function App() {
   const [flyToCoords, setFlyToCoords] = useState<[number, number] | null>(null);
   const [isChartCollapsed, setIsChartCollapsed] = useState<boolean>(false);
   const [isSplitting, setIsSplitting] = useState<boolean>(false); // Split route mode
+  const [mapCenter, setMapCenter] = useState<[number, number] | null>([43.1906, -4.8322]);
+  const [osmPois, setOsmPois] = useState<any[]>([]);
 
   // Waypoint Modal States
   const [isWptModalOpen, setIsWptModalOpen] = useState(false);
@@ -112,22 +114,46 @@ export default function App() {
     setIsWptModalOpen(true);
   }, []);
 
-  // Save Waypoint (new or edited)
+  // Handle pre-filling waypoint modal from an OSM POI template
+  const handleAddOsmPoi = useCallback((poi: any) => {
+    const templateWaypoint: Waypoint = {
+      id: `temp-${Date.now()}`,
+      name: poi.name,
+      lat: poi.lat,
+      lng: poi.lng,
+      icon: poi.icon || "mountain",
+      note: poi.note || `Altitud: ${poi.elevation ? `${poi.elevation}m` : "No disponible"}`,
+      color: poi.color || "#10b981",
+      groupId: "default",
+      completed: false,
+    };
+    setEditingWaypoint(templateWaypoint);
+    setNewWptCoords(null);
+    setIsWptModalOpen(true);
+  }, []);
+
+  // Save Waypoint (new, edited, or template imported)
   const handleSaveWaypoint = useCallback(
     (data: { name: string; icon: string; note: string; color: string; groupId: string; completed: boolean }) => {
-      if (editingWaypoint) {
+      if (editingWaypoint && !editingWaypoint.id.startsWith("temp-")) {
         updateWaypoint(editingWaypoint.id, data);
-      } else if (newWptCoords) {
-        addWaypoint({
-          name: data.name,
-          lat: newWptCoords[0],
-          lng: newWptCoords[1],
-          icon: data.icon,
-          note: data.note,
-          color: data.color,
-          groupId: data.groupId,
-          completed: data.completed,
-        });
+      } else {
+        const coords = editingWaypoint?.id.startsWith("temp-")
+          ? ([editingWaypoint.lat, editingWaypoint.lng] as [number, number])
+          : newWptCoords;
+
+        if (coords) {
+          addWaypoint({
+            name: data.name,
+            lat: coords[0],
+            lng: coords[1],
+            icon: data.icon,
+            note: data.note,
+            color: data.color,
+            groupId: data.groupId,
+            completed: data.completed,
+          });
+        }
       }
       setEditingWaypoint(null);
       setNewWptCoords(null);
@@ -186,6 +212,11 @@ export default function App() {
         onDeleteWaypointGroup={deleteWaypointGroup}
         onToggleWaypointGroupVisibility={toggleWaypointGroupVisibility}
         onToggleWaypointCompleted={toggleWaypointCompleted}
+        mapCenter={mapCenter}
+        osmPois={osmPois}
+        onSetOsmPois={setOsmPois}
+        onAddOsmPoi={handleAddOsmPoi}
+        onAddWaypoint={addWaypoint}
       />
 
       {/* Main Map Viewport & Collapsible Elevation Chart */}
@@ -206,6 +237,9 @@ export default function App() {
             onEditWaypoint={handleEditWaypoint}
             onSplitTrackAt={handleSplitTrackAt}
             waypointGroups={waypointGroups}
+            onMapMove={useCallback((lat: number, lng: number) => setMapCenter([lat, lng]), [])}
+            osmPois={osmPois}
+            onAddOsmPoi={handleAddOsmPoi}
           />
         </div>
 

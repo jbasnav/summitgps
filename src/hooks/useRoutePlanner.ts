@@ -27,7 +27,18 @@ export interface WaypointGroup {
   description: string;
   color: string;
   visible: boolean;
+  image?: string; // Cover photo URL
 }
+
+export const LANDSCAPE_IMAGES = [
+  { id: "peaks", name: "Alta Montaña", url: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=400&q=80" },
+  { id: "forest", name: "Bosques y Senderos", url: "https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=400&q=80" },
+  { id: "camp", name: "Refugio y Campamento", url: "https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=400&q=80" },
+  { id: "lake", name: "Lagos y Ríos", url: "https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=400&q=80" },
+  { id: "sunset", name: "Vistas y Atardecer", url: "https://images.unsplash.com/photo-1472396961693-142e6e269027?auto=format&fit=crop&w=400&q=80" },
+  { id: "snow", name: "Glaciar e Invierno", url: "https://images.unsplash.com/photo-1454496522488-7a8e488e8606?auto=format&fit=crop&w=400&q=80" },
+  { id: "canyon", name: "Ruta Rústica", url: "https://images.unsplash.com/photo-1509316975850-ff9c5deb0cd9?auto=format&fit=crop&w=400&q=80" }
+];
 
 export interface Track {
   id: string;
@@ -56,6 +67,7 @@ export function useRoutePlanner() {
         description: "Marcadores generales y marcas personales del mapa.",
         color: "#10b981",
         visible: true,
+        image: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=400&q=80",
       },
     ];
   });

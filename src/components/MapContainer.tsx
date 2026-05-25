@@ -20,6 +20,9 @@ interface MapContainerProps {
   onEditWaypoint: (wpt: Waypoint) => void;
   onSplitTrackAt: (trackId: string, index: number) => void;
   waypointGroups: WaypointGroup[];
+  onMapMove?: (lat: number, lng: number) => void;
+  osmPois: any[];
+  onAddOsmPoi: (poi: any) => void;
 }
 
 // Map Tile Providers
@@ -56,6 +59,9 @@ export function MapContainer({
   onEditWaypoint,
   onSplitTrackAt,
   waypointGroups,
+  onMapMove,
+  osmPois,
+  onAddOsmPoi,
 }: MapContainerProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -66,6 +72,7 @@ export function MapContainer({
   const polylinesRef = useRef<Record<string, L.Polyline>>({});
   const controlMarkersRef = useRef<L.CircleMarker[]>([]);
   const waypointMarkersRef = useRef<Record<string, L.Marker>>({});
+  const osmPoiMarkersRef = useRef<Record<string, L.Marker>>({});
   const hoverIndicatorRef = useRef<L.CircleMarker | null>(null);
 
   // Initialize Map
@@ -94,6 +101,19 @@ export function MapContainer({
     hillshadeLayerRef.current = hillshadeLayer;
 
     mapRef.current = map;
+
+    // Report initial coordinates
+    if (onMapMove) {
+      onMapMove(43.1906, -4.8322);
+    }
+
+    // Report center shifts on drag/zoom
+    map.on("moveend", () => {
+      const center = map.getCenter();
+      if (onMapMove) {
+        onMapMove(center.lat, center.lng);
+      }
+    });
 
     return () => {
       map.remove();
@@ -328,6 +348,64 @@ export function MapContainer({
     });
 
   }, [tracks, onEditWaypoint, waypointGroups]);
+
+  // Sync Temporary OSM POIs on the map
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const currentOsmPoiIds = new Set(osmPois.map((p) => p.id));
+
+    // 1. Remove old OSM POI markers that are no longer active
+    Object.keys(osmPoiMarkersRef.current).forEach((id) => {
+      if (!currentOsmPoiIds.has(id)) {
+        map.removeLayer(osmPoiMarkersRef.current[id]);
+        delete osmPoiMarkersRef.current[id];
+      }
+    });
+
+    // 2. Render active OSM POI markers with a distinctive translucid look and click-to-import action
+    osmPois.forEach((poi) => {
+      const svg = WPT_SVG_PATHS[poi.icon] || WPT_SVG_PATHS.mountain;
+      
+      const customHtml = `
+        <div class="relative w-8 h-8 flex items-center justify-center animate-pulse cursor-pointer">
+          <div class="absolute w-8 h-8 rounded-full border border-dashed border-white bg-amber-500/60 hover:bg-amber-500/90 shadow-lg flex items-center justify-center transition-all scale-90 hover:scale-100">
+            ${svg}
+          </div>
+          <div class="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 rounded-full border border-white flex items-center justify-center text-[9px] font-extrabold text-white shadow-sm font-sans">+</div>
+        </div>
+      `;
+
+      const customIcon = L.divIcon({
+        html: customHtml,
+        className: "custom-osm-poi-icon",
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+      });
+
+      const existingMarker = osmPoiMarkersRef.current[poi.id];
+      if (existingMarker) {
+        existingMarker.setLatLng([poi.lat, poi.lng]);
+        existingMarker.setIcon(customIcon);
+      } else {
+        const marker = L.marker([poi.lat, poi.lng], { icon: customIcon })
+          .addTo(map)
+          .bindTooltip(`
+            <div class="px-2 py-1 text-slate-100 text-xs font-semibold bg-amber-950/90 border border-amber-600/40 rounded-lg shadow-xl">
+              🗺️ ${poi.name} ${poi.elevation ? `(${poi.elevation}m)` : ""}
+              <p class="text-[9px] text-slate-300 font-bold mt-0.5">Clic para Importar</p>
+            </div>
+          `, { direction: "top", offset: [0, -16], opacity: 0.9 })
+          .on("click", () => {
+            onAddOsmPoi(poi);
+          });
+
+        osmPoiMarkersRef.current[poi.id] = marker;
+      }
+    });
+
+  }, [osmPois, onAddOsmPoi]);
 
   // Sync Hover Marker (Synchronized Elevation Chart Hover Indicator)
   useEffect(() => {
