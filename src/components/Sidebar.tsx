@@ -260,9 +260,7 @@ export function Sidebar({
         {/* Header / Brand */}
         <div className="p-5 border-b border-[#1b3d2b] flex items-center justify-between bg-[#0c120f]">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center text-[#131b17] font-black tracking-tighter">
-              S
-            </div>
+            <img src="/favicon.svg" alt="SUMMIT GPS Logo" className="w-8 h-8 filter drop-shadow-[0_0_8px_rgba(16,185,129,0.25)] select-none pointer-events-none" />
             <div>
               <h1 className="text-sm font-extrabold tracking-wider text-emerald-400">
                 SUMMIT GPS
