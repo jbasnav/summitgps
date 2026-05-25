@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { MapContainer } from "./components/MapContainer";
 import { ElevationProfile } from "./components/ElevationProfile";
@@ -6,8 +6,14 @@ import { WaypointModal } from "./components/WaypointModal";
 import { useRoutePlanner, type Waypoint, type RoutePoint } from "./hooks/useRoutePlanner";
 import type { BaseLayerId } from "./components/LayerSelector";
 import { ChevronDown, ChevronUp, Search, X, Compass, Loader } from "lucide-react";
+import { supabase, isSupabaseConfigured } from "./utils/supabaseClient";
+import { AuthScreen } from "./components/AuthScreen";
 
 export default function App() {
+  // Authentication States
+  const [user, setUser] = useState<any | null>(null);
+  const [showAuthScreen, setShowAuthScreen] = useState<boolean>(isSupabaseConfigured);
+
   const {
     routeName,
     setRouteName,
@@ -46,7 +52,7 @@ export default function App() {
     updateWaypointGroup,
     toggleWaypointGroupVisibility,
     toggleWaypointCompleted,
-  } = useRoutePlanner();
+  } = useRoutePlanner(user);
 
   // App settings states
   const [activeBaseLayer, setActiveBaseLayer] = useState<BaseLayerId>("opentopo");
@@ -138,6 +144,48 @@ export default function App() {
     setFloatingSearchQuery("");
   }, [handleFlyToCoords]);
 
+  // Listen to Supabase Auth state changes
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+
+    // Check active session on mount
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setUser(session.user);
+        setShowAuthScreen(false);
+      }
+    });
+
+    // Listen to changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        setUser(session.user);
+        setShowAuthScreen(false);
+      } else {
+        setUser(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleSignOut = useCallback(async () => {
+    if (!isSupabaseConfigured) return;
+    await supabase.auth.signOut();
+    setUser(null);
+    setShowAuthScreen(isSupabaseConfigured);
+  }, []);
+
+  const handleSkipAuth = useCallback(() => {
+    setShowAuthScreen(false);
+    setUser(null);
+  }, []);
+
+  const handleAuthSuccess = useCallback((authedUser: any) => {
+    setUser(authedUser);
+    setShowAuthScreen(false);
+  }, []);
+
   // Handle right-click on map to drop waypoint
   const handleRightClickMap = useCallback((lat: number, lng: number) => {
     setNewWptCoords([lat, lng]);
@@ -172,9 +220,57 @@ export default function App() {
 
   // Save Waypoint (new, edited, or template imported)
   const handleSaveWaypoint = useCallback(
-    (data: { name: string; icon: string; note: string; color: string; groupId: string; completed: boolean; image?: string; link?: string }) => {
+    async (data: { 
+      name: string; 
+      icon: string; 
+      note: string; 
+      color: string; 
+      groupId: string; 
+      completed: boolean; 
+      image?: string; 
+      link?: string; 
+      imageFile?: File | null;
+    }) => {
+      let imageUrl = data.image;
+
+      // Handle async photo upload to Supabase Storage if a local file is provided
+      if (data.imageFile && user && isSupabaseConfigured) {
+        try {
+          const file = data.imageFile;
+          const fileExt = file.name.split(".").pop();
+          const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
+          const filePath = `${user.id}/${fileName}`;
+
+          const { error: uploadError } = await supabase.storage
+            .from("waypoint-photos")
+            .upload(filePath, file);
+
+          if (uploadError) {
+            throw uploadError;
+          }
+
+          const { data: urlData } = supabase.storage
+            .from("waypoint-photos")
+            .getPublicUrl(filePath);
+
+          imageUrl = urlData.publicUrl;
+        } catch (err: any) {
+          console.error("Failed to upload image to Supabase Storage:", err);
+          alert("Error al subir la imagen a la nube: " + (err.message || err));
+        }
+      }
+
       if (editingWaypoint && !editingWaypoint.id.startsWith("temp-")) {
-        updateWaypoint(editingWaypoint.id, data);
+        updateWaypoint(editingWaypoint.id, {
+          name: data.name,
+          icon: data.icon,
+          note: data.note,
+          color: data.color,
+          groupId: data.groupId,
+          completed: data.completed,
+          link: data.link,
+          image: imageUrl,
+        });
       } else {
         const coords = editingWaypoint?.id.startsWith("temp-")
           ? ([editingWaypoint.lat, editingWaypoint.lng] as [number, number])
@@ -190,7 +286,7 @@ export default function App() {
             color: data.color,
             groupId: data.groupId,
             completed: data.completed,
-            image: data.image,
+            image: imageUrl,
             link: data.link,
           });
         }
@@ -198,7 +294,7 @@ export default function App() {
       setEditingWaypoint(null);
       setNewWptCoords(null);
     },
-    [editingWaypoint, newWptCoords, addWaypoint, updateWaypoint]
+    [editingWaypoint, newWptCoords, addWaypoint, updateWaypoint, user]
   );
 
   // Handle vertex click splitting action
@@ -258,6 +354,10 @@ export default function App() {
         onSetOsmPois={setOsmPois}
         onAddOsmPoi={handleAddOsmPoi}
         onAddWaypoint={addWaypoint}
+        user={user}
+        onSignOut={handleSignOut}
+        onSignInClick={useCallback(() => setShowAuthScreen(true), [])}
+        isSupabaseConfigured={isSupabaseConfigured}
       />
 
       {/* Main Map Viewport & Collapsible Elevation Chart */}
@@ -403,6 +503,14 @@ export default function App() {
             : undefined
         }
       />
+
+      {/* Auth Screen Overlay */}
+      {showAuthScreen && (
+        <AuthScreen
+          onAuthSuccess={handleAuthSuccess}
+          onSkipAuth={handleSkipAuth}
+        />
+      )}
     </div>
   );
 }

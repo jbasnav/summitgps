@@ -1,10 +1,20 @@
 import React, { useState } from "react";
-import { X, MapPin, Tent, Camera, AlertTriangle, Info, Droplet } from "lucide-react";
+import { X, MapPin, Tent, Camera, AlertTriangle, Info, Droplet, Upload, Trash2 } from "lucide-react";
 
 interface WaypointModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (data: { name: string; icon: string; note: string; color: string; groupId: string; completed: boolean; image?: string; link?: string }) => void;
+  onSave: (data: { 
+    name: string; 
+    icon: string; 
+    note: string; 
+    color: string; 
+    groupId: string; 
+    completed: boolean; 
+    image?: string; 
+    link?: string; 
+    imageFile?: File | null;
+  }) => void;
   initialData?: { name: string; icon: string; note: string; color: string; groupId?: string; completed?: boolean; image?: string; link?: string };
   onDelete?: () => void;
   groups: any[]; // Renders available WaypointGroups
@@ -45,6 +55,10 @@ export function WaypointModal({
   const [image, setImage] = useState(initialData?.image || "");
   const [link, setLink] = useState(initialData?.link || "");
 
+  // Local File Upload States
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(initialData?.image || null);
+
   React.useEffect(() => {
     if (isOpen) {
       setName(initialData?.name || "");
@@ -55,15 +69,42 @@ export function WaypointModal({
       setCompleted(initialData?.completed || false);
       setImage(initialData?.image || "");
       setLink(initialData?.link || "");
+      setImageFile(null);
+      setImagePreview(initialData?.image || null);
     }
   }, [isOpen, initialData]);
 
   if (!isOpen) return null;
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setImageFile(file);
+      setImagePreview(URL.createObjectURL(file));
+      setImage(""); // Clear URL input to give priority to file uploads
+    }
+  };
+
+  const handleRemovePhoto = () => {
+    setImageFile(null);
+    setImagePreview(null);
+    setImage("");
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    onSave({ name, icon, note, color, groupId, completed, image, link });
+    onSave({ 
+      name, 
+      icon, 
+      note, 
+      color, 
+      groupId, 
+      completed, 
+      image: imageFile ? undefined : (image || undefined), 
+      link, 
+      imageFile 
+    });
     onClose();
   };
 
@@ -189,18 +230,69 @@ export function WaypointModal({
             </label>
           </div>
 
-          {/* Image URL input */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-emerald-400/80 tracking-wider uppercase flex items-center gap-1.5">
-              📸 Foto del Lugar (URL de Imagen)
+          {/* Image Upload Component */}
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-emerald-400/80 tracking-wider uppercase flex items-center gap-1.5 select-none">
+              📸 Foto del Lugar
             </label>
+
+            {imagePreview ? (
+              <div className="relative rounded-xl overflow-hidden w-full h-32 border border-[#1b3d2b] bg-black/40 shadow-inner group">
+                <img src={imagePreview} alt="Vista previa" className="w-full h-full object-cover" />
+                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                  <label
+                    htmlFor="wpt-photo-upload"
+                    className="px-3.5 py-1.5 rounded-lg bg-emerald-400 text-black text-[10px] font-extrabold uppercase tracking-wider cursor-pointer hover:bg-emerald-300 transition-colors flex items-center gap-1 shadow-md"
+                  >
+                    <Upload className="w-3 h-3" />
+                    Cambiar
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleRemovePhoto}
+                    className="px-3.5 py-1.5 rounded-lg bg-red-500/80 text-white text-[10px] font-extrabold uppercase tracking-wider cursor-pointer hover:bg-red-500 transition-colors flex items-center gap-1 shadow-md"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Quitar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <label
+                htmlFor="wpt-photo-upload"
+                className="w-full flex flex-col items-center justify-center p-6 border-2 border-dashed border-[#1b3d2b]/60 rounded-xl cursor-pointer hover:border-emerald-400 bg-[#0a0f0d]/50 hover:bg-[#0c120f]/50 transition-all text-slate-400 hover:text-slate-200 select-none group"
+              >
+                <Camera className="w-6 h-6 text-emerald-400/80 mb-1.5 group-hover:scale-110 transition-transform" />
+                <span className="text-[10px] font-extrabold uppercase tracking-wider">Subir Foto</span>
+                <span className="text-[9px] text-slate-500 mt-0.5">Desde tu ordenador</span>
+              </label>
+            )}
+
             <input
-              type="url"
-              value={image}
-              onChange={(e) => setImage(e.target.value)}
-              placeholder="Ej. https://images.unsplash.com/... o enlace de tu foto"
-              className="w-full bg-[#0a0f0d]/80 border border-[#1b3d2b] rounded-xl px-4 py-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 transition-colors"
+              type="file"
+              id="wpt-photo-upload"
+              accept="image/*"
+              onChange={handleFileChange}
+              className="hidden"
             />
+
+            {/* Fallback URL Input */}
+            <div className="pt-1.5 space-y-1">
+              <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block select-none">
+                O introduce una URL de internet
+              </span>
+              <input
+                type="url"
+                value={image}
+                onChange={(e) => {
+                  setImage(e.target.value);
+                  setImagePreview(e.target.value || null);
+                  setImageFile(null); // clear uploaded file if user pastes a URL
+                }}
+                placeholder="Ej. https://images.unsplash.com/... o tu enlace"
+                className="w-full bg-[#0a0f0d]/80 border border-[#1b3d2b] rounded-xl px-4 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 transition-colors"
+              />
+            </div>
           </div>
 
           {/* Link URL input */}

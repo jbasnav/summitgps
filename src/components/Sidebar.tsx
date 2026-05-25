@@ -29,6 +29,7 @@ import {
   ChevronDown,
   ChevronUp,
   Check,
+  LogOut,
 } from "lucide-react";
 import { LayerSelector, type BaseLayerId } from "./LayerSelector";
 import { StatsPanel } from "./StatsPanel";
@@ -93,6 +94,12 @@ interface SidebarProps {
   onSetOsmPois: (pois: any[]) => void;
   onAddOsmPoi: (poi: any) => void;
   onAddWaypoint: (wpt: any) => void;
+
+  // Authentication Props
+  user: any | null;
+  onSignOut: () => void;
+  onSignInClick: () => void;
+  isSupabaseConfigured: boolean;
 }
 
 type TabId = "search" | "layers" | "route" | "waypoints";
@@ -156,6 +163,10 @@ export function Sidebar({
   onSetOsmPois,
   onAddOsmPoi,
   onAddWaypoint,
+  user,
+  onSignOut,
+  onSignInClick,
+  isSupabaseConfigured,
 }: SidebarProps) {
   const [activeTab, setActiveTab] = useState<TabId>("route");
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -446,6 +457,41 @@ export function Sidebar({
             {useImperial ? "Milla / ft" : "Km / m"}
           </button>
         </div>
+
+        {/* User Session Sub-Header Status Panel */}
+        {user ? (
+          <div className="px-5 py-2.5 bg-[#0a0f0d] border-b border-[#1b3d2b]/60 flex items-center justify-between text-[10px] select-none">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+              <span className="text-slate-400 truncate font-semibold" title={user.email}>
+                {user.email}
+              </span>
+            </div>
+            <button
+              onClick={onSignOut}
+              className="text-red-400 hover:text-red-300 font-bold transition-all flex items-center gap-1 cursor-pointer"
+              title="Cerrar Sesión de SUMMIT GPS"
+            >
+              <LogOut className="w-3 h-3 shrink-0" />
+              Salir
+            </button>
+          </div>
+        ) : (
+          <div className="px-5 py-2.5 bg-[#1b231e]/20 border-b border-[#1b3d2b]/60 flex items-center justify-between text-[10px] select-none">
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 animate-pulse" />
+              <span className="text-slate-400 font-semibold">👤 Modo Invitado</span>
+            </div>
+            {isSupabaseConfigured && (
+              <button
+                onClick={onSignInClick}
+                className="text-emerald-400 hover:text-emerald-300 font-bold transition-all hover:underline cursor-pointer"
+              >
+                Iniciar Sesión
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Tab Selector */}
         <div className="grid grid-cols-4 border-b border-[#1b3d2b] bg-[#0c120f]/50">

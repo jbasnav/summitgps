@@ -1,6 +1,7 @@
 // Hook for managing Track Library, Multi-Route Drawing, Waypoints, LocalStorage, and Merge/Split Operations
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { calculateHaversineDistance, calculateElevationGainLoss } from "../utils/geoUtils";
+import { supabase, isSupabaseConfigured } from "../utils/supabaseClient";
 
 export interface RoutePoint {
   lat: number;
@@ -54,7 +55,7 @@ export interface Track {
 
 const DEFAULT_TRACK_COLORS = ["#10b981", "#3b82f6", "#ef4444", "#f59e0b", "#8b5cf6", "#ec4899"];
 
-export function useRoutePlanner() {
+export function useRoutePlanner(user: any | null = null) {
   // Waypoint Groups / Challenges State
   const [waypointGroups, setWaypointGroups] = useState<WaypointGroup[]>(() => {
     try {
@@ -104,42 +105,212 @@ export function useRoutePlanner() {
     }
   });
 
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [snapToTrail, setSnapToTrail] = useState(true);
+  const [loading, setLoading] = useState(false);
+
+  // 2. Persist to LocalStorage on change ONLY if in Guest Mode
   useEffect(() => {
+    if (user) return;
     try {
       localStorage.setItem("summit_waypoint_groups", JSON.stringify(waypointGroups));
     } catch (e) {
       console.error("Failed to save waypoint groups to localStorage:", e);
     }
-  }, [waypointGroups]);
+  }, [waypointGroups, user]);
 
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [snapToTrail, setSnapToTrail] = useState(true);
-  const [loading, setLoading] = useState(false);
-
-  // 2. Persist to LocalStorage on change
   useEffect(() => {
+    if (user) return;
     try {
       localStorage.setItem("summit_click_segments", JSON.stringify(clickSegments));
     } catch (e) {
       console.error("Failed to save click segments to localStorage:", e);
     }
-  }, [clickSegments]);
+  }, [clickSegments, user]);
 
   useEffect(() => {
+    if (user) return;
     try {
       localStorage.setItem("summit_tracks", JSON.stringify(tracks));
     } catch (e) {
       console.error("Failed to save tracks to localStorage:", e);
     }
-  }, [tracks]);
+  }, [tracks, user]);
 
   useEffect(() => {
+    if (user) return;
     try {
       localStorage.setItem("summit_active_track_id", JSON.stringify(activeTrackId));
     } catch (e) {
       console.error("Failed to save activeTrackId to localStorage:", e);
     }
-  }, [activeTrackId]);
+  }, [activeTrackId, user]);
+
+  // Load data reactively when user changes (Cloud or Guest Mode)
+  useEffect(() => {
+    let active = true;
+
+    async function loadData() {
+      if (!user) {
+        // Reset states to LocalStorage
+        try {
+          const savedGroups = localStorage.getItem("summit_waypoint_groups");
+          if (savedGroups) {
+            setWaypointGroups(JSON.parse(savedGroups));
+          } else {
+            setWaypointGroups([
+              {
+                id: "default",
+                name: "Mis Marcadores",
+                description: "Marcadores generales y marcas personales del mapa.",
+                color: "#10b981",
+                visible: true,
+                image: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=400&q=80",
+              },
+            ]);
+          }
+
+          const savedTracks = localStorage.getItem("summit_tracks");
+          setTracks(savedTracks ? JSON.parse(savedTracks) : []);
+
+          const savedActiveId = localStorage.getItem("summit_active_track_id");
+          setActiveTrackId(savedActiveId ? JSON.parse(savedActiveId) : null);
+
+          const savedClickSegments = localStorage.getItem("summit_click_segments");
+          setClickSegments(savedClickSegments ? JSON.parse(savedClickSegments) : {});
+        } catch (e) {
+          console.error("Failed to load local data:", e);
+        }
+        return;
+      }
+
+      if (!isSupabaseConfigured) return;
+
+      setLoading(true);
+      try {
+        // 1. Fetch waypoint groups
+        const { data: dbGroups, error: groupsError } = await supabase
+          .from("waypoint_groups")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: true });
+
+        if (groupsError) throw groupsError;
+
+        let groups = dbGroups || [];
+
+        // Seed default folder in DB if user has none
+        if (groups.length === 0) {
+          const defaultGroup = {
+            id: "default",
+            user_id: user.id,
+            name: "Mis Marcadores",
+            description: "Marcadores generales y marcas personales del mapa.",
+            color: "#10b981",
+            visible: true,
+            image: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=400&q=80",
+          };
+          const { error: insertErr } = await supabase
+            .from("waypoint_groups")
+            .insert(defaultGroup);
+
+          if (!insertErr) {
+            groups = [defaultGroup];
+          } else {
+            console.error("Failed to seed default group in Supabase:", insertErr);
+          }
+        }
+
+        // 2. Fetch tracks
+        const { data: dbTracks, error: tracksError } = await supabase
+          .from("tracks")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: true });
+
+        if (tracksError) throw tracksError;
+
+        // 3. Fetch waypoints
+        const { data: dbWaypoints, error: waypointsError } = await supabase
+          .from("waypoints")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: true });
+
+        if (waypointsError) throw waypointsError;
+
+        if (!active) return;
+
+        // Map waypoints into tracks
+        const mappedGroups: WaypointGroup[] = groups.map((g: any) => ({
+          id: g.id,
+          name: g.name,
+          description: g.description || "",
+          color: g.color,
+          visible: g.visible !== false,
+          image: g.image || undefined,
+        }));
+
+        const mappedTracks: Track[] = (dbTracks || []).map((t: any) => {
+          const trackWpts = (dbWaypoints || [])
+            .filter((w: any) => w.track_id === t.id)
+            .map((w: any) => ({
+              id: w.id,
+              name: w.name,
+              lat: w.lat,
+              lng: w.lng,
+              icon: w.icon,
+              note: w.note || "",
+              color: w.color,
+              groupId: w.group_id || "default",
+              completed: w.completed || false,
+              image: w.image || undefined,
+              link: w.link || undefined,
+            }));
+
+          return {
+            id: t.id,
+            name: t.name,
+            points: Array.isArray(t.points) ? t.points : [],
+            waypoints: trackWpts,
+            visible: t.visible !== false,
+            color: t.color,
+          };
+        });
+
+        setWaypointGroups(mappedGroups);
+        setTracks(mappedTracks);
+
+        // Select active track
+        const savedActiveId = localStorage.getItem("summit_active_track_id");
+        let parsedActiveId = null;
+        try {
+          if (savedActiveId) parsedActiveId = JSON.parse(savedActiveId);
+        } catch {}
+
+        if (parsedActiveId && mappedTracks.some((t) => t.id === parsedActiveId)) {
+          setActiveTrackId(parsedActiveId);
+        } else if (mappedTracks.length > 0) {
+          setActiveTrackId(mappedTracks[0].id);
+        } else {
+          setActiveTrackId(null);
+        }
+
+        // Clear click segments for DB tracks
+        setClickSegments({});
+      } catch (err) {
+        console.error("Failed to load user data from Supabase:", err);
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    loadData();
+
+    return () => {
+      active = false;
+    };
+  }, [user]);
 
   // 3. Derived active track values
   const activeTrack = useMemo(() => {
@@ -216,7 +387,6 @@ export function useRoutePlanner() {
   const fetchHikingRoute = useCallback(
     async (start: [number, number], end: [number, number]): Promise<[number, number][]> => {
       try {
-        // 1. Try Brouter Hiking service (routes over every forest path, secondary track, and hiking trail!)
         const url = `https://brouter.de/brouter?lonlats=${start[1]},${start[0]}|${end[1]},${end[0]}&profile=hiking&alternativeidx=0&format=geojson`;
         const response = await fetch(url);
         if (!response.ok) throw new Error("Brouter network error");
@@ -226,7 +396,6 @@ export function useRoutePlanner() {
           const coords = data.features[0].geometry.coordinates;
           const routeCoords: [number, number][] = coords.map((c: number[]) => [c[1], c[0]]);
           
-          // Detour check for Brouter
           let routeDist = 0;
           for (let i = 1; i < routeCoords.length; i++) {
             routeDist += calculateHaversineDistance(routeCoords[i - 1], routeCoords[i]);
@@ -262,31 +431,79 @@ export function useRoutePlanner() {
     };
     setTracks((prev) => [...prev, newTrack]);
     setActiveTrackId(newTrack.id);
+
+    if (user && isSupabaseConfigured) {
+      supabase.from("tracks").insert({
+        id: newTrack.id,
+        user_id: user.id,
+        name: newTrack.name,
+        points: newTrack.points,
+        visible: newTrack.visible,
+        color: newTrack.color,
+      }).then(({ error }) => {
+        if (error) console.error("Failed to insert track into Supabase:", error);
+      });
+    }
+
     return newTrack.id;
-  }, [tracks.length]);
+  }, [tracks.length, user]);
 
   const setRouteName = useCallback((name: string) => {
     setTracks((prev) =>
       prev.map((t) => (t.id === activeTrackId ? { ...t, name } : t))
     );
-  }, [activeTrackId]);
+
+    if (user && activeTrackId && isSupabaseConfigured) {
+      supabase.from("tracks").update({ name }).eq("id", activeTrackId).then(({ error }) => {
+        if (error) console.error("Failed to update track name in Supabase:", error);
+      });
+    }
+  }, [activeTrackId, user]);
 
   const deleteTrack = useCallback((id: string) => {
     setTracks((prev) => prev.filter((t) => t.id !== id));
     setActiveTrackId((prevActive) => (prevActive === id ? null : prevActive));
-  }, []);
+
+    if (user && isSupabaseConfigured) {
+      supabase.from("tracks").delete().eq("id", id).then(({ error }) => {
+        if (error) console.error("Failed to delete track from Supabase:", error);
+      });
+    }
+  }, [user]);
 
   const toggleTrackVisibility = useCallback((id: string) => {
+    let updatedVisible = false;
     setTracks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, visible: !t.visible } : t))
+      prev.map((t) => {
+        if (t.id === id) {
+          updatedVisible = !t.visible;
+          return { ...t, visible: updatedVisible };
+        }
+        return t;
+      })
     );
-  }, []);
+
+    if (user && isSupabaseConfigured) {
+      const target = tracks.find((t) => t.id === id);
+      if (target) {
+        supabase.from("tracks").update({ visible: !target.visible }).eq("id", id).then(({ error }) => {
+          if (error) console.error("Failed to toggle track visibility in Supabase:", error);
+        });
+      }
+    }
+  }, [tracks, user]);
 
   const setTrackColor = useCallback((id: string, color: string) => {
     setTracks((prev) =>
       prev.map((t) => (t.id === id ? { ...t, color } : t))
     );
-  }, []);
+
+    if (user && isSupabaseConfigured) {
+      supabase.from("tracks").update({ color }).eq("id", id).then(({ error }) => {
+        if (error) console.error("Failed to set track color in Supabase:", error);
+      });
+    }
+  }, [user]);
 
   // 6. Draw/Points operations (Targeting active track)
   const addPoint = useCallback(
@@ -294,16 +511,12 @@ export function useRoutePlanner() {
       if (!isDrawing) return;
 
       let currentActiveId = activeTrackId;
-      // Proactively create a track if drawing with no active track
       if (!currentActiveId) {
         currentActiveId = createNewTrack();
       }
 
       setLoading(true);
       try {
-
-
-        // Async side effects:
         const currentTrack = tracks.find((t) => t.id === currentActiveId);
         const pts = currentTrack ? currentTrack.points : [];
         const lastPoint = pts.length > 0 ? pts[pts.length - 1] : null;
@@ -323,6 +536,12 @@ export function useRoutePlanner() {
             ...prev,
             [currentActiveId!]: [...(prev[currentActiveId!] || []), 1],
           }));
+
+          if (user && isSupabaseConfigured) {
+            supabase.from("tracks").update({ points: [newPoint] }).eq("id", currentActiveId).then(({ error }) => {
+              if (error) console.error("Failed to sync first point to Supabase:", error);
+            });
+          }
         } else {
           let segmentCoords: [number, number][] = [];
 
@@ -361,15 +580,22 @@ export function useRoutePlanner() {
             });
           }
 
+          const finalPoints = [...pts, ...newRoutePoints];
           setTracks((prev) =>
             prev.map((t) =>
-              t.id === currentActiveId ? { ...t, points: [...t.points, ...newRoutePoints] } : t
+              t.id === currentActiveId ? { ...t, points: finalPoints } : t
             )
           );
           setClickSegments((prev) => ({
             ...prev,
             [currentActiveId!]: [...(prev[currentActiveId!] || []), newRoutePoints.length],
           }));
+
+          if (user && isSupabaseConfigured) {
+            supabase.from("tracks").update({ points: finalPoints }).eq("id", currentActiveId).then(({ error }) => {
+              if (error) console.error("Failed to sync points to Supabase:", error);
+            });
+          }
         }
       } catch (err) {
         console.error("Failed to add route point:", err);
@@ -377,40 +603,53 @@ export function useRoutePlanner() {
         setLoading(false);
       }
     },
-    [isDrawing, activeTrackId, createNewTrack, tracks, snapToTrail, fetchElevations, fetchHikingRoute]
+    [isDrawing, activeTrackId, createNewTrack, tracks, snapToTrail, fetchElevations, fetchHikingRoute, user]
   );
 
   const removeLastPoint = useCallback(() => {
     if (!activeTrackId) return;
     const segments = clickSegments[activeTrackId] || [];
-    if (segments.length === 0) {
-      setTracks((prev) =>
-        prev.map((t) =>
-          t.id === activeTrackId ? { ...t, points: t.points.slice(0, -1) } : t
-        )
-      );
-      return;
+    let size = 1;
+    if (segments.length > 0) {
+      size = segments[segments.length - 1];
     }
 
-    const lastSegmentSize = segments[segments.length - 1];
     setTracks((prev) =>
       prev.map((t) =>
-        t.id === activeTrackId ? { ...t, points: t.points.slice(0, -lastSegmentSize) } : t
+        t.id === activeTrackId ? { ...t, points: t.points.slice(0, -size) } : t
       )
     );
 
-    setClickSegments((prev) => ({
-      ...prev,
-      [activeTrackId]: segments.slice(0, -1),
-    }));
-  }, [activeTrackId, clickSegments]);
+    if (segments.length > 0) {
+      setClickSegments((prev) => ({
+        ...prev,
+        [activeTrackId]: segments.slice(0, -1),
+      }));
+    }
+
+    if (user && isSupabaseConfigured) {
+      const targetTrack = tracks.find((t) => t.id === activeTrackId);
+      if (targetTrack) {
+        const remainingPoints = targetTrack.points.slice(0, -size);
+        supabase.from("tracks").update({ points: remainingPoints }).eq("id", activeTrackId).then(({ error }) => {
+          if (error) console.error("Failed to sync points removal to Supabase:", error);
+        });
+      }
+    }
+  }, [activeTrackId, clickSegments, tracks, user]);
 
   const clearRoute = useCallback(() => {
     if (!activeTrackId) return;
     setTracks((prev) =>
       prev.map((t) => (t.id === activeTrackId ? { ...t, points: [] } : t))
     );
-  }, [activeTrackId]);
+
+    if (user && isSupabaseConfigured) {
+      supabase.from("tracks").update({ points: [] }).eq("id", activeTrackId).then(({ error }) => {
+        if (error) console.error("Failed to clear points in Supabase:", error);
+      });
+    }
+  }, [activeTrackId, user]);
 
   // 7. Waypoints (linked to active track)
   const addWaypoint = useCallback((wpt: Omit<Waypoint, "id">) => {
@@ -431,7 +670,27 @@ export function useRoutePlanner() {
         t.id === currentActiveId ? { ...t, waypoints: [...t.waypoints, newWpt] } : t
       )
     );
-  }, [activeTrackId, createNewTrack]);
+
+    if (user && isSupabaseConfigured) {
+      supabase.from("waypoints").insert({
+        id: newWpt.id,
+        user_id: user.id,
+        track_id: currentActiveId,
+        name: newWpt.name,
+        lat: newWpt.lat,
+        lng: newWpt.lng,
+        icon: newWpt.icon,
+        note: newWpt.note,
+        color: newWpt.color,
+        group_id: newWpt.groupId === "default" ? null : newWpt.groupId,
+        completed: newWpt.completed,
+        image: newWpt.image || null,
+        link: newWpt.link || null,
+      }).then(({ error }) => {
+        if (error) console.error("Failed to insert waypoint into Supabase:", error);
+      });
+    }
+  }, [activeTrackId, createNewTrack, user]);
 
   const updateWaypoint = useCallback((id: string, fields: Partial<Waypoint>) => {
     setTracks((prev) =>
@@ -440,7 +699,25 @@ export function useRoutePlanner() {
         waypoints: t.waypoints.map((w) => (w.id === id ? { ...w, ...fields } : w)),
       }))
     );
-  }, []);
+
+    if (user && isSupabaseConfigured) {
+      const dbFields: any = {};
+      if (fields.name !== undefined) dbFields.name = fields.name;
+      if (fields.lat !== undefined) dbFields.lat = fields.lat;
+      if (fields.lng !== undefined) dbFields.lng = fields.lng;
+      if (fields.icon !== undefined) dbFields.icon = fields.icon;
+      if (fields.note !== undefined) dbFields.note = fields.note;
+      if (fields.color !== undefined) dbFields.color = fields.color;
+      if (fields.groupId !== undefined) dbFields.group_id = fields.groupId === "default" ? null : fields.groupId;
+      if (fields.completed !== undefined) dbFields.completed = fields.completed;
+      if (fields.image !== undefined) dbFields.image = fields.image || null;
+      if (fields.link !== undefined) dbFields.link = fields.link || null;
+
+      supabase.from("waypoints").update(dbFields).eq("id", id).then(({ error }) => {
+        if (error) console.error("Failed to update waypoint in Supabase:", error);
+      });
+    }
+  }, [user]);
 
   const removeWaypoint = useCallback((id: string) => {
     setTracks((prev) =>
@@ -449,7 +726,13 @@ export function useRoutePlanner() {
         waypoints: t.waypoints.filter((w) => w.id !== id),
       }))
     );
-  }, []);
+
+    if (user && isSupabaseConfigured) {
+      supabase.from("waypoints").delete().eq("id", id).then(({ error }) => {
+        if (error) console.error("Failed to delete waypoint from Supabase:", error);
+      });
+    }
+  }, [user]);
 
   // 7.2 Waypoint Groups CRUD methods
   const addWaypointGroup = useCallback((group: Omit<WaypointGroup, "id">) => {
@@ -458,43 +741,114 @@ export function useRoutePlanner() {
       id: `group-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     };
     setWaypointGroups((prev) => [...prev, newGroup]);
-  }, []);
+
+    if (user && isSupabaseConfigured) {
+      supabase.from("waypoint_groups").insert({
+        id: newGroup.id,
+        user_id: user.id,
+        name: newGroup.name,
+        description: newGroup.description,
+        color: newGroup.color,
+        visible: newGroup.visible,
+        image: newGroup.image || null,
+      }).then(({ error }) => {
+        if (error) console.error("Failed to insert waypoint group into Supabase:", error);
+      });
+    }
+  }, [user]);
 
   const updateWaypointGroup = useCallback((id: string, fields: Partial<WaypointGroup>) => {
     setWaypointGroups((prev) =>
       prev.map((g) => (g.id === id ? { ...g, ...fields } : g))
     );
-  }, []);
+
+    if (user && isSupabaseConfigured) {
+      const dbFields: any = {};
+      if (fields.name !== undefined) dbFields.name = fields.name;
+      if (fields.description !== undefined) dbFields.description = fields.description;
+      if (fields.color !== undefined) dbFields.color = fields.color;
+      if (fields.visible !== undefined) dbFields.visible = fields.visible;
+      if (fields.image !== undefined) dbFields.image = fields.image || null;
+
+      supabase.from("waypoint_groups").update(dbFields).eq("id", id).then(({ error }) => {
+        if (error) console.error("Failed to update waypoint group in Supabase:", error);
+      });
+    }
+  }, [user]);
 
   const deleteWaypointGroup = useCallback((id: string) => {
-    if (id === "default") return; // Keep default group
+    if (id === "default") return;
     
-    // Remove group
     setWaypointGroups((prev) => prev.filter((g) => g.id !== id));
     
-    // Re-assign all waypoints in the deleted group to "default" so they are not lost!
     setTracks((prev) =>
       prev.map((t) => ({
         ...t,
         waypoints: t.waypoints.map((w) => (w.groupId === id ? { ...w, groupId: "default" } : w)),
       }))
     );
-  }, []);
+
+    if (user && isSupabaseConfigured) {
+      supabase.from("waypoint_groups").delete().eq("id", id).then(({ error }) => {
+        if (error) console.error("Failed to delete waypoint group from Supabase:", error);
+      });
+      supabase.from("waypoints").update({ group_id: null }).eq("group_id", id).then(({ error }) => {
+        if (error) console.error("Failed to reassign group waypoints in Supabase:", error);
+      });
+    }
+  }, [user]);
 
   const toggleWaypointGroupVisibility = useCallback((id: string) => {
+    let updatedVisible = false;
     setWaypointGroups((prev) =>
-      prev.map((g) => (g.id === id ? { ...g, visible: !g.visible } : g))
+      prev.map((g) => {
+        if (g.id === id) {
+          updatedVisible = !g.visible;
+          return { ...g, visible: updatedVisible };
+        }
+        return g;
+      })
     );
-  }, []);
+
+    if (user && isSupabaseConfigured) {
+      const target = waypointGroups.find((g) => g.id === id);
+      if (target) {
+        supabase.from("waypoint_groups").update({ visible: !target.visible }).eq("id", id).then(({ error }) => {
+          if (error) console.error("Failed to toggle waypoint group visibility in Supabase:", error);
+        });
+      }
+    }
+  }, [waypointGroups, user]);
 
   const toggleWaypointCompleted = useCallback((id: string) => {
+    let updatedCompleted = false;
     setTracks((prev) =>
       prev.map((t) => ({
         ...t,
-        waypoints: t.waypoints.map((w) => (w.id === id ? { ...w, completed: !w.completed } : w)),
+        waypoints: t.waypoints.map((w) => {
+          if (w.id === id) {
+            updatedCompleted = !w.completed;
+            return { ...w, completed: updatedCompleted };
+          }
+          return w;
+        }),
       }))
     );
-  }, []);
+
+    if (user && isSupabaseConfigured) {
+      let currentStatus = false;
+      for (const t of tracks) {
+        const found = t.waypoints.find((w) => w.id === id);
+        if (found) {
+          currentStatus = !found.completed;
+          break;
+        }
+      }
+      supabase.from("waypoints").update({ completed: currentStatus }).eq("id", id).then(({ error }) => {
+        if (error) console.error("Failed to toggle waypoint completed in Supabase:", error);
+      });
+    }
+  }, [tracks, user]);
 
   // 8. Import
   const importRouteData = useCallback(
@@ -538,163 +892,297 @@ export function useRoutePlanner() {
           });
         }
 
-        // Create new track in library
         const color = DEFAULT_TRACK_COLORS[tracks.length % DEFAULT_TRACK_COLORS.length];
         const newTrack: Track = {
           id: `track-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           name: name || `Ruta ${tracks.length + 1}`,
           points: finalPoints,
-          waypoints: importedWpts,
+          waypoints: importedWpts.map((w) => ({ ...w, groupId: w.groupId || "default" })),
           visible: true,
           color,
         };
 
         setTracks((prev) => [...prev, newTrack]);
         setActiveTrackId(newTrack.id);
+
+        if (user && isSupabaseConfigured) {
+          const { error: trackError } = await supabase.from("tracks").insert({
+            id: newTrack.id,
+            user_id: user.id,
+            name: newTrack.name,
+            points: newTrack.points,
+            visible: newTrack.visible,
+            color: newTrack.color,
+          });
+          if (trackError) throw trackError;
+
+          if (newTrack.waypoints.length > 0) {
+            const dbWaypoints = newTrack.waypoints.map((w) => ({
+              id: w.id,
+              user_id: user.id,
+              track_id: newTrack.id,
+              name: w.name,
+              lat: w.lat,
+              lng: w.lng,
+              icon: w.icon,
+              note: w.note,
+              color: w.color,
+              group_id: w.groupId === "default" ? null : w.groupId,
+              completed: w.completed || false,
+              image: w.image || null,
+              link: w.link || null,
+            }));
+            const { error: wptsError } = await supabase.from("waypoints").insert(dbWaypoints);
+            if (wptsError) throw wptsError;
+          }
+        }
       } catch (err) {
         console.error("Error importing GPX data:", err);
       } finally {
         setLoading(false);
       }
     },
-    [fetchElevations, tracks.length]
+    [fetchElevations, tracks.length, user]
   );
 
   // 9. ADVANCED: Merge Selected Tracks
-  const mergeTracks = useCallback((trackIds: string[], mergedName: string = "Ruta Fusionada") => {
-    const selectedTracks = tracks.filter((t) => trackIds.includes(t.id));
-    if (selectedTracks.length < 2) return;
+  const mergeTracks = useCallback(
+    async (trackIds: string[], mergedName: string = "Ruta Fusionada") => {
+      const selectedTracks = tracks.filter((t) => trackIds.includes(t.id));
+      if (selectedTracks.length < 2) return;
 
-    // Concatenate points and waypoints
-    let finalPoints: RoutePoint[] = [];
-    let finalWaypoints: Waypoint[] = [];
-    let cumulativeDist = 0;
+      let finalPoints: RoutePoint[] = [];
+      let finalWaypoints: Waypoint[] = [];
+      let cumulativeDist = 0;
 
-    selectedTracks.forEach((t) => {
-      // Waypoints concatenation
-      finalWaypoints = [...finalWaypoints, ...t.waypoints.map(w => ({
-        ...w,
-        id: `merged-wpt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-      }))];
+      selectedTracks.forEach((t) => {
+        finalWaypoints = [
+          ...finalWaypoints,
+          ...t.waypoints.map((w) => ({
+            ...w,
+            id: `wpt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          })),
+        ];
 
-      // Points integration with gap calculation
-      t.points.forEach((pt, ptIdx) => {
-        if (finalPoints.length > 0 && ptIdx === 0) {
-          // Calculate distance gap between last track point and first point of next track
-          const prevPt = finalPoints[finalPoints.length - 1];
-          const gap = calculateHaversineDistance([prevPt.lat, prevPt.lng], [pt.lat, pt.lng]);
-          cumulativeDist += gap;
-        } else if (ptIdx > 0) {
-          const prevPt = t.points[ptIdx - 1];
-          const step = calculateHaversineDistance([prevPt.lat, prevPt.lng], [pt.lat, pt.lng]);
-          cumulativeDist += step;
+        t.points.forEach((pt, ptIdx) => {
+          if (finalPoints.length > 0 && ptIdx === 0) {
+            const prevPt = finalPoints[finalPoints.length - 1];
+            const gap = calculateHaversineDistance([prevPt.lat, prevPt.lng], [pt.lat, pt.lng]);
+            cumulativeDist += gap;
+          } else if (ptIdx > 0) {
+            const prevPt = t.points[ptIdx - 1];
+            const step = calculateHaversineDistance([prevPt.lat, prevPt.lng], [pt.lat, pt.lng]);
+            cumulativeDist += step;
+          }
+
+          finalPoints.push({
+            lat: pt.lat,
+            lng: pt.lng,
+            elevation: pt.elevation,
+            distance: cumulativeDist,
+          });
+        });
+      });
+
+      const color = DEFAULT_TRACK_COLORS[tracks.length % DEFAULT_TRACK_COLORS.length];
+      const newTrack: Track = {
+        id: `track-merged-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        name: mergedName,
+        points: finalPoints,
+        waypoints: finalWaypoints,
+        visible: true,
+        color,
+      };
+
+      setTracks((prev) => [...prev, newTrack]);
+      setActiveTrackId(newTrack.id);
+
+      if (user && isSupabaseConfigured) {
+        try {
+          const { error: trackError } = await supabase.from("tracks").insert({
+            id: newTrack.id,
+            user_id: user.id,
+            name: newTrack.name,
+            points: newTrack.points,
+            visible: newTrack.visible,
+            color: newTrack.color,
+          });
+          if (trackError) throw trackError;
+
+          if (newTrack.waypoints.length > 0) {
+            const dbWaypoints = newTrack.waypoints.map((w) => ({
+              id: w.id,
+              user_id: user.id,
+              track_id: newTrack.id,
+              name: w.name,
+              lat: w.lat,
+              lng: w.lng,
+              icon: w.icon,
+              note: w.note,
+              color: w.color,
+              group_id: w.groupId === "default" ? null : w.groupId,
+              completed: w.completed || false,
+              image: w.image || null,
+              link: w.link || null,
+            }));
+            const { error: wptsError } = await supabase.from("waypoints").insert(dbWaypoints);
+            if (wptsError) throw wptsError;
+          }
+        } catch (err) {
+          console.error("Failed to save merged track to Supabase:", err);
         }
+      }
+    },
+    [tracks, user]
+  );
 
-        finalPoints.push({
+  // 10. ADVANCED: Split Active Track at Point Index
+  const splitTrack = useCallback(
+    async (trackId: string, pointIndex: number) => {
+      const targetTrack = tracks.find((t) => t.id === trackId);
+      if (!targetTrack || targetTrack.points.length < 3) return;
+      if (pointIndex <= 0 || pointIndex >= targetTrack.points.length - 1) return;
+
+      const pointsPart1 = targetTrack.points.slice(0, pointIndex + 1);
+      const rawPointsPart2 = targetTrack.points.slice(pointIndex);
+
+      const pointsPart2: RoutePoint[] = [];
+      let cumulativeDist = 0;
+      rawPointsPart2.forEach((pt, idx) => {
+        if (idx > 0) {
+          const prev = rawPointsPart2[idx - 1];
+          cumulativeDist += calculateHaversineDistance([prev.lat, prev.lng], [pt.lat, pt.lng]);
+        }
+        pointsPart2.push({
           lat: pt.lat,
           lng: pt.lng,
           elevation: pt.elevation,
           distance: cumulativeDist,
         });
       });
-    });
 
-    const color = DEFAULT_TRACK_COLORS[tracks.length % DEFAULT_TRACK_COLORS.length];
-    const newTrack: Track = {
-      id: `track-merged-${Date.now()}`,
-      name: mergedName,
-      points: finalPoints,
-      waypoints: finalWaypoints,
-      visible: true,
-      color,
-    };
+      const wptsPart1: Waypoint[] = [];
+      const wptsPart2: Waypoint[] = [];
 
-    setTracks((prev) => [...prev, newTrack]);
-    setActiveTrackId(newTrack.id);
-  }, [tracks]);
+      targetTrack.waypoints.forEach((w) => {
+        let minDistance1 = Infinity;
+        pointsPart1.forEach((pt) => {
+          const d = calculateHaversineDistance([pt.lat, pt.lng], [w.lat, w.lng]);
+          if (d < minDistance1) minDistance1 = d;
+        });
 
-  // 10. ADVANCED: Split Active Track at Point Index
-  const splitTrack = useCallback((trackId: string, pointIndex: number) => {
-    const targetTrack = tracks.find((t) => t.id === trackId);
-    if (!targetTrack || targetTrack.points.length < 3) return;
-    if (pointIndex <= 0 || pointIndex >= targetTrack.points.length - 1) return;
+        let minDistance2 = Infinity;
+        pointsPart2.forEach((pt) => {
+          const d = calculateHaversineDistance([pt.lat, pt.lng], [w.lat, w.lng]);
+          if (d < minDistance2) minDistance2 = d;
+        });
 
-    // Split points
-    const pointsPart1 = targetTrack.points.slice(0, pointIndex + 1);
-    const rawPointsPart2 = targetTrack.points.slice(pointIndex);
+        if (minDistance1 <= minDistance2) {
+          wptsPart1.push(w);
+        } else {
+          wptsPart2.push(w);
+        }
+      });
 
-    // Recalculate distance for Part 2 (making it start at 0)
-    const pointsPart2: RoutePoint[] = [];
-    let cumulativeDist = 0;
-    rawPointsPart2.forEach((pt, idx) => {
-      if (idx > 0) {
-        const prev = rawPointsPart2[idx - 1];
-        cumulativeDist += calculateHaversineDistance([prev.lat, prev.lng], [pt.lat, pt.lng]);
+      const id1 = `track-split-p1-${Date.now()}`;
+      const id2 = `track-split-p2-${Date.now()}`;
+
+      const track1: Track = {
+        id: id1,
+        name: `${targetTrack.name} (Parte 1)`,
+        points: pointsPart1,
+        waypoints: wptsPart1,
+        visible: true,
+        color: targetTrack.color,
+      };
+
+      const track2: Track = {
+        id: id2,
+        name: `${targetTrack.name} (Parte 2)`,
+        points: pointsPart2,
+        waypoints: wptsPart2,
+        visible: true,
+        color: DEFAULT_TRACK_COLORS[(DEFAULT_TRACK_COLORS.indexOf(targetTrack.color) + 2) % DEFAULT_TRACK_COLORS.length],
+      };
+
+      setTracks((prev) => {
+        const filtered = prev.filter((t) => t.id !== trackId);
+        return [...filtered, track1, track2];
+      });
+
+      setActiveTrackId(id1);
+
+      if (user && isSupabaseConfigured) {
+        try {
+          const { error: deleteError } = await supabase.from("tracks").delete().eq("id", trackId);
+          if (deleteError) throw deleteError;
+
+          const { error: t1Error } = await supabase.from("tracks").insert({
+            id: track1.id,
+            user_id: user.id,
+            name: track1.name,
+            points: track1.points,
+            visible: track1.visible,
+            color: track1.color,
+          });
+          if (t1Error) throw t1Error;
+
+          const { error: t2Error } = await supabase.from("tracks").insert({
+            id: track2.id,
+            user_id: user.id,
+            name: track2.name,
+            points: track2.points,
+            visible: track2.visible,
+            color: track2.color,
+          });
+          if (t2Error) throw t2Error;
+
+          if (track1.waypoints.length > 0) {
+            const dbWpts1 = track1.waypoints.map((w) => ({
+              id: w.id,
+              user_id: user.id,
+              track_id: track1.id,
+              name: w.name,
+              lat: w.lat,
+              lng: w.lng,
+              icon: w.icon,
+              note: w.note,
+              color: w.color,
+              group_id: w.groupId === "default" ? null : w.groupId,
+              completed: w.completed || false,
+              image: w.image || null,
+              link: w.link || null,
+            }));
+            const { error: wpts1Error } = await supabase.from("waypoints").insert(dbWpts1);
+            if (wpts1Error) throw wpts1Error;
+          }
+
+          if (track2.waypoints.length > 0) {
+            const dbWpts2 = track2.waypoints.map((w) => ({
+              id: w.id,
+              user_id: user.id,
+              track_id: track2.id,
+              name: w.name,
+              lat: w.lat,
+              lng: w.lng,
+              icon: w.icon,
+              note: w.note,
+              color: w.color,
+              group_id: w.groupId === "default" ? null : w.groupId,
+              completed: w.completed || false,
+              image: w.image || null,
+              link: w.link || null,
+            }));
+            const { error: wpts2Error } = await supabase.from("waypoints").insert(dbWpts2);
+            if (wpts2Error) throw wpts2Error;
+          }
+        } catch (err) {
+          console.error("Failed to split track in Supabase:", err);
+        }
       }
-      pointsPart2.push({
-        lat: pt.lat,
-        lng: pt.lng,
-        elevation: pt.elevation,
-        distance: cumulativeDist,
-      });
-    });
-
-    // Smart Waypoint Distribution based on proximity to track segments
-    const wptsPart1: Waypoint[] = [];
-    const wptsPart2: Waypoint[] = [];
-
-    targetTrack.waypoints.forEach((w) => {
-      // Find closest point in Part 1 vs Part 2
-      let minDistance1 = Infinity;
-      pointsPart1.forEach((pt) => {
-        const d = calculateHaversineDistance([pt.lat, pt.lng], [w.lat, w.lng]);
-        if (d < minDistance1) minDistance1 = d;
-      });
-
-      let minDistance2 = Infinity;
-      pointsPart2.forEach((pt) => {
-        const d = calculateHaversineDistance([pt.lat, pt.lng], [w.lat, w.lng]);
-        if (d < minDistance2) minDistance2 = d;
-      });
-
-      if (minDistance1 <= minDistance2) {
-        wptsPart1.push(w);
-      } else {
-        wptsPart2.push(w);
-      }
-    });
-
-    // Create both parts
-    const id1 = `track-split-p1-${Date.now()}`;
-    const id2 = `track-split-p2-${Date.now()}`;
-
-    const track1: Track = {
-      id: id1,
-      name: `${targetTrack.name} (Parte 1)`,
-      points: pointsPart1,
-      waypoints: wptsPart1,
-      visible: true,
-      color: targetTrack.color,
-    };
-
-    const track2: Track = {
-      id: id2,
-      name: `${targetTrack.name} (Parte 2)`,
-      points: pointsPart2,
-      waypoints: wptsPart2,
-      visible: true,
-      color: DEFAULT_TRACK_COLORS[(DEFAULT_TRACK_COLORS.indexOf(targetTrack.color) + 2) % DEFAULT_TRACK_COLORS.length],
-    };
-
-    // Remove original track, insert two split tracks
-    setTracks((prev) => {
-      const filtered = prev.filter((t) => t.id !== trackId);
-      return [...filtered, track1, track2];
-    });
-
-    // Set first part as active
-    setActiveTrackId(id1);
-  }, [tracks]);
+    },
+    [tracks, user]
+  );
 
   return {
     routeName: activeRouteName,
