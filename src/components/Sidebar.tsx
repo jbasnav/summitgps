@@ -1390,11 +1390,32 @@ export function Sidebar({
                                           </div>
 
                                           {wpt.note && (
-                                            <p className="text-[10px] text-slate-500 line-clamp-1 leading-tight">
+                                            <p className="text-[10px] text-slate-500 leading-normal">
                                               {wpt.note}
                                             </p>
                                           )}
-                                          <p className="text-[8px] text-slate-600 font-mono">
+
+                                          {wpt.image && (
+                                            <div className="mt-1.5 relative rounded-lg overflow-hidden w-full h-24 border border-white/5 shadow-inner shrink-0 group-hover:border-emerald-500/20 transition-all">
+                                              <img src={wpt.image} alt={wpt.name} className="w-full h-full object-cover filter saturate-90 hover:scale-105 transition-all duration-300" />
+                                            </div>
+                                          )}
+
+                                          {wpt.link && (
+                                            <div className="mt-1 flex items-center">
+                                              <a
+                                                href={wpt.link}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-400 hover:text-emerald-300 hover:underline transition-all"
+                                                onClick={(e) => e.stopPropagation()}
+                                              >
+                                                🔗 Más Información
+                                              </a>
+                                            </div>
+                                          )}
+
+                                          <p className="text-[8px] text-slate-600 font-mono pt-1">
                                             {wpt.lat.toFixed(5)}, {wpt.lng.toFixed(5)}
                                           </p>
                                         </div>

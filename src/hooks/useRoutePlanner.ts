@@ -19,6 +19,8 @@ export interface Waypoint {
   color: string;
   groupId: string;      // Associated challenge folder
   completed?: boolean;  // Challenge milestone completed status
+  image?: string;       // Picture URL (optional)
+  link?: string;        // Information URL (optional)
 }
 
 export interface WaypointGroup {

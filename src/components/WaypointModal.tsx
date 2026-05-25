@@ -4,8 +4,8 @@ import { X, MapPin, Tent, Camera, AlertTriangle, Info, Droplet } from "lucide-re
 interface WaypointModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (data: { name: string; icon: string; note: string; color: string; groupId: string; completed: boolean }) => void;
-  initialData?: { name: string; icon: string; note: string; color: string; groupId?: string; completed?: boolean };
+  onSave: (data: { name: string; icon: string; note: string; color: string; groupId: string; completed: boolean; image?: string; link?: string }) => void;
+  initialData?: { name: string; icon: string; note: string; color: string; groupId?: string; completed?: boolean; image?: string; link?: string };
   onDelete?: () => void;
   groups: any[]; // Renders available WaypointGroups
 }
@@ -42,6 +42,8 @@ export function WaypointModal({
   const [color, setColor] = useState(initialData?.color || "#10b981");
   const [groupId, setGroupId] = useState(initialData?.groupId || "default");
   const [completed, setCompleted] = useState(initialData?.completed || false);
+  const [image, setImage] = useState(initialData?.image || "");
+  const [link, setLink] = useState(initialData?.link || "");
 
   React.useEffect(() => {
     if (isOpen) {
@@ -51,6 +53,8 @@ export function WaypointModal({
       setColor(initialData?.color || "#10b981");
       setGroupId(initialData?.groupId || "default");
       setCompleted(initialData?.completed || false);
+      setImage(initialData?.image || "");
+      setLink(initialData?.link || "");
     }
   }, [isOpen, initialData]);
 
@@ -59,7 +63,7 @@ export function WaypointModal({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    onSave({ name, icon, note, color, groupId, completed });
+    onSave({ name, icon, note, color, groupId, completed, image, link });
     onClose();
   };
 
@@ -183,6 +187,34 @@ export function WaypointModal({
             <label htmlFor="wpt-completed" className="text-xs font-semibold text-slate-200 cursor-pointer">
               ¿Reto Completado? (Marcar como visitado/coronado)
             </label>
+          </div>
+
+          {/* Image URL input */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-emerald-400/80 tracking-wider uppercase flex items-center gap-1.5">
+              📸 Foto del Lugar (URL de Imagen)
+            </label>
+            <input
+              type="url"
+              value={image}
+              onChange={(e) => setImage(e.target.value)}
+              placeholder="Ej. https://images.unsplash.com/... o enlace de tu foto"
+              className="w-full bg-[#0a0f0d]/80 border border-[#1b3d2b] rounded-xl px-4 py-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 transition-colors"
+            />
+          </div>
+
+          {/* Link URL input */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-emerald-400/80 tracking-wider uppercase flex items-center gap-1.5">
+              🔗 Enlace de Información (URL)
+            </label>
+            <input
+              type="url"
+              value={link}
+              onChange={(e) => setLink(e.target.value)}
+              placeholder="Ej. https://es.wikipedia.org/... o web del refugio"
+              className="w-full bg-[#0a0f0d]/80 border border-[#1b3d2b] rounded-xl px-4 py-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 transition-colors"
+            />
           </div>
 
           {/* Notes */}

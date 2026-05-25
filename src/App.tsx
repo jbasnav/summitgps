@@ -172,7 +172,7 @@ export default function App() {
 
   // Save Waypoint (new, edited, or template imported)
   const handleSaveWaypoint = useCallback(
-    (data: { name: string; icon: string; note: string; color: string; groupId: string; completed: boolean }) => {
+    (data: { name: string; icon: string; note: string; color: string; groupId: string; completed: boolean; image?: string; link?: string }) => {
       if (editingWaypoint && !editingWaypoint.id.startsWith("temp-")) {
         updateWaypoint(editingWaypoint.id, data);
       } else {
@@ -190,6 +190,8 @@ export default function App() {
             color: data.color,
             groupId: data.groupId,
             completed: data.completed,
+            image: data.image,
+            link: data.link,
           });
         }
       }
