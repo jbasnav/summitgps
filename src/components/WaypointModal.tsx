@@ -43,6 +43,17 @@ export function WaypointModal({
   const [groupId, setGroupId] = useState(initialData?.groupId || "default");
   const [completed, setCompleted] = useState(initialData?.completed || false);
 
+  React.useEffect(() => {
+    if (isOpen) {
+      setName(initialData?.name || "");
+      setIcon(initialData?.icon || "mountain");
+      setNote(initialData?.note || "");
+      setColor(initialData?.color || "#10b981");
+      setGroupId(initialData?.groupId || "default");
+      setCompleted(initialData?.completed || false);
+    }
+  }, [isOpen, initialData]);
+
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {

@@ -32,6 +32,7 @@ export interface WaypointGroup {
 
 export const LANDSCAPE_IMAGES = [
   { id: "peaks", name: "Alta Montaña", url: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=400&q=80" },
+  { id: "mountain", name: "Montaña", url: "https://images.unsplash.com/photo-1486873249359-2731bd6dafc7?auto=format&fit=crop&w=400&q=80" },
   { id: "forest", name: "Bosques y Senderos", url: "https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=400&q=80" },
   { id: "camp", name: "Refugio y Campamento", url: "https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=400&q=80" },
   { id: "lake", name: "Lagos y Ríos", url: "https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=400&q=80" },

@@ -176,6 +176,16 @@ export function Sidebar({
   const [osmLoading, setOsmLoading] = useState(false);
   const [osmSearchExecuted, setOsmSearchExecuted] = useState(false);
 
+  // Automatically clear OSM POIs from the map when search widget is closed or tab is changed
+  React.useEffect(() => {
+    if (activeTab !== "waypoints" || !isOsmSearchOpen) {
+      if (osmPois && osmPois.length > 0) {
+        onSetOsmPois([]);
+      }
+      setOsmSearchExecuted(false);
+    }
+  }, [activeTab, isOsmSearchOpen, onSetOsmPois, osmPois]);
+
   const handleOsmSearch = async () => {
     if (!mapCenter) {
       alert("Coordenadas del mapa no disponibles. Mueve el mapa primero.");
