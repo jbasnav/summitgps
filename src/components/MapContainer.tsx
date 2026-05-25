@@ -363,8 +363,8 @@ export function MapContainer({
   }, [flyToCoords]);
 
   return (
-    <div className="relative w-full h-full bg-[#0a0e0c] overflow-hidden">
-      <div ref={mapContainerRef} className={`w-full h-full z-10 ${isDrawing ? "leaflet-crosshair" : isSplitting ? "leaflet-scissors" : ""}`} />
+    <div className={`relative w-full h-full bg-[#0a0e0c] overflow-hidden ${isDrawing ? "leaflet-crosshair" : isSplitting ? "leaflet-scissors" : ""}`}>
+      <div ref={mapContainerRef} className="w-full h-full z-10" />
 
       {/* Map Drawing overlay badge */}
       {isDrawing && (
