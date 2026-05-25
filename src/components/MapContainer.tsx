@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { BaseLayerId } from "./LayerSelector";
-import type { Track, RoutePoint, Waypoint } from "../hooks/useRoutePlanner";
+import type { Track, RoutePoint, Waypoint, WaypointGroup } from "../hooks/useRoutePlanner";
 import { Plus, Scissors } from "lucide-react";
 
 interface MapContainerProps {
@@ -19,6 +19,7 @@ interface MapContainerProps {
   onRightClickMap: (lat: number, lng: number) => void;
   onEditWaypoint: (wpt: Waypoint) => void;
   onSplitTrackAt: (trackId: string, index: number) => void;
+  waypointGroups: WaypointGroup[];
 }
 
 // Map Tile Providers
@@ -54,6 +55,7 @@ export function MapContainer({
   onRightClickMap,
   onEditWaypoint,
   onSplitTrackAt,
+  waypointGroups,
 }: MapContainerProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -254,12 +256,18 @@ export function MapContainer({
     // Gather all visible waypoints
     const visibleWaypoints: Waypoint[] = [];
     const waypointToTrackMap: Record<string, string> = {}; // maps wptId to trackColor for fallback
+    const groupVisibilityMap = new Map(waypointGroups.map((g) => [g.id, g.visible]));
 
     tracks.forEach((t) => {
       if (t.visible) {
         t.waypoints.forEach((w) => {
-          visibleWaypoints.push(w);
-          waypointToTrackMap[w.id] = t.color;
+          const groupId = w.groupId || "default";
+          const isGroupVisible = groupVisibilityMap.get(groupId) !== false; // Default to true if not found
+
+          if (isGroupVisible) {
+            visibleWaypoints.push(w);
+            waypointToTrackMap[w.id] = t.color;
+          }
         });
       }
     });
@@ -319,7 +327,7 @@ export function MapContainer({
       }
     });
 
-  }, [tracks, onEditWaypoint]);
+  }, [tracks, onEditWaypoint, waypointGroups]);
 
   // Sync Hover Marker (Synchronized Elevation Chart Hover Indicator)
   useEffect(() => {

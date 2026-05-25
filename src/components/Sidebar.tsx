@@ -23,6 +23,12 @@ import {
   Scissors,
   Link,
   Edit2,
+  Folder,
+  FolderOpen,
+  Trophy,
+  ChevronDown,
+  ChevronUp,
+  Check,
 } from "lucide-react";
 import { LayerSelector, type BaseLayerId } from "./LayerSelector";
 import { StatsPanel } from "./StatsPanel";
@@ -72,6 +78,13 @@ interface SidebarProps {
   // Units
   useImperial: boolean;
   onToggleUnits: () => void;
+
+  // Waypoint Groups / Challenges Props
+  waypointGroups: any[];
+  onAddWaypointGroup: (group: { name: string; description: string; color: string; visible: boolean }) => void;
+  onDeleteWaypointGroup: (id: string) => void;
+  onToggleWaypointGroupVisibility: (id: string) => void;
+  onToggleWaypointCompleted: (id: string) => void;
 }
 
 type TabId = "search" | "layers" | "route" | "waypoints";
@@ -124,12 +137,24 @@ export function Sidebar({
   onToggleContours,
   useImperial,
   onToggleUnits,
+  waypointGroups,
+  onAddWaypointGroup,
+  onDeleteWaypointGroup,
+  onToggleWaypointGroupVisibility,
+  onToggleWaypointCompleted,
 }: SidebarProps) {
   const [activeTab, setActiveTab] = useState<TabId>("route");
   const [isCollapsed, setIsCollapsed] = useState(false);
   
   // Track Library selection state for merging
   const [selectedMergeIds, setSelectedMergeIds] = useState<string[]>([]);
+
+  // Waypoint Groups / Challenges state
+  const [expandedGroupId, setExpandedGroupId] = useState<string | null>("default");
+  const [isCreatingGroup, setIsCreatingGroup] = useState(false);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [newGroupDesc, setNewGroupDesc] = useState("");
+  const [newGroupColor, setNewGroupColor] = useState("#10b981");
   
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
@@ -639,82 +664,369 @@ export function Sidebar({
             </div>
           )}
 
-          {/* TAB: WAYPOINTS (ALL VISIBLE TRACKS) */}
+          {/* TAB: WAYPOINTS (WAYPOINT GROUPS & CHALLENGES) */}
           {activeTab === "waypoints" && (
             <div className="space-y-4 animate-fade-in">
               <div className="flex items-center justify-between">
                 <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                  Waypoints Visibles ({waypoints.length})
+                  Grupos de Marcas y Retos ({waypointGroups.length})
                 </h4>
-                <p className="text-[9px] text-slate-500">Clic derecho en mapa para añadir</p>
+                <button
+                  onClick={() => setIsCreatingGroup(!isCreatingGroup)}
+                  className="flex items-center gap-1 text-[10px] font-bold bg-[#1c2921] border border-[#1b3d2b] text-emerald-400 hover:text-emerald-300 px-2 py-1 rounded-lg transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Nuevo Reto
+                </button>
               </div>
 
-              {waypoints.length === 0 ? (
-                <div className="flex flex-col items-center justify-center p-8 border border-dashed border-[#1b3d2b]/40 rounded-2xl text-center space-y-2 bg-[#0c120f]/50">
-                  <MapPin className="w-6 h-6 text-slate-600" />
-                  <span className="text-xs font-semibold text-slate-400">Sin Waypoints</span>
-                  <p className="text-[10px] text-slate-500 max-w-xs">
-                    Activa la visibilidad de tus tracks o añade waypoints haciendo clic derecho en el mapa.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
-                  {waypoints.map((wpt) => {
-                    const WptIcon = WPT_ICONS[wpt.icon] || MapPin;
-                    return (
-                      <div
-                        key={wpt.id}
-                        onClick={() => onFlyToCoords(wpt.lat, wpt.lng)}
-                        className="group flex items-start gap-3 p-3 rounded-xl bg-[#0b100d] border border-white/5 hover:border-emerald-500/20 hover:bg-[#0f1612] cursor-pointer transition-all"
-                      >
-                        <div
-                          className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-900 shrink-0 mt-0.5"
-                          style={{ backgroundColor: wpt.color }}
-                        >
-                          <WptIcon className="w-4 h-4 text-white" />
-                        </div>
-                        <div className="flex-1 min-w-0 space-y-0.5">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-slate-200 truncate group-hover:text-emerald-300 transition-colors">
-                              {wpt.name}
-                            </span>
-                            <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onEditWaypoint(wpt);
-                                }}
-                                className="text-[9px] font-bold text-emerald-400 hover:text-emerald-300"
-                              >
-                                Editar
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (window.confirm("¿Deseas eliminar este marcador?")) {
-                                    onDeleteWaypoint(wpt.id);
-                                  }
-                                }}
-                                className="text-[9px] font-bold text-red-400 hover:text-red-300"
-                              >
-                                Borrar
-                              </button>
-                            </div>
-                          </div>
-                          {wpt.note && (
-                            <p className="text-[10px] text-slate-500 line-clamp-2 leading-tight">
-                              {wpt.note}
-                            </p>
-                          )}
-                          <p className="text-[9px] text-slate-600 font-mono">
-                            {wpt.lat.toFixed(5)}, {wpt.lng.toFixed(5)}
-                          </p>
-                        </div>
-                      </div>
-                    );
-                  })}
+              {/* CHALLENGE CREATOR FORM */}
+              {isCreatingGroup && (
+                <div className="bg-[#0c120f]/80 border border-[#1b3d2b] rounded-xl p-4 space-y-3.5 shadow-inner animate-fade-in">
+                  <div className="flex items-center justify-between border-b border-[#1b3d2b]/20 pb-2">
+                    <span className="text-xs font-bold text-emerald-400">Crear Carpeta / Reto</span>
+                    <button
+                      type="button"
+                      onClick={() => setIsCreatingGroup(false)}
+                      className="text-xs text-slate-500 hover:text-slate-300"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+
+                  {/* Group Name */}
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+                      Nombre del Reto
+                    </label>
+                    <input
+                      type="text"
+                      value={newGroupName}
+                      onChange={(e) => setNewGroupName(e.target.value)}
+                      placeholder="Ej. Cimas > 1000m, Fuentes, Vistas..."
+                      className="w-full bg-[#050807] border border-[#1b3d2b]/80 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition-colors"
+                      required
+                    />
+                  </div>
+
+                  {/* Group Description */}
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+                      Descripción y Objetivo
+                    </label>
+                    <textarea
+                      value={newGroupDesc}
+                      onChange={(e) => setNewGroupDesc(e.target.value)}
+                      placeholder="Ej. Coronar las 10 cimas más emblemáticas de la región..."
+                      rows={2}
+                      className="w-full bg-[#050807] border border-[#1b3d2b]/80 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition-colors resize-none"
+                    />
+                  </div>
+
+                  {/* Group Color Selection */}
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+                      Color de Identificación
+                    </label>
+                    <div className="flex gap-2">
+                      {[
+                        { value: "#10b981", name: "Esmeralda" },
+                        { value: "#3b82f6", name: "Azul" },
+                        { value: "#ef4444", name: "Rojo" },
+                        { value: "#f59e0b", name: "Ámbar" },
+                        { value: "#8b5cf6", name: "Violeta" },
+                        { value: "#ec4899", name: "Rosa" },
+                      ].map((c) => {
+                        const isSelected = newGroupColor === c.value;
+                        return (
+                          <button
+                            key={c.value}
+                            type="button"
+                            onClick={() => setNewGroupColor(c.value)}
+                            title={c.name}
+                            className={`w-6 h-6 rounded-full flex items-center justify-center transition-transform hover:scale-110 ${
+                              isSelected ? "ring-2 ring-emerald-400 ring-offset-2 ring-offset-[#0c120f]" : ""
+                            }`}
+                            style={{ backgroundColor: c.value }}
+                          >
+                            {isSelected && (
+                              <span className="w-1.5 h-1.5 bg-white rounded-full" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Form Action */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!newGroupName.trim()) {
+                        alert("Por favor, introduce un nombre para el grupo.");
+                        return;
+                      }
+                      onAddWaypointGroup({
+                        name: newGroupName.trim(),
+                        description: newGroupDesc.trim(),
+                        color: newGroupColor,
+                        visible: true,
+                      });
+                      setNewGroupName("");
+                      setNewGroupDesc("");
+                      setNewGroupColor("#10b981");
+                      setIsCreatingGroup(false);
+                    }}
+                    className="w-full py-2 bg-emerald-400 hover:bg-emerald-300 text-black text-xs font-bold rounded-lg transition-colors shadow-lg shadow-emerald-400/10"
+                  >
+                    Guardar Reto / Carpeta
+                  </button>
                 </div>
               )}
+
+              {/* LIST OF ACCORDION GROUPS */}
+              <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
+                {waypointGroups.map((group) => {
+                  const isExpanded = expandedGroupId === group.id;
+                  
+                  // Filter waypoints belonging to this group
+                  const groupWaypoints = waypoints.filter((w) => {
+                    if (group.id === "default") {
+                      return !w.groupId || w.groupId === "default";
+                    }
+                    return w.groupId === group.id;
+                  });
+
+                  const totalCount = groupWaypoints.length;
+                  const completedCount = groupWaypoints.filter((w) => w.completed).length;
+                  const completionPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+                  const isFullyCompleted = totalCount > 0 && completedCount === totalCount;
+
+                  return (
+                    <div
+                      key={group.id}
+                      className="border border-[#1b3d2b]/40 rounded-xl overflow-hidden bg-[#0c120f]/30"
+                    >
+                      {/* Accordion Header */}
+                      <div
+                        onClick={() => setExpandedGroupId(isExpanded ? null : group.id)}
+                        className="flex items-center justify-between p-3 bg-[#0c120f]/60 hover:bg-[#0c120f]/90 transition-colors cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          {/* Folder Icon indicating status */}
+                          <div
+                            className="shrink-0 flex items-center justify-center"
+                            style={{ color: group.color }}
+                          >
+                            {isExpanded ? (
+                              <FolderOpen className="w-4 h-4" />
+                            ) : (
+                              <Folder className="w-4 h-4" />
+                            )}
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-bold text-slate-200 truncate">
+                                {group.name}
+                              </span>
+                              {isFullyCompleted && (
+                                <span title="¡Reto completado al 100%!">
+                                  <Trophy className="w-3.5 h-3.5 text-yellow-400 shrink-0 animate-bounce" />
+                                </span>
+                              )}
+                            </div>
+                            
+                            {/* Short Progress metrics */}
+                            <div className="flex items-center gap-2 mt-0.5 text-[9px] text-slate-500 font-semibold uppercase tracking-wider">
+                              <span>
+                                {completedCount} / {totalCount} cimas
+                              </span>
+                              <span>•</span>
+                              <span className={isFullyCompleted ? "text-yellow-400 animate-pulse font-bold" : "text-emerald-400"}>
+                                {completionPercent}%
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Visibility & Delete icons */}
+                        <div className="flex items-center gap-2.5 shrink-0 pl-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onToggleWaypointGroupVisibility(group.id);
+                            }}
+                            className="text-slate-400 hover:text-slate-200 p-0.5 rounded transition-colors"
+                            title={group.visible ? "Ocultar marcas del reto en el mapa" : "Mostrar marcas del reto en el mapa"}
+                          >
+                            {group.visible ? (
+                              <Eye className="w-3.5 h-3.5 text-emerald-400" />
+                            ) : (
+                              <EyeOff className="w-3.5 h-3.5 text-slate-600" />
+                            )}
+                          </button>
+
+                          {group.id !== "default" && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (
+                                  window.confirm(
+                                    `¿Seguro que deseas eliminar el reto "${group.name}"? Los waypoints asociados no se borrarán, volverán a "Mis Marcadores".`
+                                  )
+                                ) {
+                                  onDeleteWaypointGroup(group.id);
+                                  if (expandedGroupId === group.id) {
+                                    setExpandedGroupId("default");
+                                  }
+                                }
+                              }}
+                              className="text-slate-500 hover:text-red-400 p-0.5 rounded transition-colors"
+                              title="Eliminar reto"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+
+                          <div>
+                            {isExpanded ? (
+                              <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
+                            ) : (
+                              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Accordion Progress Bar (Fluent and sleek) */}
+                      {totalCount > 0 && (
+                        <div className="h-1 bg-black/40 w-full relative">
+                          <div
+                            className="h-full transition-all duration-500 shadow-[0_0_8px_rgba(16,185,129,0.3)]"
+                            style={{
+                              width: `${completionPercent}%`,
+                              backgroundColor: group.color,
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      {/* Accordion Body */}
+                      {isExpanded && (
+                        <div className="p-3 bg-[#0a0f0d]/30 border-t border-[#1b3d2b]/20 space-y-2.5">
+                          {/* Group description */}
+                          {group.description && (
+                            <p className="text-[10px] text-slate-400 leading-relaxed italic bg-[#050807]/30 border-l border-emerald-500/20 pl-2 py-0.5">
+                              {group.description}
+                            </p>
+                          )}
+
+                          {/* Waypoints within this group */}
+                          {groupWaypoints.length === 0 ? (
+                            <div className="py-4 text-center">
+                              <p className="text-[10px] text-slate-500 max-w-[280px] mx-auto leading-relaxed">
+                                Sin marcas en este reto. Haz clic derecho en el mapa para añadir un waypoint y asígnalo a este reto.
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="space-y-1.5">
+                              {groupWaypoints.map((wpt) => {
+                                const WptIcon = WPT_ICONS[wpt.icon] || MapPin;
+                                const isCompleted = !!wpt.completed;
+                                return (
+                                  <div
+                                    key={wpt.id}
+                                    onClick={() => onFlyToCoords(wpt.lat, wpt.lng)}
+                                    className={`group flex items-start gap-2.5 p-2 rounded-lg border transition-all cursor-pointer ${
+                                      isCompleted
+                                        ? "bg-emerald-500/[0.01] border-emerald-500/10 hover:border-emerald-500/20"
+                                        : "bg-[#0b100d] border-white/5 hover:border-emerald-500/10"
+                                    }`}
+                                  >
+                                    {/* Custom Checkbox for completed status */}
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onToggleWaypointCompleted(wpt.id);
+                                      }}
+                                      className={`w-4 h-4 rounded mt-0.5 flex items-center justify-center border transition-all shrink-0 ${
+                                        isCompleted
+                                          ? "bg-emerald-400 border-emerald-400 text-black hover:bg-emerald-500"
+                                          : "border-slate-600 hover:border-emerald-400"
+                                      }`}
+                                    >
+                                      {isCompleted && <Check className="w-3 h-3 stroke-[3]" />}
+                                    </button>
+
+                                    {/* Mini Category Icon */}
+                                    <div
+                                      className="w-5 h-5 rounded flex items-center justify-center text-slate-900 shrink-0 mt-0.5"
+                                      style={{ backgroundColor: wpt.color }}
+                                    >
+                                      <WptIcon className="w-3.5 h-3.5 text-white" />
+                                    </div>
+
+                                    {/* Waypoint details */}
+                                    <div className="flex-1 min-w-0 space-y-0.5">
+                                      <div className="flex items-center justify-between">
+                                        <span
+                                          className={`text-xs font-bold truncate group-hover:text-emerald-300 transition-colors ${
+                                            isCompleted ? "line-through text-slate-500" : "text-slate-300"
+                                          }`}
+                                        >
+                                          {wpt.name}
+                                        </span>
+
+                                        <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              onEditWaypoint(wpt);
+                                            }}
+                                            className="text-[9px] font-bold text-emerald-400 hover:text-emerald-300"
+                                          >
+                                            Editar
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              if (window.confirm("¿Seguro que deseas eliminar este waypoint?")) {
+                                                onDeleteWaypoint(wpt.id);
+                                              }
+                                            }}
+                                            className="text-[9px] font-bold text-red-400 hover:text-red-300"
+                                          >
+                                            Borrar
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      {wpt.note && (
+                                        <p className="text-[10px] text-slate-500 line-clamp-1 leading-tight">
+                                          {wpt.note}
+                                        </p>
+                                      )}
+                                      <p className="text-[8px] text-slate-600 font-mono">
+                                        {wpt.lat.toFixed(5)}, {wpt.lng.toFixed(5)}
+                                      </p>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 

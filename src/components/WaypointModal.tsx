@@ -4,9 +4,10 @@ import { X, MapPin, Tent, Camera, AlertTriangle, Info, Droplet } from "lucide-re
 interface WaypointModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (data: { name: string; icon: string; note: string; color: string }) => void;
-  initialData?: { name: string; icon: string; note: string; color: string };
+  onSave: (data: { name: string; icon: string; note: string; color: string; groupId: string; completed: boolean }) => void;
+  initialData?: { name: string; icon: string; note: string; color: string; groupId?: string; completed?: boolean };
   onDelete?: () => void;
+  groups: any[]; // Renders available WaypointGroups
 }
 
 const ICONS = [
@@ -33,18 +34,21 @@ export function WaypointModal({
   onSave,
   initialData,
   onDelete,
+  groups,
 }: WaypointModalProps) {
   const [name, setName] = useState(initialData?.name || "");
   const [icon, setIcon] = useState(initialData?.icon || "mountain");
   const [note, setNote] = useState(initialData?.note || "");
   const [color, setColor] = useState(initialData?.color || "#10b981");
+  const [groupId, setGroupId] = useState(initialData?.groupId || "default");
+  const [completed, setCompleted] = useState(initialData?.completed || false);
 
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    onSave({ name, icon, note, color });
+    onSave({ name, icon, note, color, groupId, completed });
     onClose();
   };
 
@@ -136,6 +140,38 @@ export function WaypointModal({
                 );
               })}
             </div>
+          </div>
+
+          {/* Group / Challenge Selector */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-emerald-400/80 tracking-wider uppercase">
+              Grupo / Reto Asociado
+            </label>
+            <select
+              value={groupId}
+              onChange={(e) => setGroupId(e.target.value)}
+              className="w-full bg-[#0a0f0d]/80 border border-[#1b3d2b] rounded-xl px-4 py-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 transition-colors"
+            >
+              {groups.map((g) => (
+                <option key={g.id} value={g.id} className="bg-[#131b17] text-slate-100">
+                  {g.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Completed Checkbox */}
+          <div className="flex items-center gap-3 p-3.5 rounded-xl bg-[#0a0f0d]/50 border border-white/5">
+            <input
+              type="checkbox"
+              id="wpt-completed"
+              checked={completed}
+              onChange={(e) => setCompleted(e.target.checked)}
+              className="w-4 h-4 accent-emerald-400 bg-black border-[#1b3d2b] cursor-pointer"
+            />
+            <label htmlFor="wpt-completed" className="text-xs font-semibold text-slate-200 cursor-pointer">
+              ¿Reto Completado? (Marcar como visitado/coronado)
+            </label>
           </div>
 
           {/* Notes */}

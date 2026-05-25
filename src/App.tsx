@@ -38,6 +38,13 @@ export default function App() {
     setTrackColor,
     mergeTracks,
     splitTrack,
+
+    // Waypoint Groups / Challenges
+    waypointGroups,
+    addWaypointGroup,
+    deleteWaypointGroup,
+    toggleWaypointGroupVisibility,
+    toggleWaypointCompleted,
   } = useRoutePlanner();
 
   // App settings states
@@ -60,18 +67,25 @@ export default function App() {
   // Derive all visible waypoints across all visible tracks in the library
   const visibleWaypoints = useMemo(() => {
     const list: Waypoint[] = [];
+    const groupVisibilityMap = new Map(waypointGroups.map((g) => [g.id, g.visible]));
+
     tracks.forEach((t) => {
       if (t.visible) {
         t.waypoints.forEach((w) => {
-          list.push({
-            ...w,
-            color: w.color || t.color, // Fallback to track color if none set
-          });
+          const groupId = w.groupId || "default";
+          const isGroupVisible = groupVisibilityMap.get(groupId) !== false; // Default to true if not found
+
+          if (isGroupVisible) {
+            list.push({
+              ...w,
+              color: w.color || t.color, // Fallback to track color if none set
+            });
+          }
         });
       }
     });
     return list;
-  }, [tracks]);
+  }, [tracks, waypointGroups]);
 
   // Handle unit switching
   const handleToggleUnits = useCallback(() => {
@@ -100,7 +114,7 @@ export default function App() {
 
   // Save Waypoint (new or edited)
   const handleSaveWaypoint = useCallback(
-    (data: { name: string; icon: string; note: string; color: string }) => {
+    (data: { name: string; icon: string; note: string; color: string; groupId: string; completed: boolean }) => {
       if (editingWaypoint) {
         updateWaypoint(editingWaypoint.id, data);
       } else if (newWptCoords) {
@@ -111,6 +125,8 @@ export default function App() {
           icon: data.icon,
           note: data.note,
           color: data.color,
+          groupId: data.groupId,
+          completed: data.completed,
         });
       }
       setEditingWaypoint(null);
@@ -165,6 +181,11 @@ export default function App() {
         onToggleContours={() => setShowContours(!showContours)}
         useImperial={useImperial}
         onToggleUnits={handleToggleUnits}
+        waypointGroups={waypointGroups}
+        onAddWaypointGroup={addWaypointGroup}
+        onDeleteWaypointGroup={deleteWaypointGroup}
+        onToggleWaypointGroupVisibility={toggleWaypointGroupVisibility}
+        onToggleWaypointCompleted={toggleWaypointCompleted}
       />
 
       {/* Main Map Viewport & Collapsible Elevation Chart */}
@@ -184,6 +205,7 @@ export default function App() {
             onRightClickMap={handleRightClickMap}
             onEditWaypoint={handleEditWaypoint}
             onSplitTrackAt={handleSplitTrackAt}
+            waypointGroups={waypointGroups}
           />
         </div>
 
@@ -227,6 +249,7 @@ export default function App() {
         isOpen={isWptModalOpen}
         onClose={() => setIsWptModalOpen(false)}
         onSave={handleSaveWaypoint}
+        groups={waypointGroups}
         initialData={
           editingWaypoint
             ? {
@@ -234,6 +257,8 @@ export default function App() {
                 icon: editingWaypoint.icon,
                 note: editingWaypoint.note,
                 color: editingWaypoint.color,
+                groupId: editingWaypoint.groupId,
+                completed: editingWaypoint.completed,
               }
             : undefined
         }

@@ -17,6 +17,16 @@ export interface Waypoint {
   icon: string;
   note: string;
   color: string;
+  groupId: string;      // Associated challenge folder
+  completed?: boolean;  // Challenge milestone completed status
+}
+
+export interface WaypointGroup {
+  id: string;
+  name: string;
+  description: string;
+  color: string;
+  visible: boolean;
 }
 
 export interface Track {
@@ -31,6 +41,25 @@ export interface Track {
 const DEFAULT_TRACK_COLORS = ["#10b981", "#3b82f6", "#ef4444", "#f59e0b", "#8b5cf6", "#ec4899"];
 
 export function useRoutePlanner() {
+  // Waypoint Groups / Challenges State
+  const [waypointGroups, setWaypointGroups] = useState<WaypointGroup[]>(() => {
+    try {
+      const saved = localStorage.getItem("summit_waypoint_groups");
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error("Failed to load waypoint groups:", e);
+    }
+    return [
+      {
+        id: "default",
+        name: "Mis Marcadores",
+        description: "Marcadores generales y marcas personales del mapa.",
+        color: "#10b981",
+        visible: true,
+      },
+    ];
+  });
+
   // 1. Initial State from LocalStorage
   const [tracks, setTracks] = useState<Track[]>(() => {
     try {
@@ -59,6 +88,14 @@ export function useRoutePlanner() {
       return {};
     }
   });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("summit_waypoint_groups", JSON.stringify(waypointGroups));
+    } catch (e) {
+      console.error("Failed to save waypoint groups to localStorage:", e);
+    }
+  }, [waypointGroups]);
 
   const [isDrawing, setIsDrawing] = useState(false);
   const [snapToTrail, setSnapToTrail] = useState(true);
@@ -369,6 +406,8 @@ export function useRoutePlanner() {
 
     const newWpt: Waypoint = {
       ...wpt,
+      groupId: wpt.groupId || "default",
+      completed: wpt.completed || false,
       id: `wpt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     };
 
@@ -393,6 +432,45 @@ export function useRoutePlanner() {
       prev.map((t) => ({
         ...t,
         waypoints: t.waypoints.filter((w) => w.id !== id),
+      }))
+    );
+  }, []);
+
+  // 7.2 Waypoint Groups CRUD methods
+  const addWaypointGroup = useCallback((group: Omit<WaypointGroup, "id">) => {
+    const newGroup: WaypointGroup = {
+      ...group,
+      id: `group-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    };
+    setWaypointGroups((prev) => [...prev, newGroup]);
+  }, []);
+
+  const deleteWaypointGroup = useCallback((id: string) => {
+    if (id === "default") return; // Keep default group
+    
+    // Remove group
+    setWaypointGroups((prev) => prev.filter((g) => g.id !== id));
+    
+    // Re-assign all waypoints in the deleted group to "default" so they are not lost!
+    setTracks((prev) =>
+      prev.map((t) => ({
+        ...t,
+        waypoints: t.waypoints.map((w) => (w.groupId === id ? { ...w, groupId: "default" } : w)),
+      }))
+    );
+  }, []);
+
+  const toggleWaypointGroupVisibility = useCallback((id: string) => {
+    setWaypointGroups((prev) =>
+      prev.map((g) => (g.id === id ? { ...g, visible: !g.visible } : g))
+    );
+  }, []);
+
+  const toggleWaypointCompleted = useCallback((id: string) => {
+    setTracks((prev) =>
+      prev.map((t) => ({
+        ...t,
+        waypoints: t.waypoints.map((w) => (w.id === id ? { ...w, completed: !w.completed } : w)),
       }))
     );
   }, []);
@@ -629,5 +707,13 @@ export function useRoutePlanner() {
     setTrackColor,
     mergeTracks,
     splitTrack,
+
+    // Waypoint Group additions
+    waypointGroups,
+    setWaypointGroups,
+    addWaypointGroup,
+    deleteWaypointGroup,
+    toggleWaypointGroupVisibility,
+    toggleWaypointCompleted,
   };
 }
