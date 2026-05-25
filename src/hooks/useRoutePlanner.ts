@@ -735,10 +735,10 @@ export function useRoutePlanner(user: any | null = null) {
   }, [user]);
 
   // 7.2 Waypoint Groups CRUD methods
-  const addWaypointGroup = useCallback((group: Omit<WaypointGroup, "id">) => {
+  const addWaypointGroup = useCallback((group: Omit<WaypointGroup, "id"> & { id?: string }) => {
     const newGroup: WaypointGroup = {
       ...group,
-      id: `group-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      id: group.id || `group-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     };
     setWaypointGroups((prev) => [...prev, newGroup]);
 

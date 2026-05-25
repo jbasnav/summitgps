@@ -81,7 +81,7 @@ interface SidebarProps {
 
   // Waypoint Groups / Challenges Props
   waypointGroups: any[];
-  onAddWaypointGroup: (group: { name: string; description: string; color: string; visible: boolean; image?: string }) => void;
+  onAddWaypointGroup: (group: { id?: string; name: string; description: string; color: string; visible: boolean; image?: string }) => void;
   onDeleteWaypointGroup: (id: string) => void;
   onUpdateWaypointGroup: (id: string, group: { name?: string; description?: string; color?: string; visible?: boolean; image?: string }) => void;
   onToggleWaypointGroupVisibility: (id: string) => void;
