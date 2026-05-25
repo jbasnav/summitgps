@@ -3,12 +3,12 @@ import { Sidebar } from "./components/Sidebar";
 import { MapContainer } from "./components/MapContainer";
 import { ElevationProfile } from "./components/ElevationProfile";
 import { WaypointModal } from "./components/WaypointModal";
-import { useRoutePlanner, type Waypoint, type RoutePoint } from "./hooks/useRoutePlanner";
+import { useRoutePlanner, type Waypoint, type RoutePoint, type RouteCollection } from "./hooks/useRoutePlanner";
 import type { BaseLayerId } from "./components/LayerSelector";
 import { ChevronDown, ChevronUp, Search, X, Compass, Loader, MapPin, Route, Square, Upload, Download } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "./utils/supabaseClient";
 import { AuthScreen } from "./components/AuthScreen";
-import { formatCoordinatesByFormat } from "./utils/geoUtils";
+import { formatCoordinatesByFormat, parseCoordinateInput } from "./utils/geoUtils";
 import { exportToGPX } from "./utils/gpxExporter";
 
 import { CustomDialogProvider, useCustomDialog } from "./components/CustomDialog";
@@ -32,6 +32,8 @@ function AppContent() {
     setIsDrawing,
     snapToTrail,
     setSnapToTrail,
+    routingProfile,
+    setRoutingProfile,
     distance,
     ascent,
     descent,
@@ -61,6 +63,14 @@ function AppContent() {
     updateWaypointGroup,
     toggleWaypointGroupVisibility,
     toggleWaypointCompleted,
+
+    // Route Collections
+    routeCollections,
+    addRouteCollection,
+    deleteRouteCollection,
+    updateRouteCollection,
+    toggleRouteCollectionVisibility,
+    setTrackCollection,
   } = useRoutePlanner(user);
 
   // App settings states
@@ -315,9 +325,12 @@ function AppContent() {
   const visibleWaypoints = useMemo(() => {
     const list: Waypoint[] = [];
     const groupVisibilityMap = new Map(waypointGroups.map((g) => [g.id, g.visible]));
+    const collectionVisibilityMap = new Map(routeCollections.map((c) => [c.id, c.visible]));
 
     tracks.forEach((t) => {
-      if (t.visible) {
+      const collectionId = t.collectionId || "default";
+      const isCollectionVisible = collectionVisibilityMap.get(collectionId) !== false;
+      if (t.visible && isCollectionVisible) {
         t.waypoints.forEach((w) => {
           const groupId = w.groupId || "default";
           const isGroupVisible = groupVisibilityMap.get(groupId) !== false; // Default to true if not found
@@ -332,7 +345,20 @@ function AppContent() {
       }
     });
     return list;
-  }, [tracks, waypointGroups]);
+  }, [tracks, waypointGroups, routeCollections]);
+
+  // Compute tracks with reactive collection visibility applied
+  const tracksWithCollectionVisibility = useMemo(() => {
+    const collectionVisibilityMap = new Map(routeCollections.map((c) => [c.id, c.visible]));
+    return tracks.map((t) => {
+      const collectionId = t.collectionId || "default";
+      const isCollectionVisible = collectionVisibilityMap.get(collectionId) !== false;
+      return {
+        ...t,
+        visible: t.visible && isCollectionVisible,
+      };
+    });
+  }, [tracks, routeCollections]);
 
   // Handle unit switching
   const handleToggleUnits = useCallback(() => {
@@ -345,11 +371,25 @@ function AppContent() {
     setTimeout(() => setFlyToCoords(null), 1600);
   }, []);
 
-  // Handle floating search submit query to Nominatim
+  // Handle floating search submit query to Nominatim (with coordinate detection)
   const handleFloatingSearchSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!floatingSearchQuery.trim()) return;
 
+    // 1. First, try to parse as coordinates (DD, DMS, DDM, UTM, MGRS)
+    const parsedCoord = parseCoordinateInput(floatingSearchQuery);
+    if (parsedCoord) {
+      handleFlyToCoords(parsedCoord.lat, parsedCoord.lng);
+      setFloatingSearchResults([]);
+      setFloatingSearchQuery("");
+      // Open waypoint modal at the detected coordinate
+      setNewWptCoords([parsedCoord.lat, parsedCoord.lng]);
+      setEditingWaypoint(null);
+      setIsWptModalOpen(true);
+      return;
+    }
+
+    // 2. Otherwise, search Nominatim
     setFloatingSearchLoading(true);
     setFloatingSearchResults([]);
     try {
@@ -366,7 +406,7 @@ function AppContent() {
     } finally {
       setFloatingSearchLoading(false);
     }
-  }, [floatingSearchQuery]);
+  }, [floatingSearchQuery, handleFlyToCoords]);
 
   // Handle flying to selected search result location and clearing lists
   const handleSelectFloatingResult = useCallback((result: any) => {
@@ -584,6 +624,8 @@ function AppContent() {
         setIsSplitting={setIsSplitting}
         snapToTrail={snapToTrail}
         setSnapToTrail={setSnapToTrail}
+        routingProfile={routingProfile}
+        setRoutingProfile={setRoutingProfile}
         distance={distance}
         ascent={ascent}
         descent={descent}
@@ -615,6 +657,12 @@ function AppContent() {
         onUpdateWaypointGroup={updateWaypointGroup}
         onToggleWaypointGroupVisibility={toggleWaypointGroupVisibility}
         onToggleWaypointCompleted={toggleWaypointCompleted}
+        routeCollections={routeCollections}
+        onAddRouteCollection={addRouteCollection}
+        onDeleteRouteCollection={deleteRouteCollection}
+        onUpdateRouteCollection={updateRouteCollection}
+        onToggleRouteCollectionVisibility={toggleRouteCollectionVisibility}
+        onSetTrackCollection={setTrackCollection}
         mapCenter={mapCenter}
         osmPois={osmPois}
         onSetOsmPois={setOsmPois}
@@ -962,7 +1010,7 @@ function AppContent() {
       <div className="flex-1 h-full flex flex-col overflow-hidden relative">
         <div className="flex-1 min-h-0 relative">
           <MapContainer
-            tracks={tracks}
+            tracks={tracksWithCollectionVisibility}
             activeTrackId={activeTrackId}
             isDrawing={isDrawing}
             isSplitting={isSplitting}
@@ -1076,7 +1124,7 @@ function AppContent() {
                 type="text"
                 value={floatingSearchQuery}
                 onChange={(e) => setFloatingSearchQuery(e.target.value)}
-                placeholder="Buscar ciudad, pico, lugar..."
+                placeholder="Buscar lugar o coordenadas (DD, UTM, MGRS)..."
                 className="w-full bg-transparent pl-10 pr-10 py-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none"
               />
               {floatingSearchQuery && (
@@ -1092,6 +1140,40 @@ function AppContent() {
                 </button>
               )}
             </form>
+
+            {/* Live Coordinate Detection Indicator */}
+            {floatingSearchQuery.trim().length >= 3 && (() => {
+              const liveCoord = parseCoordinateInput(floatingSearchQuery);
+              if (!liveCoord) return null;
+              return (
+                <button
+                  onClick={() => {
+                    handleFlyToCoords(liveCoord.lat, liveCoord.lng);
+                    setFloatingSearchResults([]);
+                    setFloatingSearchQuery("");
+                    setNewWptCoords([liveCoord.lat, liveCoord.lng]);
+                    setEditingWaypoint(null);
+                    setIsWptModalOpen(true);
+                  }}
+                  className="mt-2 w-full flex items-center gap-3 p-3 rounded-xl bg-[#131b17]/95 border border-emerald-500/40 shadow-xl backdrop-blur-md hover:bg-emerald-500/10 transition-all group cursor-pointer"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0 shadow-[0_0_8px_rgba(16,185,129,0.2)]">
+                    <MapPin className="w-4 h-4 text-emerald-400" />
+                  </div>
+                  <div className="min-w-0 flex-1 text-left">
+                    <p className="text-xs font-bold text-emerald-300 group-hover:text-emerald-200 transition-colors">
+                      📍 Coordenadas Detectadas
+                    </p>
+                    <p className="text-[10px] text-slate-400 font-mono truncate mt-0.5">
+                      {liveCoord.label} → {liveCoord.lat.toFixed(5)}, {liveCoord.lng.toFixed(5)}
+                    </p>
+                  </div>
+                  <span className="text-[8px] text-emerald-400/70 font-bold uppercase tracking-wider shrink-0 bg-emerald-500/10 px-2 py-1 rounded-lg border border-emerald-500/20">
+                    Ir + Marca
+                  </span>
+                </button>
+              );
+            })()}
 
             {floatingSearchLoading && (
               <div className="mt-2 p-4 bg-[#131b17]/95 border border-[#1b3d2b] rounded-xl flex justify-center shadow-xl backdrop-blur-md">

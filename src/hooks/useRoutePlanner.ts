@@ -3,6 +3,8 @@ import { useState, useCallback, useMemo, useEffect } from "react";
 import { calculateHaversineDistance, calculateElevationGainLoss } from "../utils/geoUtils";
 import { supabase, isSupabaseConfigured } from "../utils/supabaseClient";
 
+export type RoutingProfile = 'hike' | 'cycle' | 'drive' | 'straight';
+
 export interface RoutePoint {
   lat: number;
   lng: number;
@@ -44,6 +46,15 @@ export const LANDSCAPE_IMAGES = [
   { id: "canyon", name: "Ruta Rústica", url: "https://images.unsplash.com/photo-1509316975850-ff9c5deb0cd9?auto=format&fit=crop&w=400&q=80" }
 ];
 
+export interface RouteCollection {
+  id: string;
+  name: string;
+  description: string;
+  color: string;
+  visible: boolean;
+  image?: string;
+}
+
 export interface Track {
   id: string;
   name: string;
@@ -51,11 +62,32 @@ export interface Track {
   waypoints: Waypoint[];
   visible: boolean;
   color: string;
+  collectionId?: string;
 }
 
 const DEFAULT_TRACK_COLORS = ["#10b981", "#3b82f6", "#ef4444", "#f59e0b", "#8b5cf6", "#ec4899"];
 
 export function useRoutePlanner(user: any | null = null) {
+  // Route Collections State
+  const [routeCollections, setRouteCollections] = useState<RouteCollection[]>(() => {
+    try {
+      const saved = localStorage.getItem("summit_route_collections");
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error("Failed to load route collections:", e);
+    }
+    return [
+      {
+        id: "default",
+        name: "Mis Rutas",
+        description: "Colección principal para tus rutas trazadas y subidas.",
+        color: "#10b981",
+        visible: true,
+        image: "https://images.unsplash.com/photo-1486873249359-2731bd6dafc7?auto=format&fit=crop&w=400&q=80",
+      },
+    ];
+  });
+
   // Waypoint Groups / Challenges State
   const [waypointGroups, setWaypointGroups] = useState<WaypointGroup[]>(() => {
     try {
@@ -128,10 +160,25 @@ export function useRoutePlanner(user: any | null = null) {
   });
 
   const [isDrawing, setIsDrawing] = useState(false);
-  const [snapToTrail, setSnapToTrail] = useState(true);
+  const [routingProfile, setRoutingProfile] = useState<RoutingProfile>(() => {
+    return (localStorage.getItem('summit_routing_profile') as RoutingProfile) || 'hike';
+  });
+  const snapToTrail = routingProfile !== 'straight';
+  const setSnapToTrail = useCallback((snap: boolean) => {
+    setRoutingProfile(snap ? 'hike' : 'straight');
+  }, []);
   const [loading, setLoading] = useState(false);
 
   // 2. Persist to LocalStorage on change ONLY if in Guest Mode
+  useEffect(() => {
+    if (user) return;
+    try {
+      localStorage.setItem("summit_route_collections", JSON.stringify(routeCollections));
+    } catch (e) {
+      console.error("Failed to save route collections to localStorage:", e);
+    }
+  }, [routeCollections, user]);
+
   useEffect(() => {
     if (user) return;
     try {
@@ -168,6 +215,10 @@ export function useRoutePlanner(user: any | null = null) {
     }
   }, [activeTrackId, user]);
 
+  useEffect(() => {
+    localStorage.setItem('summit_routing_profile', routingProfile);
+  }, [routingProfile]);
+
   // Load data reactively when user changes (Cloud or Guest Mode)
   useEffect(() => {
     let active = true;
@@ -176,6 +227,22 @@ export function useRoutePlanner(user: any | null = null) {
       if (!user) {
         // Reset states to LocalStorage
         try {
+          const savedCollections = localStorage.getItem("summit_route_collections");
+          if (savedCollections) {
+            setRouteCollections(JSON.parse(savedCollections));
+          } else {
+            setRouteCollections([
+              {
+                id: "default",
+                name: "Mis Rutas",
+                description: "Colección principal para tus rutas trazadas y subidas.",
+                color: "#10b981",
+                visible: true,
+                image: "https://images.unsplash.com/photo-1486873249359-2731bd6dafc7?auto=format&fit=crop&w=400&q=80",
+              },
+            ]);
+          }
+
           const savedGroups = localStorage.getItem("summit_waypoint_groups");
           if (savedGroups) {
             setWaypointGroups(JSON.parse(savedGroups));
@@ -231,6 +298,39 @@ export function useRoutePlanner(user: any | null = null) {
 
       setLoading(true);
       try {
+        // 0. Fetch route collections
+        const { data: dbCollections, error: collectionsError } = await supabase
+          .from("route_collections")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: true });
+
+        if (collectionsError) throw collectionsError;
+
+        let collections = dbCollections || [];
+
+        // Seed default collection in DB if user has none
+        if (collections.length === 0) {
+          const defaultCollection = {
+            id: "default",
+            user_id: user.id,
+            name: "Mis Rutas",
+            description: "Colección principal para tus rutas trazadas y subidas.",
+            color: "#10b981",
+            visible: true,
+            image: "https://images.unsplash.com/photo-1486873249359-2731bd6dafc7?auto=format&fit=crop&w=400&q=80",
+          };
+          const { error: insertErr } = await supabase
+            .from("route_collections")
+            .insert(defaultCollection);
+
+          if (!insertErr) {
+            collections = [defaultCollection];
+          } else {
+            console.error("Failed to seed default collection in Supabase:", insertErr);
+          }
+        }
+
         // 1. Fetch waypoint groups
         const { data: dbGroups, error: groupsError } = await supabase
           .from("waypoint_groups")
@@ -284,6 +384,16 @@ export function useRoutePlanner(user: any | null = null) {
 
         if (!active) return;
 
+        // Map route collections
+        const mappedCollections: RouteCollection[] = collections.map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          description: c.description || "",
+          color: c.color,
+          visible: c.visible !== false,
+          image: c.image || undefined,
+        }));
+
         // Map waypoints into tracks
         const mappedGroups: WaypointGroup[] = groups.map((g: any) => ({
           id: g.id,
@@ -318,6 +428,7 @@ export function useRoutePlanner(user: any | null = null) {
             waypoints: trackWpts,
             visible: t.visible !== false,
             color: t.color,
+            collectionId: t.collection_id || "default",
           };
         });
 
@@ -344,6 +455,7 @@ export function useRoutePlanner(user: any | null = null) {
               })),
             visible: true,
             color: "#10b981",
+            collectionId: "default",
           };
           mappedTracks.push(globalTrack);
 
@@ -355,11 +467,13 @@ export function useRoutePlanner(user: any | null = null) {
             points: globalTrack.points,
             visible: globalTrack.visible,
             color: globalTrack.color,
+            collection_id: "default",
           }).then(({ error }) => {
             if (error) console.error("Failed to seed global track in Supabase:", error);
           });
         }
 
+        setRouteCollections(mappedCollections);
         setWaypointGroups(mappedGroups);
         setTracks(mappedTracks);
 
@@ -442,7 +556,9 @@ export function useRoutePlanner(user: any | null = null) {
   const fetchOSRMRoute = useCallback(
     async (start: [number, number], end: [number, number]): Promise<[number, number][]> => {
       try {
-        const url = `https://router.project-osrm.org/route/v1/foot/${start[1]},${start[0]};${end[1]},${end[0]}?geometries=geojson&overview=full`;
+        const osrmProfileMap: Record<string, string> = { hike: 'foot', cycle: 'bicycle', drive: 'car' };
+        const osrmProfile = osrmProfileMap[routingProfile] || 'foot';
+        const url = `https://router.project-osrm.org/route/v1/${osrmProfile}/${start[1]},${start[0]};${end[1]},${end[0]}?geometries=geojson&overview=full`;
         const response = await fetch(url);
         if (!response.ok) throw new Error("OSRM router error");
         const data = await response.json();
@@ -463,13 +579,15 @@ export function useRoutePlanner(user: any | null = null) {
         return [start, end];
       }
     },
-    []
+    [routingProfile]
   );
 
   const fetchHikingRoute = useCallback(
     async (start: [number, number], end: [number, number]): Promise<[number, number][]> => {
       try {
-        const url = `https://brouter.de/brouter?lonlats=${start[1]},${start[0]}|${end[1]},${end[0]}&profile=Hiking-Alpine-SAC6&alternativeidx=0&format=geojson`;
+        const brouterProfileMap: Record<string, string> = { hike: 'Hiking-Alpine-SAC6', cycle: 'trekking', drive: 'car-fast' };
+        const brouterProfile = brouterProfileMap[routingProfile] || 'Hiking-Alpine-SAC6';
+        const url = `https://brouter.de/brouter?lonlats=${start[1]},${start[0]}|${end[1]},${end[0]}&profile=${brouterProfile}&alternativeidx=0&format=geojson`;
         const response = await fetch(url);
         if (!response.ok) throw new Error("Brouter network error");
         const data = await response.json();
@@ -485,11 +603,11 @@ export function useRoutePlanner(user: any | null = null) {
         return fetchOSRMRoute(start, end);
       }
     },
-    [fetchOSRMRoute]
+    [fetchOSRMRoute, routingProfile]
   );
 
   // 5. Track Management Core operations
-  const createNewTrack = useCallback((name: string = "Nueva Ruta de Aventura") => {
+  const createNewTrack = useCallback((name: string = "Nueva Ruta de Aventura", collectionId: string = "default") => {
     const color = DEFAULT_TRACK_COLORS[tracks.length % DEFAULT_TRACK_COLORS.length];
     const newTrack: Track = {
       id: `track-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -498,6 +616,7 @@ export function useRoutePlanner(user: any | null = null) {
       waypoints: [],
       visible: true,
       color,
+      collectionId,
     };
     setTracks((prev) => [...prev, newTrack]);
     setActiveTrackId(newTrack.id);
@@ -510,6 +629,7 @@ export function useRoutePlanner(user: any | null = null) {
         points: newTrack.points,
         visible: newTrack.visible,
         color: newTrack.color,
+        collection_id: collectionId,
       }).then(({ error }) => {
         if (error) console.error("Failed to insert track into Supabase:", error);
       });
@@ -628,7 +748,7 @@ export function useRoutePlanner(user: any | null = null) {
         } else {
           let segmentCoords: [number, number][] = [];
 
-          if (snapToTrail) {
+          if (routingProfile !== 'straight') {
             segmentCoords = await fetchHikingRoute([lastPoint.lat, lastPoint.lng], [lat, lng]);
             if (segmentCoords.length > 0) {
               segmentCoords[0] = [lastPoint.lat, lastPoint.lng];
@@ -686,7 +806,7 @@ export function useRoutePlanner(user: any | null = null) {
         setLoading(false);
       }
     },
-    [isDrawing, activeTrackId, createNewTrack, tracks, snapToTrail, fetchElevations, fetchHikingRoute, user]
+    [isDrawing, activeTrackId, createNewTrack, tracks, routingProfile, fetchElevations, fetchHikingRoute, user]
   );
 
   const removeLastPoint = useCallback(() => {
@@ -1059,6 +1179,7 @@ export function useRoutePlanner(user: any | null = null) {
           })),
           visible: true,
           color,
+          collectionId: "default",
         };
 
         setTracks((prev) => [...prev, newTrack]);
@@ -1072,6 +1193,7 @@ export function useRoutePlanner(user: any | null = null) {
             points: newTrack.points,
             visible: newTrack.visible,
             color: newTrack.color,
+            collection_id: "default",
           });
           if (trackError) throw trackError;
 
@@ -1343,6 +1465,105 @@ export function useRoutePlanner(user: any | null = null) {
     [tracks, user]
   );
 
+  // 9. Route Collections CRUD methods
+  const addRouteCollection = useCallback(async (collection: Omit<RouteCollection, "id"> & { id?: string }) => {
+    const newCollection: RouteCollection = {
+      ...collection,
+      id: collection.id || `collection-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    };
+    setRouteCollections((prev) => [...prev, newCollection]);
+
+    if (user && isSupabaseConfigured) {
+      const { error } = await supabase.from("route_collections").insert({
+        id: newCollection.id,
+        user_id: user.id,
+        name: newCollection.name,
+        description: newCollection.description,
+        color: newCollection.color,
+        visible: newCollection.visible,
+        image: newCollection.image || null,
+      });
+      if (error) {
+        console.error("Failed to insert route collection into Supabase:", error);
+        throw error;
+      }
+    }
+    return newCollection.id;
+  }, [user]);
+
+  const updateRouteCollection = useCallback((id: string, fields: Partial<RouteCollection>) => {
+    setRouteCollections((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, ...fields } : c))
+    );
+
+    if (user && isSupabaseConfigured) {
+      const dbFields: any = {};
+      if (fields.name !== undefined) dbFields.name = fields.name;
+      if (fields.description !== undefined) dbFields.description = fields.description;
+      if (fields.color !== undefined) dbFields.color = fields.color;
+      if (fields.visible !== undefined) dbFields.visible = fields.visible;
+      if (fields.image !== undefined) dbFields.image = fields.image || null;
+
+      supabase.from("route_collections").update(dbFields).eq("id", id).then(({ error }) => {
+        if (error) console.error("Failed to update route collection in Supabase:", error);
+      });
+    }
+  }, [user]);
+
+  const deleteRouteCollection = useCallback((id: string) => {
+    if (id === "default") return;
+    
+    setRouteCollections((prev) => prev.filter((c) => c.id !== id));
+    
+    // Safety move of routes inside it to "default"
+    setTracks((prev) =>
+      prev.map((t) => (t.collectionId === id ? { ...t, collectionId: "default" } : t))
+    );
+
+    if (user && isSupabaseConfigured) {
+      supabase.from("route_collections").delete().eq("id", id).then(({ error }) => {
+        if (error) console.error("Failed to delete route collection from Supabase:", error);
+      });
+      supabase.from("tracks").update({ collection_id: "default" }).eq("collection_id", id).then(({ error }) => {
+        if (error) console.error("Failed to reassign collection tracks in Supabase:", error);
+      });
+    }
+  }, [user]);
+
+  const toggleRouteCollectionVisibility = useCallback((id: string) => {
+    let updatedVisible = false;
+    setRouteCollections((prev) =>
+      prev.map((c) => {
+        if (c.id === id) {
+          updatedVisible = !c.visible;
+          return { ...c, visible: updatedVisible };
+        }
+        return c;
+      })
+    );
+
+    if (user && isSupabaseConfigured) {
+      const target = routeCollections.find((c) => c.id === id);
+      if (target) {
+        supabase.from("route_collections").update({ visible: !target.visible }).eq("id", id).then(({ error }) => {
+          if (error) console.error("Failed to toggle route collection visibility in Supabase:", error);
+        });
+      }
+    }
+  }, [routeCollections, user]);
+
+  const setTrackCollection = useCallback((trackId: string, collectionId: string) => {
+    setTracks((prev) =>
+      prev.map((t) => (t.id === trackId ? { ...t, collectionId } : t))
+    );
+
+    if (user && isSupabaseConfigured) {
+      supabase.from("tracks").update({ collection_id: collectionId }).eq("id", trackId).then(({ error }) => {
+        if (error) console.error("Failed to update track collection in Supabase:", error);
+      });
+    }
+  }, [user]);
+
   return {
     routeName: activeRouteName,
     setRouteName,
@@ -1356,6 +1577,8 @@ export function useRoutePlanner(user: any | null = null) {
     setIsDrawing,
     snapToTrail,
     setSnapToTrail,
+    routingProfile,
+    setRoutingProfile,
     distance,
     ascent,
     descent,
@@ -1386,5 +1609,14 @@ export function useRoutePlanner(user: any | null = null) {
     updateWaypointGroup,
     toggleWaypointGroupVisibility,
     toggleWaypointCompleted,
+
+    // Route Collection additions
+    routeCollections,
+    setRouteCollections,
+    addRouteCollection,
+    deleteRouteCollection,
+    updateRouteCollection,
+    toggleRouteCollectionVisibility,
+    setTrackCollection,
   };
 }

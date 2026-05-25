@@ -30,11 +30,12 @@ import {
   LogOut,
   X,
   Settings,
+  Folder,
 } from "lucide-react";
 import { LayerSelector, type BaseLayerId } from "./LayerSelector";
 import { StatsPanel } from "./StatsPanel";
 import { parseGPX, exportToGPX } from "../utils/gpxExporter";
-import { LANDSCAPE_IMAGES, type Track } from "../hooks/useRoutePlanner";
+import { LANDSCAPE_IMAGES, type Track, type RouteCollection, type RoutingProfile } from "../hooks/useRoutePlanner";
 import { useCustomDialog } from "./CustomDialog";
 
 
@@ -53,6 +54,8 @@ interface SidebarProps {
   setIsSplitting: (splitting: boolean) => void;
   snapToTrail: boolean;
   setSnapToTrail: (snap: boolean) => void;
+  routingProfile: RoutingProfile;
+  setRoutingProfile: (profile: RoutingProfile) => void;
   distance: number;
   ascent: number;
   descent: number;
@@ -100,6 +103,14 @@ interface SidebarProps {
   onUpdateWaypointGroup: (id: string, group: { name?: string; description?: string; color?: string; visible?: boolean; image?: string }) => void;
   onToggleWaypointGroupVisibility: (id: string) => void;
   onToggleWaypointCompleted: (id: string) => void;
+
+  // Route Collections Props
+  routeCollections: RouteCollection[];
+  onAddRouteCollection: (collection: { id?: string; name: string; description: string; color: string; visible: boolean; image?: string }) => any;
+  onDeleteRouteCollection: (id: string) => void;
+  onUpdateRouteCollection: (id: string, collection: { name?: string; description?: string; color?: string; visible?: boolean; image?: string }) => void;
+  onToggleRouteCollectionVisibility: (id: string) => void;
+  onSetTrackCollection: (trackId: string, collectionId: string) => void;
 
   // OSM POI & JSON Bulk Import additions
   mapCenter: [number, number] | null;
@@ -152,6 +163,8 @@ export function Sidebar({
   setIsSplitting,
   snapToTrail,
   setSnapToTrail,
+  routingProfile,
+  setRoutingProfile,
   distance,
   ascent,
   descent,
@@ -183,6 +196,12 @@ export function Sidebar({
   onUpdateWaypointGroup,
   onToggleWaypointGroupVisibility,
   onToggleWaypointCompleted,
+  routeCollections,
+  onAddRouteCollection,
+  onDeleteRouteCollection,
+  onUpdateRouteCollection,
+  onToggleRouteCollectionVisibility,
+  onSetTrackCollection,
   mapCenter,
   osmPois,
   onSetOsmPois,
@@ -224,6 +243,15 @@ export function Sidebar({
   const [newGroupDesc, setNewGroupDesc] = useState("");
   const [newGroupColor, setNewGroupColor] = useState("#10b981");
   const [newGroupImage, setNewGroupImage] = useState("https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=400&q=80");
+
+  // Route Collections state
+  const [expandedCollectionId, setExpandedCollectionId] = useState<string | null>("default");
+  const [isCreatingCollection, setIsCreatingCollection] = useState(false);
+  const [editingCollectionId, setEditingCollectionId] = useState<string | null>(null);
+  const [newCollectionName, setNewCollectionName] = useState("");
+  const [newCollectionDesc, setNewCollectionDesc] = useState("");
+  const [newCollectionColor, setNewCollectionColor] = useState("#10b981");
+  const [newCollectionImage, setNewCollectionImage] = useState("https://images.unsplash.com/photo-1486873249359-2731bd6dafc7?auto=format&fit=crop&w=400&q=80");
 
   // OpenStreetMap POI Downloader states
   const [osmCategory, setOsmCategory] = useState("peak");
@@ -868,12 +896,12 @@ export function Sidebar({
           {activeTab === "route" && (
             <div className="space-y-5 animate-fade-in">
               
-              {/* SECTION 1: LIBRARY OF TRACKS */}
-              <div className="space-y-2.5">
+              {/* SECTION 1: LIBRARY OF TRACKS IN COLLECTIONS */}
+              <div className="space-y-3.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                      Biblioteca de Tracks ({displayTracks.length})
+                      Colecciones de Rutas ({routeCollections.length})
                     </h4>
                     {displayTracks.length > 0 && (
                       <button
@@ -913,126 +941,411 @@ export function Sidebar({
                   </div>
                 </div>
 
-                {displayTracks.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center p-6 border border-dashed border-[#1b3d2b]/40 rounded-xl text-center space-y-2 bg-[#0c120f]/50">
-                    <Route className="w-5 h-5 text-slate-600" />
-                    <span className="text-[11px] font-semibold text-slate-400">Biblioteca Vacía</span>
-                    <p className="text-[9px] text-slate-500">
-                      Importa un archivo GPX o inicia una nueva ruta para guardarla aquí.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
-                    {displayTracks.map((track) => {
-                      const isActive = track.id === activeTrackId;
-                      const isCheckedForMerge = selectedMergeIds.includes(track.id);
-                      return (
-                        <div
-                          key={track.id}
-                          className={`flex items-center justify-between p-2.5 rounded-xl border text-xs transition-all ${
-                            isActive
-                              ? "bg-emerald-500/[0.04] border-emerald-400/50"
-                              : "bg-[#0b100d] border-white/5 hover:border-white/10"
-                          }`}
-                        >
-                          {/* Left contents: checkbox for merge, color dot, visibility icon */}
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            {/* Merge checkbox */}
-                            <input
-                              type="checkbox"
-                              checked={isCheckedForMerge}
-                              onChange={() => handleToggleMergeSelect(track.id)}
-                              title="Seleccionar para unir tracks"
-                              className="w-3.5 h-3.5 accent-emerald-400 bg-black rounded border-[#1b3d2b] cursor-pointer"
-                            />
+                {/* ACTION BUTTON TOOLBAR */}
+                <div className="flex gap-2 w-full">
+                  <button
+                    onClick={() => {
+                      setIsCreatingCollection(!isCreatingCollection);
+                    }}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold border transition-all active:scale-95 cursor-pointer ${
+                      isCreatingCollection
+                        ? "bg-amber-500/20 border-amber-500/40 text-amber-300 shadow-[0_0_8px_rgba(245,158,11,0.15)]"
+                        : "bg-[#1c2921] border-[#1b3d2b] text-slate-300 hover:text-amber-400 hover:border-amber-500/25"
+                    }`}
+                  >
+                    📁 Nueva Carpeta
+                  </button>
+                  <button
+                    onClick={async () => {
+                      const name = await customPrompt("Introduce el nombre de la nueva ruta:", "Nueva Ruta");
+                      if (name) onCreateNewTrack(name, "default");
+                    }}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold border border-emerald-400/30 bg-emerald-500/[0.03] hover:bg-emerald-500/[0.08] text-emerald-300 hover:text-emerald-200 transition-all active:scale-95 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Nueva Ruta
+                  </button>
+                </div>
 
-                            {/* Color Selector (circular cycle color) */}
-                            <button
-                              onClick={() => handleCycleColor(track.id, track.color)}
-                              className="w-3.5 h-3.5 rounded-full shrink-0 border border-white/20 transition-transform active:scale-95"
-                              style={{ backgroundColor: track.color }}
-                              title="Hacer clic para cambiar color"
-                            />
+                {/* COLLECTION CREATOR/EDITOR FORM */}
+                {isCreatingCollection && (
+                  <div className="bg-[#0c120f]/80 border border-[#1b3d2b] rounded-xl p-4 space-y-3.5 shadow-inner animate-fade-in">
+                    <div className="flex items-center justify-between border-b border-[#1b3d2b]/20 pb-2">
+                      <span className="text-xs font-bold text-emerald-400">
+                        {editingCollectionId ? "Editar Colección" : "Crear Colección"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsCreatingCollection(false);
+                          setEditingCollectionId(null);
+                          setNewCollectionName("");
+                          setNewCollectionDesc("");
+                          setNewCollectionColor("#10b981");
+                          setNewCollectionImage("https://images.unsplash.com/photo-1486873249359-2731bd6dafc7?auto=format&fit=crop&w=400&q=80");
+                        }}
+                        className="text-xs text-slate-500 hover:text-slate-300"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
 
-                            {/* Visibility Eye icon */}
+                    {/* Collection Name */}
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+                        Nombre de la Colección
+                      </label>
+                      <input
+                        type="text"
+                        value={newCollectionName}
+                        onChange={(e) => setNewCollectionName(e.target.value)}
+                        placeholder="Ej. Pirineos 2026, Rutas del Domingo..."
+                        className="w-full bg-[#050807] border border-[#1b3d2b]/80 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition-colors"
+                        required
+                      />
+                    </div>
+
+                    {/* Collection Description */}
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+                        Descripción de la Colección
+                      </label>
+                      <textarea
+                        value={newCollectionDesc}
+                        onChange={(e) => setNewCollectionDesc(e.target.value)}
+                        placeholder="Ej. Rutas trazadas para el viaje de verano..."
+                        rows={2}
+                        className="w-full bg-[#050807] border border-[#1b3d2b]/80 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition-colors resize-none"
+                      />
+                    </div>
+
+                    {/* Collection Color Selection */}
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+                        Color de Identificación
+                      </label>
+                      <div className="flex gap-2">
+                        {[
+                          { value: "#10b981", name: "Esmeralda" },
+                          { value: "#3b82f6", name: "Azul" },
+                          { value: "#ef4444", name: "Rojo" },
+                          { value: "#f59e0b", name: "Ámbar" },
+                          { value: "#8b5cf6", name: "Violeta" },
+                          { value: "#ec4899", name: "Rosa" },
+                        ].map((c) => {
+                          const isSelected = newCollectionColor === c.value;
+                          return (
                             <button
-                              onClick={() => onToggleTrackVisibility(track.id)}
-                              className="text-slate-400 hover:text-slate-200 transition-colors"
-                              title={track.visible ? "Ocultar en mapa" : "Mostrar en mapa"}
+                              key={c.value}
+                              type="button"
+                              onClick={() => setNewCollectionColor(c.value)}
+                              title={c.name}
+                              className={`w-6 h-6 rounded-full flex items-center justify-center transition-transform hover:scale-110 cursor-pointer ${
+                                isSelected ? "ring-2 ring-emerald-400 ring-offset-2 ring-offset-[#0c120f]" : ""
+                              }`}
+                              style={{ backgroundColor: c.value }}
                             >
-                              {track.visible ? (
+                              {isSelected && (
+                                <span className="w-1.5 h-1.5 bg-white rounded-full" />
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Collection Cover Catalog Selector */}
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+                        Imagen de Portada (Paisaje)
+                      </label>
+                      <div className="grid grid-cols-4 gap-1.5 max-h-[85px] overflow-y-auto pr-1">
+                        {LANDSCAPE_IMAGES.map((img) => {
+                          const isSelected = newCollectionImage === img.url;
+                          return (
+                            <button
+                              key={img.id}
+                              type="button"
+                              onClick={() => setNewCollectionImage(img.url)}
+                              title={img.name}
+                              className={`relative h-10 rounded-lg overflow-hidden border transition-all hover:scale-105 active:scale-95 flex items-center justify-center cursor-pointer ${
+                                isSelected ? "border-emerald-400 ring-2 ring-emerald-400/40" : "border-white/5"
+                              }`}
+                            >
+                              <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
+                              <div className="absolute inset-0 bg-black/40 hover:bg-black/20 transition-colors" />
+                              <span className="absolute bottom-0.5 left-0.5 right-0.5 text-[7px] leading-tight text-center truncate font-bold text-white bg-black/50 rounded py-0.5 font-sans">
+                                {img.name}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Form Action */}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!newCollectionName.trim()) {
+                          await customAlert("Por favor, introduce un nombre para la colección.");
+                          return;
+                        }
+                        if (editingCollectionId) {
+                          onUpdateRouteCollection(editingCollectionId, {
+                            name: newCollectionName.trim(),
+                            description: newCollectionDesc.trim(),
+                            color: newCollectionColor,
+                            image: newCollectionImage,
+                          });
+                        } else {
+                          onAddRouteCollection({
+                            name: newCollectionName.trim(),
+                            description: newCollectionDesc.trim(),
+                            color: newCollectionColor,
+                            visible: true,
+                            image: newCollectionImage,
+                          });
+                        }
+                        setNewCollectionName("");
+                        setNewCollectionDesc("");
+                        setNewCollectionColor("#10b981");
+                        setNewCollectionImage("https://images.unsplash.com/photo-1486873249359-2731bd6dafc7?auto=format&fit=crop&w=400&q=80");
+                        setEditingCollectionId(null);
+                        setIsCreatingCollection(false);
+                      }}
+                      className="w-full py-2 bg-emerald-400 hover:bg-emerald-300 text-black text-xs font-bold rounded-lg transition-colors shadow-lg shadow-emerald-400/10 cursor-pointer"
+                    >
+                      {editingCollectionId ? "Guardar Cambios" : "Guardar Colección"}
+                    </button>
+                  </div>
+                )}
+
+                {/* ACCORDION COLLECTIONS LIST */}
+                <div className="space-y-3.5">
+                  {routeCollections.map((collection) => {
+                    const isExpanded = expandedCollectionId === collection.id;
+                    
+                    // Filter tracks belonging to this collection
+                    const collectionTracks = displayTracks.filter((t) => {
+                      if (collection.id === "default") {
+                        return !t.collectionId || t.collectionId === "default";
+                      }
+                      return t.collectionId === collection.id;
+                    });
+
+                    const totalCount = collectionTracks.length;
+                    
+                    // Calculate total distance of tracks in this collection
+                    const totalDistance = collectionTracks.reduce((acc, t) => {
+                      if (t.points.length === 0) return acc;
+                      return acc + t.points[t.points.length - 1].distance;
+                    }, 0);
+
+                    return (
+                      <div
+                        key={collection.id}
+                        className="relative border border-[#1b3d2b]/40 rounded-xl overflow-hidden bg-[#1c2921]/45 hover:bg-[#1c2921]/55 transition-all duration-300 shadow-md"
+                      >
+                        {/* Accordion Header */}
+                        <div
+                          onClick={() => setExpandedCollectionId(isExpanded ? null : collection.id)}
+                          className="relative flex items-center justify-between p-3.5 transition-colors cursor-pointer gap-2.5 min-h-[58px]"
+                          style={{ borderLeft: `4px solid ${collection.color}` }}
+                        >
+                          {/* Full-height Left Fading Cover Image */}
+                          {collection.image && (
+                            <div className="absolute inset-y-0 left-0 w-36 overflow-hidden pointer-events-none select-none">
+                              <img
+                                src={collection.image}
+                                alt=""
+                                className="w-full h-full object-cover opacity-25"
+                              />
+                              {/* Sleek fade out gradient mask towards the interior (right) */}
+                              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#1c2921]/85 to-[#1c2921]" />
+                            </div>
+                          )}
+
+                          {/* Text and Info Content */}
+                          <div className="relative z-10 flex-1 min-w-0 pr-1 pl-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-bold text-slate-100 truncate shadow-sm">
+                                {collection.name}
+                              </span>
+                            </div>
+                            
+                            {/* Short Metrics */}
+                            <div className="flex items-center gap-2 mt-0.5 text-[9px] text-slate-400 font-semibold uppercase tracking-wider select-none">
+                              <span>
+                                {totalCount} {totalCount === 1 ? "ruta" : "rutas"}
+                              </span>
+                              {totalCount > 0 && (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-emerald-400">
+                                    {useImperial ? `${Math.round(totalDistance * 0.621371)} mi` : `${totalDistance.toFixed(1)} km`}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Visibility, Edit & Delete icons */}
+                          <div className="relative z-10 flex items-center gap-2 shrink-0 pl-2 border-l border-white/5">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onToggleRouteCollectionVisibility(collection.id);
+                              }}
+                              className="text-slate-400 hover:text-slate-200 p-0.5 rounded transition-colors cursor-pointer"
+                              title={collection.visible ? "Ocultar rutas de la colección en el mapa" : "Mostrar rutas de la colección en el mapa"}
+                            >
+                              {collection.visible ? (
                                 <Eye className="w-3.5 h-3.5 text-emerald-400" />
                               ) : (
                                 <EyeOff className="w-3.5 h-3.5 text-slate-600" />
                               )}
                             </button>
 
-                            {/* Track Name */}
-                            <span
-                              onClick={() => setActiveTrackId(track.id)}
-                              className={`truncate cursor-pointer hover:underline ${
-                                isActive ? "font-bold text-emerald-300" : "text-slate-300"
-                              }`}
-                            >
-                              {track.name}
-                            </span>
-                          </div>
+                            {collection.id !== "default" && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingCollectionId(collection.id);
+                                    setNewCollectionName(collection.name);
+                                    setNewCollectionDesc(collection.description);
+                                    setNewCollectionColor(collection.color);
+                                    setNewCollectionImage(collection.image || "https://images.unsplash.com/photo-1486873249359-2731bd6dafc7?auto=format&fit=crop&w=400&q=80");
+                                    setIsCreatingCollection(true);
+                                  }}
+                                  className="text-slate-400 hover:text-slate-200 p-0.5 rounded transition-colors cursor-pointer"
+                                  title="Editar Colección"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
 
-                          {/* Right actions: pencil (activate edit) and trash */}
-                          <div className="flex items-center gap-2 shrink-0">
-                            {/* Edit Pencil icon */}
-                            <button
-                              onClick={() => {
-                                setActiveTrackId(track.id);
-                                if (track.points.length > 0) {
-                                  // Auto focus map to the track
-                                  onFlyToCoords(track.points[0].lat, track.points[0].lng);
-                                }
-                              }}
-                              className={`p-1 rounded-lg transition-colors ${
-                                isActive
-                                  ? "bg-emerald-500/10 text-emerald-300"
-                                  : "text-slate-500 hover:text-slate-300 hover:bg-white/5"
-                              }`}
-                              title="Habilitar edición de esta ruta"
-                            >
-                              <Edit2 className="w-3 h-3" />
-                            </button>
-
-                            {/* Delete icon */}
-                            <button
-                              onClick={async () => {
-                                if (
-                                  await customConfirm(`¿Seguro que deseas eliminar la ruta "${track.name}" de la biblioteca?`)
-                                ) {
-                                  onDeleteTrack(track.id);
-                                }
-                              }}
-                              className="text-slate-500 hover:text-red-400 p-1 rounded-lg hover:bg-white/5 transition-colors"
-                              title="Eliminar de la biblioteca"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
+                                <button
+                                  type="button"
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    if (await customConfirm(`¿Seguro que deseas eliminar la colección "${collection.name}"? Las rutas se conservarán y se moverán a "Mis Rutas".`)) {
+                                      onDeleteRouteCollection(collection.id);
+                                    }
+                                  }}
+                                  className="text-slate-400 hover:text-red-400 p-0.5 rounded transition-colors cursor-pointer"
+                                  title="Eliminar Colección (Mueve rutas a Mis Rutas)"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </>
+                            )}
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
 
-              {/* ACTION TOOLBAR */}
-              <div className="border-t border-[#1b3d2b]/40 pt-4 flex gap-2">
-                <button
-                  onClick={async () => {
-                    const name = await customPrompt("Introduce el nombre de la nueva ruta:", "Nueva Ruta");
-                    if (name) onCreateNewTrack(name);
-                  }}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-emerald-400/30 bg-emerald-500/[0.03] hover:bg-emerald-500/[0.08] text-emerald-300 hover:text-emerald-200 transition-colors text-xs font-semibold"
-                >
-                  <Plus className="w-4 h-4" />
-                  Nueva Ruta
-                </button>
+                        {/* Accordion Content: List of Tracks inside this collection */}
+                        {isExpanded && (
+                          <div className="border-t border-[#1b3d2b]/25 bg-[#0a0f0d]/60 p-2 space-y-1.5 animate-slide-in-top">
+                            {collection.description && (
+                              <p className="text-[10px] text-slate-400 px-2.5 py-1.5 bg-black/10 rounded-lg italic">
+                                {collection.description}
+                              </p>
+                            )}
+
+                            {collectionTracks.length === 0 ? (
+                              <p className="text-[10px] text-slate-500 italic p-3 text-center">
+                                No hay rutas en esta colección. Usa el selector de la ruta activa para mover rutas aquí.
+                              </p>
+                            ) : (
+                              collectionTracks.map((track) => {
+                                const isActive = track.id === activeTrackId;
+                                const isCheckedForMerge = selectedMergeIds.includes(track.id);
+                                return (
+                                  <div
+                                    key={track.id}
+                                    className={`flex items-center justify-between p-2 rounded-lg border text-[11px] transition-all ${
+                                      isActive
+                                        ? "bg-emerald-500/[0.04] border-emerald-400/35"
+                                        : "bg-[#0c120f] border-white/5 hover:border-white/10"
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <input
+                                        type="checkbox"
+                                        checked={isCheckedForMerge}
+                                        onChange={() => handleToggleMergeSelect(track.id)}
+                                        title="Seleccionar para unir"
+                                        className="w-3 h-3 accent-emerald-400 bg-black rounded border-[#1b3d2b] cursor-pointer"
+                                      />
+                                      <button
+                                        onClick={() => handleCycleColor(track.id, track.color)}
+                                        className="w-2.5 h-2.5 rounded-full shrink-0 border border-white/20 transition-transform active:scale-95"
+                                        style={{ backgroundColor: track.color }}
+                                        title="Hacer clic para cambiar color"
+                                      />
+                                      <button
+                                        onClick={() => onToggleTrackVisibility(track.id)}
+                                        className="text-slate-400 hover:text-slate-200 transition-colors"
+                                        title={track.visible ? "Ocultar en mapa" : "Mostrar en mapa"}
+                                      >
+                                        {track.visible ? (
+                                          <Eye className="w-3 h-3 text-emerald-400" />
+                                        ) : (
+                                          <EyeOff className="w-3 h-3 text-slate-600" />
+                                        )}
+                                      </button>
+                                      <span
+                                        onClick={() => setActiveTrackId(track.id)}
+                                        className={`truncate cursor-pointer hover:underline ${
+                                          isActive ? "font-bold text-emerald-300" : "text-slate-300"
+                                        }`}
+                                      >
+                                        {track.name}
+                                      </span>
+                                    </div>
+
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      <button
+                                        onClick={() => {
+                                          setActiveTrackId(track.id);
+                                          if (track.points.length > 0) {
+                                            onFlyToCoords(track.points[0].lat, track.points[0].lng);
+                                          }
+                                        }}
+                                        className={`p-1 rounded transition-colors ${
+                                          isActive
+                                            ? "bg-emerald-500/10 text-emerald-300"
+                                            : "text-slate-500 hover:text-slate-300 hover:bg-white/5"
+                                        }`}
+                                        title="Habilitar edición de esta ruta"
+                                      >
+                                        <Edit2 className="w-2.5 h-2.5" />
+                                      </button>
+
+                                      <button
+                                        onClick={async () => {
+                                          if (await customConfirm(`¿Seguro que deseas eliminar la ruta "${track.name}"?`)) {
+                                            onDeleteTrack(track.id);
+                                          }
+                                        }}
+                                        className="text-slate-500 hover:text-red-400 p-1 rounded hover:bg-white/5 transition-colors"
+                                        title="Eliminar de la biblioteca"
+                                      >
+                                        <Trash2 className="w-2.5 h-2.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* SECTION 2: EDITING CONTROLS FOR ACTIVE ROUTE */}
@@ -1059,6 +1372,36 @@ export function Sidebar({
                       className="w-full bg-[#0a0f0d]/80 border border-[#1b3d2b] rounded-xl px-4 py-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 transition-colors"
                     />
                   </div>
+
+                  {/* Collection Selector */}
+                  {routeCollections.length > 0 && (
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                        <Folder className="w-3 h-3" />
+                        Colección
+                      </label>
+                      <select
+                        value={tracks.find(t => t.id === activeTrackId)?.collectionId || "default"}
+                        onChange={(e) => {
+                          if (activeTrackId) {
+                            onSetTrackCollection(activeTrackId, e.target.value);
+                          }
+                        }}
+                        className="w-full bg-[#0a0f0d]/80 border border-[#1b3d2b] rounded-xl px-4 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-emerald-400 transition-colors appearance-none cursor-pointer"
+                        style={{
+                          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
+                          backgroundRepeat: 'no-repeat',
+                          backgroundPosition: 'right 12px center',
+                        }}
+                      >
+                        {routeCollections.map((col) => (
+                          <option key={col.id} value={col.id} style={{ backgroundColor: '#0c120f', color: '#e2e8f0' }}>
+                            {col.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
                   {/* Drawing Actions */}
                   <div className="space-y-3">
@@ -1124,29 +1467,33 @@ export function Sidebar({
                       </p>
                     )}
 
-                    {/* Snap to trail */}
-                    <div className="flex items-center justify-between p-3 rounded-xl bg-[#0b100d] border border-white/5">
-                      <div className="space-y-0.5">
-                        <span className="text-xs font-semibold text-slate-200">
-                          Ajustar a Senderos
-                        </span>
-                        <p className="text-[10px] text-slate-500">
-                          Ruta inteligente guiada por caminos.
-                        </p>
+                    {/* Modo de Enrutamiento */}
+                    <div className="space-y-2">
+                      <span className="text-xs font-semibold text-slate-200">Modo de Ruta</span>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {([
+                          { id: 'hike' as RoutingProfile, label: 'Senderismo', emoji: '🥾' },
+                          { id: 'cycle' as RoutingProfile, label: 'Ciclismo', emoji: '🚴' },
+                          { id: 'drive' as RoutingProfile, label: 'Vehículo', emoji: '🚗' },
+                          { id: 'straight' as RoutingProfile, label: 'Línea Recta', emoji: '📏' },
+                        ]).map((mode) => (
+                          <button
+                            key={mode.id}
+                            onClick={() => setRoutingProfile(mode.id)}
+                            className={`flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl text-center transition-all border ${
+                              routingProfile === mode.id
+                                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.15)]'
+                                : 'bg-[#0b100d] border-white/5 text-slate-400 hover:text-slate-200 hover:border-white/10'
+                            }`}
+                          >
+                            <span className="text-lg">{mode.emoji}</span>
+                            <span className="text-[8px] font-bold uppercase tracking-wider leading-none">{mode.label}</span>
+                          </button>
+                        ))}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setSnapToTrail(!snapToTrail)}
-                        className={`w-10 h-6 flex items-center rounded-full p-0.5 transition-colors duration-200 focus:outline-none ${
-                          snapToTrail ? "bg-emerald-400 justify-end" : "bg-[#18231e] justify-start"
-                        }`}
-                      >
-                        <span
-                          className={`w-5 h-5 rounded-full shadow-md transform duration-200 ${
-                            snapToTrail ? "bg-black" : "bg-slate-400"
-                          }`}
-                        />
-                      </button>
+                      <p className="text-[10px] text-slate-500 text-center">
+                        {routingProfile === 'straight' ? 'Línea recta punto a punto sin enrutamiento.' : `Enrutamiento inteligente por ${routingProfile === 'hike' ? 'senderos y caminos de montaña' : routingProfile === 'cycle' ? 'rutas ciclables y pistas' : 'carreteras y pistas para vehículos'}.`}
+                      </p>
                     </div>
                   </div>
 

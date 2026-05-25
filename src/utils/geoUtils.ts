@@ -378,3 +378,189 @@ export function convertUtmToLatLng(
 
   return [latRad * 180 / Math.PI, lngRad * 180 / Math.PI];
 }
+
+/**
+ * Result of parsing a coordinate input string.
+ */
+export interface ParsedCoordinate {
+  lat: number;
+  lng: number;
+  format: "dd" | "ddm" | "dms" | "utm" | "mgrs";
+  label: string; // Human-readable label for the detected format
+}
+
+/**
+ * Attempts to parse a user-entered text string as geographic coordinates.
+ * Supports the following formats:
+ * - DD (Decimal Degrees): "43.1906, -4.8322" or "43.1906 -4.8322"
+ * - DDM (Degrees Decimal Minutes): "43° 11.436' N, 4° 49.932' W"
+ * - DMS (Degrees Minutes Seconds): "43° 11' 26\" N, 4° 49' 56\" W"
+ * - UTM: "30T 432240 4782350" or "30T 432240E 4782350N"
+ * - MGRS: "30TXN28579240" or "30TXN 28579 79240"
+ *
+ * Returns null if the input does not match any known coordinate format.
+ */
+export function parseCoordinateInput(input: string): ParsedCoordinate | null {
+  const trimmed = input.trim();
+  if (!trimmed || trimmed.length < 3) return null;
+
+  // 1. Try DD (Decimal Degrees): "43.1906, -4.8322" or "43.1906 -4.8322"
+  const ddRegex = /^(-?\d{1,3}(?:\.\d+)?)\s*[,;\s]\s*(-?\d{1,3}(?:\.\d+)?)$/;
+  const ddMatch = trimmed.match(ddRegex);
+  if (ddMatch) {
+    const lat = parseFloat(ddMatch[1]);
+    const lng = parseFloat(ddMatch[2]);
+    if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+      return { lat, lng, format: "dd", label: `DD: ${lat.toFixed(5)}, ${lng.toFixed(5)}` };
+    }
+  }
+
+  // 2. Try DMS (Degrees Minutes Seconds): "43° 11' 26" N, 4° 49' 56" W" (flexible separators)
+  const dmsRegex = /(\d{1,3})\s*[°º]\s*(\d{1,2})\s*['′]\s*([\d.]+)\s*["″]?\s*([NSns])\s*[,;\s]+\s*(\d{1,3})\s*[°º]\s*(\d{1,2})\s*['′]\s*([\d.]+)\s*["″]?\s*([EWOewo])/;
+  const dmsMatch = trimmed.match(dmsRegex);
+  if (dmsMatch) {
+    const latDeg = parseInt(dmsMatch[1]);
+    const latMin = parseInt(dmsMatch[2]);
+    const latSec = parseFloat(dmsMatch[3]);
+    const latDir = dmsMatch[4].toUpperCase();
+    const lngDeg = parseInt(dmsMatch[5]);
+    const lngMin = parseInt(dmsMatch[6]);
+    const lngSec = parseFloat(dmsMatch[7]);
+    const lngDir = dmsMatch[8].toUpperCase();
+
+    let lat = latDeg + latMin / 60 + latSec / 3600;
+    let lng = lngDeg + lngMin / 60 + lngSec / 3600;
+    if (latDir === "S") lat = -lat;
+    if (lngDir === "W" || lngDir === "O") lng = -lng;
+
+    if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+      return { lat, lng, format: "dms", label: `DMS: ${latDeg}°${latMin}'${latSec}"${latDir}, ${lngDeg}°${lngMin}'${lngSec}"${lngDir}` };
+    }
+  }
+
+  // 3. Try DDM (Degrees Decimal Minutes): "43° 11.436' N, 4° 49.932' W"
+  const ddmRegex = /(\d{1,3})\s*[°º]\s*([\d.]+)\s*['′]?\s*([NSns])\s*[,;\s]+\s*(\d{1,3})\s*[°º]\s*([\d.]+)\s*['′]?\s*([EWOewo])/;
+  const ddmMatch = trimmed.match(ddmRegex);
+  if (ddmMatch) {
+    const latDeg = parseInt(ddmMatch[1]);
+    const latMin = parseFloat(ddmMatch[2]);
+    const latDir = ddmMatch[3].toUpperCase();
+    const lngDeg = parseInt(ddmMatch[4]);
+    const lngMin = parseFloat(ddmMatch[5]);
+    const lngDir = ddmMatch[6].toUpperCase();
+
+    let lat = latDeg + latMin / 60;
+    let lng = lngDeg + lngMin / 60;
+    if (latDir === "S") lat = -lat;
+    if (lngDir === "W" || lngDir === "O") lng = -lng;
+
+    if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+      return { lat, lng, format: "ddm", label: `DDM: ${latDeg}° ${latMin.toFixed(3)}' ${latDir}, ${lngDeg}° ${lngMin.toFixed(3)}' ${lngDir}` };
+    }
+  }
+
+  // 4. Try UTM: "30T 432240 4782350" or "30T 432240E 4782350N" or "30 T 432240 4782350"
+  const utmRegex = /^(\d{1,2})\s*([C-X])\s+(\d{5,7})\s*E?\s+(\d{5,8})\s*N?\s*$/i;
+  const utmMatch = trimmed.match(utmRegex);
+  if (utmMatch) {
+    const zone = parseInt(utmMatch[1]);
+    const bandLetter = utmMatch[2].toUpperCase();
+    const easting = parseFloat(utmMatch[3]);
+    const northing = parseFloat(utmMatch[4]);
+
+    if (zone >= 1 && zone <= 60 && easting >= 100000 && easting <= 999999) {
+      const southernHemisphere = bandLetter < "N";
+      try {
+        const [lat, lng] = convertUtmToLatLng(easting, northing, zone, southernHemisphere);
+        if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 && !isNaN(lat) && !isNaN(lng)) {
+          return { lat, lng, format: "utm", label: `UTM: ${zone}${bandLetter} ${Math.round(easting)}E ${Math.round(northing)}N` };
+        }
+      } catch {
+        // Invalid UTM, continue
+      }
+    }
+  }
+
+  // 5. Try MGRS: "30TXN28579240" or "30TXN 28579 79240" or "30T XN 28579 79240"
+  const mgrsRegex = /^(\d{1,2})\s*([C-X])\s*([A-HJ-NP-Z])([A-HJ-NP-V])\s*(\d{2,10})$/i;
+  const mgrsClean = trimmed.replace(/\s+/g, "");
+  const mgrsMatch = mgrsClean.match(mgrsRegex);
+  if (mgrsMatch) {
+    const zone = parseInt(mgrsMatch[1]);
+    const bandLetter = mgrsMatch[2].toUpperCase();
+    const colLetter = mgrsMatch[3].toUpperCase();
+    const rowLetter = mgrsMatch[4].toUpperCase();
+    const numericPart = mgrsMatch[5];
+
+    // The numeric part should have even number of digits, split in half for easting/northing
+    if (numericPart.length >= 2 && numericPart.length <= 10 && numericPart.length % 2 === 0) {
+      const halfLen = numericPart.length / 2;
+      const eastingStr = numericPart.substring(0, halfLen);
+      const northingStr = numericPart.substring(halfLen);
+
+      // Pad to 5 digits (100m precision if shorter)
+      const precision = Math.pow(10, 5 - halfLen);
+      const e100k = parseInt(eastingStr) * precision;
+      const n100k = parseInt(northingStr) * precision;
+
+      // Resolve 100km column letter to easting offset
+      const colLetterSets = [
+        "STUVWXYZ", // set 1 (zones 1,4,7,...)
+        "ABCDEFGH", // set 2 (zones 2,5,8,...)
+        "JKLMNPQR", // set 3 (zones 3,6,9,...)
+      ];
+      const zone3Group = zone % 3;
+      const colLetterGroup = colLetterSets[zone3Group === 0 ? 2 : zone3Group - 1];
+      const colIdx = colLetterGroup.indexOf(colLetter);
+      if (colIdx === -1) return null;
+      const easting100k = (colIdx + 1) * 100000;
+
+      // Resolve row letter to northing offset
+      const rowLetters = "ABCDEFGHJKLMNPQRSTUV";
+      const rowGroup = zone % 2;
+      let rowIdx = rowLetters.indexOf(rowLetter);
+      if (rowIdx === -1) return null;
+
+      // Adjust for row base (even zones offset by 5)
+      const rowBase = rowGroup === 1 ? 0 : 5;
+      rowIdx = (rowIdx - rowBase + 20) % 20;
+      let northing100k = rowIdx * 100000;
+
+      // Handle northing wrapping for the band letter
+      const southernHemisphere = bandLetter < "N";
+      
+      // Approximate the northing based on the band letter
+      const bandLetters = "CDEFGHJKLMNPQRSTUVWX";
+      const bandIdx = bandLetters.indexOf(bandLetter);
+      if (bandIdx === -1) return null;
+      const approxLat = -80 + bandIdx * 8;
+      
+      // Estimate the full northing
+      const approxNorthing = southernHemisphere
+        ? (approxLat + 80) * 111320
+        : approxLat * 111320;
+      
+      // Find the correct 100km northing cycle
+      const northingCycle = Math.round(approxNorthing / 2000000) * 2000000;
+      northing100k += northingCycle;
+
+      const fullEasting = easting100k + e100k;
+      let fullNorthing = northing100k + n100k;
+
+      if (southernHemisphere) {
+        fullNorthing += 10000000;
+      }
+
+      try {
+        const [lat, lng] = convertUtmToLatLng(fullEasting, fullNorthing, zone, southernHemisphere);
+        if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 && !isNaN(lat) && !isNaN(lng)) {
+          return { lat, lng, format: "mgrs", label: `MGRS: ${zone}${bandLetter}${colLetter}${rowLetter} ${eastingStr} ${northingStr}` };
+        }
+      } catch {
+        // Invalid MGRS conversion
+      }
+    }
+  }
+
+  return null;
+}
