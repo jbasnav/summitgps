@@ -83,6 +83,7 @@ interface SidebarProps {
   waypointGroups: any[];
   onAddWaypointGroup: (group: { name: string; description: string; color: string; visible: boolean; image?: string }) => void;
   onDeleteWaypointGroup: (id: string) => void;
+  onUpdateWaypointGroup: (id: string, group: { name?: string; description?: string; color?: string; visible?: boolean; image?: string }) => void;
   onToggleWaypointGroupVisibility: (id: string) => void;
   onToggleWaypointCompleted: (id: string) => void;
 
@@ -147,6 +148,7 @@ export function Sidebar({
   waypointGroups,
   onAddWaypointGroup,
   onDeleteWaypointGroup,
+  onUpdateWaypointGroup,
   onToggleWaypointGroupVisibility,
   onToggleWaypointCompleted,
   mapCenter,
@@ -164,6 +166,7 @@ export function Sidebar({
   // Waypoint Groups / Challenges state
   const [expandedGroupId, setExpandedGroupId] = useState<string | null>("default");
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [isOsmSearchOpen, setIsOsmSearchOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupDesc, setNewGroupDesc] = useState("");
@@ -967,14 +970,23 @@ export function Sidebar({
                   </div>
                 )}
 
-                {/* 2. CHALLENGE CREATOR FORM */}
+                {/* 2. CHALLENGE CREATOR/EDITOR FORM */}
                 {isCreatingGroup && (
                   <div className="bg-[#0c120f]/80 border border-[#1b3d2b] rounded-xl p-4 space-y-3.5 shadow-inner animate-fade-in">
                     <div className="flex items-center justify-between border-b border-[#1b3d2b]/20 pb-2">
-                      <span className="text-xs font-bold text-emerald-400">Crear Carpeta / Reto</span>
+                      <span className="text-xs font-bold text-emerald-400">
+                        {editingGroupId ? "Editar Carpeta / Reto" : "Crear Carpeta / Reto"}
+                      </span>
                       <button
                         type="button"
-                        onClick={() => setIsCreatingGroup(false)}
+                        onClick={() => {
+                          setIsCreatingGroup(false);
+                          setEditingGroupId(null);
+                          setNewGroupName("");
+                          setNewGroupDesc("");
+                          setNewGroupColor("#10b981");
+                          setNewGroupImage("https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=400&q=80");
+                        }}
                         className="text-xs text-slate-500 hover:text-slate-300"
                       >
                         Cancelar
@@ -1082,22 +1094,32 @@ export function Sidebar({
                           alert("Por favor, introduce un nombre para el grupo.");
                           return;
                         }
-                        onAddWaypointGroup({
-                          name: newGroupName.trim(),
-                          description: newGroupDesc.trim(),
-                          color: newGroupColor,
-                          visible: true,
-                          image: newGroupImage,
-                        });
+                        if (editingGroupId) {
+                          onUpdateWaypointGroup(editingGroupId, {
+                            name: newGroupName.trim(),
+                            description: newGroupDesc.trim(),
+                            color: newGroupColor,
+                            image: newGroupImage,
+                          });
+                        } else {
+                          onAddWaypointGroup({
+                            name: newGroupName.trim(),
+                            description: newGroupDesc.trim(),
+                            color: newGroupColor,
+                            visible: true,
+                            image: newGroupImage,
+                          });
+                        }
                         setNewGroupName("");
                         setNewGroupDesc("");
                         setNewGroupColor("#10b981");
                         setNewGroupImage("https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=400&q=80");
+                        setEditingGroupId(null);
                         setIsCreatingGroup(false);
                       }}
                       className="w-full py-2 bg-emerald-400 hover:bg-emerald-300 text-black text-xs font-bold rounded-lg transition-colors shadow-lg shadow-emerald-400/10 cursor-pointer"
                     >
-                      Guardar Reto / Carpeta
+                      {editingGroupId ? "Guardar Cambios" : "Guardar Reto / Carpeta"}
                     </button>
                   </div>
                 )}
@@ -1193,6 +1215,30 @@ export function Sidebar({
                                 <EyeOff className="w-3.5 h-3.5 text-slate-600" />
                               )}
                             </button>
+
+                            {group.id !== "default" && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingGroupId(group.id);
+                                  setNewGroupName(group.name);
+                                  setNewGroupDesc(group.description || "");
+                                  setNewGroupColor(group.color);
+                                  setNewGroupImage(group.image || "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=400&q=80");
+                                  setIsCreatingGroup(true);
+                                  if (isOsmSearchOpen) setIsOsmSearchOpen(false);
+                                }}
+                                className={`p-0.5 rounded transition-colors cursor-pointer ${
+                                  editingGroupId === group.id
+                                    ? "text-emerald-400 bg-emerald-500/10"
+                                    : "text-slate-500 hover:text-emerald-400"
+                                }`}
+                                title="Editar reto"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
 
                             {group.id !== "default" && (
                               <button

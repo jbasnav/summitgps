@@ -43,6 +43,7 @@ export default function App() {
     waypointGroups,
     addWaypointGroup,
     deleteWaypointGroup,
+    updateWaypointGroup,
     toggleWaypointGroupVisibility,
     toggleWaypointCompleted,
   } = useRoutePlanner();
@@ -210,6 +211,7 @@ export default function App() {
         waypointGroups={waypointGroups}
         onAddWaypointGroup={addWaypointGroup}
         onDeleteWaypointGroup={deleteWaypointGroup}
+        onUpdateWaypointGroup={updateWaypointGroup}
         onToggleWaypointGroupVisibility={toggleWaypointGroupVisibility}
         onToggleWaypointCompleted={toggleWaypointCompleted}
         mapCenter={mapCenter}

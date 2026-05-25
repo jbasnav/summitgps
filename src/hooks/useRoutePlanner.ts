@@ -458,6 +458,12 @@ export function useRoutePlanner() {
     setWaypointGroups((prev) => [...prev, newGroup]);
   }, []);
 
+  const updateWaypointGroup = useCallback((id: string, fields: Partial<WaypointGroup>) => {
+    setWaypointGroups((prev) =>
+      prev.map((g) => (g.id === id ? { ...g, ...fields } : g))
+    );
+  }, []);
+
   const deleteWaypointGroup = useCallback((id: string) => {
     if (id === "default") return; // Keep default group
     
@@ -726,6 +732,7 @@ export function useRoutePlanner() {
     setWaypointGroups,
     addWaypointGroup,
     deleteWaypointGroup,
+    updateWaypointGroup,
     toggleWaypointGroupVisibility,
     toggleWaypointCompleted,
   };
