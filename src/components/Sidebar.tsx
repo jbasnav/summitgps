@@ -185,7 +185,7 @@ export function Sidebar({
   const [selectedMergeIds, setSelectedMergeIds] = useState<string[]>([]);
 
   // Waypoint Groups / Challenges state
-  const [expandedGroupId, setExpandedGroupId] = useState<string | null>("default");
+  const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [isOsmSearchOpen, setIsOsmSearchOpen] = useState(false);
@@ -372,6 +372,7 @@ export function Sidebar({
           
           const newGroupId = `group-${Date.now()}`;
           onAddWaypointGroup({
+            id: newGroupId,
             name: createdGroupName,
             description: `Importado de OpenStreetMap (${parsedData.elements.length} nodos)`,
             color: "#3b82f6",
@@ -412,6 +413,7 @@ export function Sidebar({
           createdGroupName = parsedData.name;
           const newGroupId = `group-${Date.now()}`;
           onAddWaypointGroup({
+            id: newGroupId,
             name: parsedData.name,
             description: parsedData.description || "Reto importado",
             color: parsedData.color || "#10b981",
@@ -443,6 +445,7 @@ export function Sidebar({
           createdGroupName = file.name.replace(".json", "");
           const newGroupId = `group-${Date.now()}`;
           onAddWaypointGroup({
+            id: newGroupId,
             name: createdGroupName,
             description: isGailurrakUtm 
               ? `Reto de ${parsedData.length} cimas importadas con coordenadas UTM ETRS89.`

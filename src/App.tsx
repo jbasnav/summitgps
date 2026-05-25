@@ -55,9 +55,9 @@ export default function App() {
   } = useRoutePlanner(user);
 
   // App settings states
-  const [activeBaseLayer, setActiveBaseLayer] = useState<BaseLayerId>("opentopo");
+  const [activeBaseLayer, setActiveBaseLayer] = useState<BaseLayerId>("osm");
   const [overlayOpacity, setOverlayOpacity] = useState<number>(0.4);
-  const [showContours, setShowContours] = useState<boolean>(true);
+  const [showContours, setShowContours] = useState<boolean>(false);
   const [useImperial, setUseImperial] = useState<boolean>(false);
 
   // Synchronization and Viewport states
