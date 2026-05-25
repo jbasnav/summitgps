@@ -79,14 +79,15 @@ export function MapContainer({
     
     L.control.zoom({ position: "bottomright" }).addTo(map);
 
-    // Initial base layer
-    const baseLayer = L.tileLayer(TILE_LAYERS[activeBaseLayer], { maxZoom: 19 }).addTo(map);
+    // Initial base layer (low zIndex so it stays underneath overlays)
+    const baseLayer = L.tileLayer(TILE_LAYERS[activeBaseLayer], { maxZoom: 19, zIndex: 1 }).addTo(map);
     tileLayerRef.current = baseLayer;
 
-    // Hillshading overlay layer (hidden initially)
+    // Hillshading overlay layer (high zIndex so it always stays on top of base layers)
     const hillshadeLayer = L.tileLayer(HILLSHADE_URL, {
       maxZoom: 19,
       opacity: showContours ? overlayOpacity : 0,
+      zIndex: 10,
     }).addTo(map);
     hillshadeLayerRef.current = hillshadeLayer;
 
@@ -103,7 +104,7 @@ export function MapContainer({
     if (!map || !tileLayerRef.current) return;
 
     map.removeLayer(tileLayerRef.current);
-    const newBaseLayer = L.tileLayer(TILE_LAYERS[activeBaseLayer], { maxZoom: 19 }).addTo(map);
+    const newBaseLayer = L.tileLayer(TILE_LAYERS[activeBaseLayer], { maxZoom: 19, zIndex: 1 }).addTo(map);
     tileLayerRef.current = newBaseLayer;
   }, [activeBaseLayer]);
 
