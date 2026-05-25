@@ -126,6 +126,16 @@ export function useRoutePlanner() {
         const data = await response.json();
 
         if (data.code === "Ok" && data.routes && data.routes.length > 0) {
+          const routeDist = data.routes[0].distance / 1000; // route distance in km
+          const straightDist = calculateHaversineDistance(start, end);
+
+          // If the router forces a massive detour (more than 2.5x the straight line),
+          // it means minor trails are unroutable in their system. Fall back to straight line!
+          if (routeDist > straightDist * 2.5) {
+            console.warn("OSRM route is a massive detour. Falling back to straight line for minor trails.");
+            return [start, end];
+          }
+
           const coords = data.routes[0].geometry.coordinates;
           return coords.map((c: number[]) => [c[1], c[0]]);
         }

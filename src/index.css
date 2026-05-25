@@ -153,3 +153,16 @@ input[type="range"]::-webkit-slider-thumb {
 input[type="range"]::-webkit-slider-thumb:hover {
   transform: scale(1.2);
 }
+
+/* Custom cursors for Leaflet Map when editing or splitting */
+.leaflet-crosshair .leaflet-grab,
+.leaflet-crosshair.leaflet-container,
+.leaflet-crosshair .leaflet-interactive {
+  cursor: crosshair !important;
+}
+
+.leaflet-scissors .leaflet-grab,
+.leaflet-scissors.leaflet-container,
+.leaflet-scissors .leaflet-interactive {
+  cursor: pointer !important;
+}
