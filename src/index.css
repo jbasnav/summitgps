@@ -65,6 +65,17 @@ body {
   to { transform: rotate(360deg); }
 }
 
+@keyframes loadingBar {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(0%); }
+  100% { transform: translateX(100%); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .animate-fade-in {
   animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
@@ -74,8 +85,46 @@ body {
 }
 
 .animate-spin-slow {
-  animation: spinSlow 8s linear infinite;
+  animation: spinSlow 12s linear infinite;
 }
+
+.animate-loading-bar {
+  animation: loadingBar 1.8s infinite ease-in-out;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes slideInLeft {
+  from { transform: translateX(-20px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(20px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.animate-slide-in-left {
+  animation: slideInLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Glassmorphism helpers for deep premium glow */
+.glass-panel {
+  background: rgba(19, 27, 23, 0.85);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(27, 61, 43, 0.4);
+}
+
+.glass-panel-glow {
+  box-shadow: 0 0 40px rgba(16, 185, 129, 0.08);
+}
+
 
 /* Leaflet Custom Overrides */
 .leaflet-container {

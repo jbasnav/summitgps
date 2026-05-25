@@ -80,17 +80,39 @@ export function useRoutePlanner(user: any | null = null) {
   const [tracks, setTracks] = useState<Track[]>(() => {
     try {
       const saved = localStorage.getItem("summit_tracks");
-      return saved ? JSON.parse(saved) : [];
+      const parsedTracks: Track[] = saved ? JSON.parse(saved) : [];
+      if (!parsedTracks.some((t) => t.id === "waypoints-global-track")) {
+        parsedTracks.push({
+          id: "waypoints-global-track",
+          name: "Marcadores Globales",
+          points: [],
+          waypoints: [],
+          visible: true,
+          color: "#10b981",
+        });
+      }
+      return parsedTracks;
     } catch (e) {
       console.error("Failed to load tracks from localStorage:", e);
-      return [];
+      return [
+        {
+          id: "waypoints-global-track",
+          name: "Marcadores Globales",
+          points: [],
+          waypoints: [],
+          visible: true,
+          color: "#10b981",
+        }
+      ];
     }
   });
 
   const [activeTrackId, setActiveTrackId] = useState<string | null>(() => {
     try {
       const saved = localStorage.getItem("summit_active_track_id");
-      return saved ? JSON.parse(saved) : null;
+      const parsed = saved ? JSON.parse(saved) : null;
+      if (parsed === "waypoints-global-track") return null;
+      return parsed;
     } catch (e) {
       return null;
     }
@@ -171,10 +193,31 @@ export function useRoutePlanner(user: any | null = null) {
           }
 
           const savedTracks = localStorage.getItem("summit_tracks");
-          setTracks(savedTracks ? JSON.parse(savedTracks) : []);
+          const parsedTracks: Track[] = savedTracks ? JSON.parse(savedTracks) : [];
+          if (!parsedTracks.some((t) => t.id === "waypoints-global-track")) {
+            parsedTracks.push({
+              id: "waypoints-global-track",
+              name: "Marcadores Globales",
+              points: [],
+              waypoints: [],
+              visible: true,
+              color: "#10b981",
+            });
+          }
+          setTracks(parsedTracks);
 
           const savedActiveId = localStorage.getItem("summit_active_track_id");
-          setActiveTrackId(savedActiveId ? JSON.parse(savedActiveId) : null);
+          let parsedActiveId = null;
+          try {
+            if (savedActiveId) parsedActiveId = JSON.parse(savedActiveId);
+          } catch {}
+          if (parsedActiveId === "waypoints-global-track") parsedActiveId = null;
+          if (parsedActiveId && parsedTracks.some((t) => t.id === parsedActiveId && t.id !== "waypoints-global-track")) {
+            setActiveTrackId(parsedActiveId);
+          } else {
+            const firstRealTrack = parsedTracks.find((t) => t.id !== "waypoints-global-track");
+            setActiveTrackId(firstRealTrack ? firstRealTrack.id : null);
+          }
 
           const savedClickSegments = localStorage.getItem("summit_click_segments");
           setClickSegments(savedClickSegments ? JSON.parse(savedClickSegments) : {});
@@ -278,6 +321,45 @@ export function useRoutePlanner(user: any | null = null) {
           };
         });
 
+        // Ensure waypoint global track exists
+        if (!mappedTracks.some((t) => t.id === "waypoints-global-track")) {
+          const globalTrack = {
+            id: "waypoints-global-track",
+            name: "Marcadores Globales",
+            points: [],
+            waypoints: (dbWaypoints || [])
+              .filter((w: any) => w.track_id === "waypoints-global-track")
+              .map((w: any) => ({
+                id: w.id,
+                name: w.name,
+                lat: w.lat,
+                lng: w.lng,
+                icon: w.icon,
+                note: w.note || "",
+                color: w.color,
+                groupId: w.group_id || "default",
+                completed: w.completed || false,
+                image: w.image || undefined,
+                link: w.link || undefined,
+              })),
+            visible: true,
+            color: "#10b981",
+          };
+          mappedTracks.push(globalTrack);
+
+          // Seed in Supabase
+          supabase.from("tracks").insert({
+            id: globalTrack.id,
+            user_id: user.id,
+            name: globalTrack.name,
+            points: globalTrack.points,
+            visible: globalTrack.visible,
+            color: globalTrack.color,
+          }).then(({ error }) => {
+            if (error) console.error("Failed to seed global track in Supabase:", error);
+          });
+        }
+
         setWaypointGroups(mappedGroups);
         setTracks(mappedTracks);
 
@@ -288,12 +370,12 @@ export function useRoutePlanner(user: any | null = null) {
           if (savedActiveId) parsedActiveId = JSON.parse(savedActiveId);
         } catch {}
 
-        if (parsedActiveId && mappedTracks.some((t) => t.id === parsedActiveId)) {
+        if (parsedActiveId === "waypoints-global-track") parsedActiveId = null;
+        if (parsedActiveId && mappedTracks.some((t) => t.id === parsedActiveId && t.id !== "waypoints-global-track")) {
           setActiveTrackId(parsedActiveId);
-        } else if (mappedTracks.length > 0) {
-          setActiveTrackId(mappedTracks[0].id);
         } else {
-          setActiveTrackId(null);
+          const firstRealTrack = mappedTracks.find((t) => t.id !== "waypoints-global-track");
+          setActiveTrackId(firstRealTrack ? firstRealTrack.id : null);
         }
 
         // Clear click segments for DB tracks
@@ -387,7 +469,7 @@ export function useRoutePlanner(user: any | null = null) {
   const fetchHikingRoute = useCallback(
     async (start: [number, number], end: [number, number]): Promise<[number, number][]> => {
       try {
-        const url = `https://brouter.de/brouter?lonlats=${start[1]},${start[0]}|${end[1]},${end[0]}&profile=hiking&alternativeidx=0&format=geojson`;
+        const url = `https://brouter.de/brouter?lonlats=${start[1]},${start[0]}|${end[1]},${end[0]}&profile=Hiking-Alpine-SAC6&alternativeidx=0&format=geojson`;
         const response = await fetch(url);
         if (!response.ok) throw new Error("Brouter network error");
         const data = await response.json();
@@ -395,18 +477,6 @@ export function useRoutePlanner(user: any | null = null) {
         if (data.features && data.features.length > 0) {
           const coords = data.features[0].geometry.coordinates;
           const routeCoords: [number, number][] = coords.map((c: number[]) => [c[1], c[0]]);
-          
-          let routeDist = 0;
-          for (let i = 1; i < routeCoords.length; i++) {
-            routeDist += calculateHaversineDistance(routeCoords[i - 1], routeCoords[i]);
-          }
-          const straightDist = calculateHaversineDistance(start, end);
-          
-          if (routeDist > straightDist * 2.5) {
-            console.warn("Brouter route is a massive detour, trying OSRM.");
-            return fetchOSRMRoute(start, end);
-          }
-          
           return routeCoords;
         }
         return fetchOSRMRoute(start, end);
@@ -461,12 +531,25 @@ export function useRoutePlanner(user: any | null = null) {
   }, [activeTrackId, user]);
 
   const deleteTrack = useCallback((id: string) => {
+    if (id === "waypoints-global-track") return;
     setTracks((prev) => prev.filter((t) => t.id !== id));
     setActiveTrackId((prevActive) => (prevActive === id ? null : prevActive));
 
     if (user && isSupabaseConfigured) {
       supabase.from("tracks").delete().eq("id", id).then(({ error }) => {
         if (error) console.error("Failed to delete track from Supabase:", error);
+      });
+    }
+  }, [user]);
+
+  const deleteMultipleTracks = useCallback((ids: string[]) => {
+    const idsToKeep = ids.filter((id) => id !== "waypoints-global-track");
+    setTracks((prev) => prev.filter((t) => !idsToKeep.includes(t.id)));
+    setActiveTrackId((prevActive) => (prevActive && idsToKeep.includes(prevActive) ? null : prevActive));
+
+    if (user && isSupabaseConfigured) {
+      supabase.from("tracks").delete().in("id", idsToKeep).then(({ error }) => {
+        if (error) console.error("Failed to delete tracks from Supabase:", error);
       });
     }
   }, [user]);
@@ -655,7 +738,7 @@ export function useRoutePlanner(user: any | null = null) {
   const addWaypoint = useCallback((wpt: Omit<Waypoint, "id">) => {
     let currentActiveId = activeTrackId;
     if (!currentActiveId) {
-      currentActiveId = createNewTrack("Puntos Importados");
+      currentActiveId = "waypoints-global-track";
     }
 
     const newWpt: Waypoint = {
@@ -690,7 +773,68 @@ export function useRoutePlanner(user: any | null = null) {
         if (error) console.error("Failed to insert waypoint into Supabase:", error);
       });
     }
-  }, [activeTrackId, createNewTrack, user]);
+  }, [activeTrackId, user]);
+
+  const addMultipleWaypoints = useCallback((wpts: Omit<Waypoint, "id">[], _trackName?: string) => {
+    const currentActiveId = "waypoints-global-track";
+
+    const newWpts: Waypoint[] = wpts.map((wpt, idx) => ({
+      ...wpt,
+      groupId: wpt.groupId || "default",
+      completed: wpt.completed || false,
+      id: `wpt-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 9)}`,
+    }));
+
+    setTracks((prev) =>
+      prev.map((t) =>
+        t.id === currentActiveId ? { ...t, waypoints: [...t.waypoints, ...newWpts] } : t
+      )
+    );
+
+    if (user && isSupabaseConfigured) {
+      const runDbOps = async () => {
+        // Ensure global track exists in DB
+        const { data: existingTrack } = await supabase
+          .from("tracks")
+          .select("id")
+          .eq("id", currentActiveId)
+          .single();
+
+        if (!existingTrack) {
+          await supabase.from("tracks").insert({
+            id: currentActiveId,
+            user_id: user.id,
+            name: "Marcadores Globales",
+            points: [],
+            visible: true,
+            color: "#10b981",
+          });
+        }
+
+        const sbWpts = newWpts.map((w) => ({
+          id: w.id,
+          user_id: user.id,
+          track_id: currentActiveId,
+          name: w.name,
+          lat: w.lat,
+          lng: w.lng,
+          icon: w.icon,
+          note: w.note,
+          color: w.color,
+          group_id: w.groupId === "default" ? null : w.groupId,
+          completed: w.completed,
+          image: w.image || null,
+          link: w.link || null,
+        }));
+
+        const { error: wptsError } = await supabase.from("waypoints").insert(sbWpts);
+        if (wptsError) {
+          console.error("Failed to insert waypoints into Supabase:", wptsError);
+        }
+      };
+      runDbOps();
+    }
+  }, [user]);
 
   const updateWaypoint = useCallback((id: string, fields: Partial<Waypoint>) => {
     setTracks((prev) =>
@@ -735,7 +879,7 @@ export function useRoutePlanner(user: any | null = null) {
   }, [user]);
 
   // 7.2 Waypoint Groups CRUD methods
-  const addWaypointGroup = useCallback((group: Omit<WaypointGroup, "id"> & { id?: string }) => {
+  const addWaypointGroup = useCallback(async (group: Omit<WaypointGroup, "id"> & { id?: string }) => {
     const newGroup: WaypointGroup = {
       ...group,
       id: group.id || `group-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -743,7 +887,7 @@ export function useRoutePlanner(user: any | null = null) {
     setWaypointGroups((prev) => [...prev, newGroup]);
 
     if (user && isSupabaseConfigured) {
-      supabase.from("waypoint_groups").insert({
+      const { error } = await supabase.from("waypoint_groups").insert({
         id: newGroup.id,
         user_id: user.id,
         name: newGroup.name,
@@ -751,10 +895,13 @@ export function useRoutePlanner(user: any | null = null) {
         color: newGroup.color,
         visible: newGroup.visible,
         image: newGroup.image || null,
-      }).then(({ error }) => {
-        if (error) console.error("Failed to insert waypoint group into Supabase:", error);
       });
+      if (error) {
+        console.error("Failed to insert waypoint group into Supabase:", error);
+        throw error;
+      }
     }
+    return newGroup.id;
   }, [user]);
 
   const updateWaypointGroup = useCallback((id: string, fields: Partial<WaypointGroup>) => {
@@ -897,7 +1044,19 @@ export function useRoutePlanner(user: any | null = null) {
           id: `track-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           name: name || `Ruta ${tracks.length + 1}`,
           points: finalPoints,
-          waypoints: importedWpts.map((w) => ({ ...w, groupId: w.groupId || "default" })),
+          waypoints: importedWpts.map((w, idx) => ({
+            id: w.id || `wpt-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 9)}`,
+            name: w.name || `Marca ${idx + 1}`,
+            lat: w.lat,
+            lng: w.lng,
+            icon: w.icon || "mountain",
+            note: w.note || "",
+            color: w.color || color,
+            groupId: w.groupId || "default",
+            completed: w.completed || false,
+            image: w.image || undefined,
+            link: w.link || undefined,
+          })),
           visible: true,
           color,
         };
@@ -1206,12 +1365,14 @@ export function useRoutePlanner(user: any | null = null) {
     clearRoute,
     importRouteData,
     addWaypoint,
+    addMultipleWaypoints,
     updateWaypoint,
     removeWaypoint,
     
     // Multi-track additions
     createNewTrack,
     deleteTrack,
+    deleteMultipleTracks,
     toggleTrackVisibility,
     setTrackColor,
     mergeTracks,

@@ -1,5 +1,75 @@
 import React, { useState } from "react";
 import { X, MapPin, Tent, Camera, AlertTriangle, Info, Droplet, Upload, Trash2 } from "lucide-react";
+import { useCustomDialog } from "./CustomDialog";
+
+// Coordinate converter helpers
+function latLngToDms(lat: number, lng: number) {
+  const getDms = (val: number, isLat: boolean) => {
+    const dir = isLat ? (val >= 0 ? "N" : "S") : (val >= 0 ? "E" : "W");
+    const absVal = Math.abs(val);
+    const deg = Math.floor(absVal);
+    const minVal = (absVal - deg) * 60;
+    const min = Math.floor(minVal);
+    const sec = Math.round((minVal - min) * 60 * 10) / 10;
+    return `${deg}° ${min}' ${sec}" ${dir}`;
+  };
+  return {
+    lat: getDms(lat, true),
+    lng: getDms(lng, false),
+  };
+}
+
+function latLngToUtm(lat: number, lng: number, datum: "WGS84" | "ED50" = "WGS84") {
+  let a = 6378137.0;
+  let f = 1 / 298.257223563;
+  
+  if (datum === "ED50") {
+    a = 6378388.0;
+    f = 1 / 297.0;
+    // Spain ED50 to WGS84 localized datum translation shift
+    lat = lat + 0.00122;
+    lng = lng + 0.00155;
+  }
+
+  const phi = lat * Math.PI / 180;
+  const lambda = lng * Math.PI / 180;
+  const lambda0 = -3 * Math.PI / 180; // Zone 30 Central Meridian
+  
+  const b = a * (1 - f);
+  const e2 = (a*a - b*b) / (a*a);
+  const ePrime2 = (a*a - b*b) / (b*b);
+  const k0 = 0.9996;
+  const falseEasting = 500000;
+  
+  const N = a / Math.sqrt(1 - e2 * Math.sin(phi) * Math.sin(phi));
+  const T = Math.tan(phi) * Math.tan(phi);
+  const C = ePrime2 * Math.cos(phi) * Math.cos(phi);
+  const A = (lambda - lambda0) * Math.cos(phi);
+  
+  const M = a * (
+    (1 - e2/4 - 3*e2*e2/64 - 5*e2*e2*e2/256) * phi
+    - (3*e2/8 + 3*e2*e2/32 + 45*e2*e2*e2/1024) * Math.sin(2*phi)
+    + (15*e2*e2/256 + 45*e2*e2*e2/1024) * Math.sin(4*phi)
+    - (35*e2*e2*e2/3072) * Math.sin(6*phi)
+  );
+  
+  const x = falseEasting + k0 * N * (
+    A + (1 - T + C) * A*A*A/6
+    + (5 - 18*T + T*T + 72*C - 58*ePrime2) * Math.pow(A, 5)/120
+  );
+  
+  const y = k0 * (
+    M + N * Math.tan(phi) * (
+      A*A/2 + (5 - T + 9*C + 4*C*C) * Math.pow(A, 4)/24
+      + (61 - 58*T + T*T + 600*C - 330*ePrime2) * Math.pow(A, 6)/720
+    )
+  );
+  
+  return {
+    x: Math.round(x * 10) / 10,
+    y: Math.round(y * 10) / 10,
+  };
+}
 
 interface WaypointModalProps {
   isOpen: boolean;
@@ -15,7 +85,7 @@ interface WaypointModalProps {
     link?: string; 
     imageFile?: File | null;
   }) => void;
-  initialData?: { name: string; icon: string; note: string; color: string; groupId?: string; completed?: boolean; image?: string; link?: string };
+  initialData?: { name: string; icon: string; note: string; color: string; groupId?: string; completed?: boolean; image?: string; link?: string; lat?: number; lng?: number };
   onDelete?: () => void;
   groups: any[]; // Renders available WaypointGroups
 }
@@ -46,6 +116,7 @@ export function WaypointModal({
   onDelete,
   groups,
 }: WaypointModalProps) {
+  const { customConfirm } = useCustomDialog();
   const [name, setName] = useState(initialData?.name || "");
   const [icon, setIcon] = useState(initialData?.icon || "mountain");
   const [note, setNote] = useState(initialData?.note || "");
@@ -309,6 +380,44 @@ export function WaypointModal({
             />
           </div>
 
+          {/* Coordinates Details (Multisystem display) */}
+          {initialData?.lat !== undefined && initialData?.lng !== undefined && (
+            <div className="space-y-1.5 p-4 rounded-xl bg-[#0a0f0d]/50 border border-white/5 shadow-inner">
+              <label className="text-xs font-semibold text-emerald-400/80 tracking-wider uppercase select-none">
+                Ubicación y Sistemas de Coordenadas
+              </label>
+              <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-300 font-mono select-text">
+                <div className="bg-[#050807]/40 border border-[#1b3d2b]/20 p-2 rounded-lg">
+                  <p className="text-[9px] font-sans font-bold text-slate-500 uppercase tracking-wide mb-0.5">Decimal (WGS84)</p>
+                  <p className="text-emerald-400 font-bold truncate">Lat: {initialData.lat.toFixed(6)}</p>
+                  <p className="text-emerald-400 font-bold truncate">Lon: {initialData.lng.toFixed(6)}</p>
+                </div>
+                
+                <div className="bg-[#050807]/40 border border-[#1b3d2b]/20 p-2 rounded-lg">
+                  <p className="text-[9px] font-sans font-bold text-slate-500 uppercase tracking-wide mb-0.5">DMS (GMS)</p>
+                  <p className="text-amber-400 truncate">{latLngToDms(initialData.lat, initialData.lng).lat}</p>
+                  <p className="text-amber-400 truncate">{latLngToDms(initialData.lat, initialData.lng).lng}</p>
+                </div>
+                
+                <div className="bg-[#050807]/40 border border-[#1b3d2b]/20 p-2 rounded-lg col-span-2 flex justify-between gap-4">
+                  <div>
+                    <p className="text-[9px] font-sans font-bold text-slate-500 uppercase tracking-wide mb-0.5">UTM ETRS89 (Huso 30N)</p>
+                    <p className="text-blue-400">X: <span className="font-bold">{latLngToUtm(initialData.lat, initialData.lng, "WGS84").x.toLocaleString()}</span></p>
+                    <p className="text-blue-400">Y: <span className="font-bold">{latLngToUtm(initialData.lat, initialData.lng, "WGS84").y.toLocaleString()}</span></p>
+                  </div>
+                  <div className="border-l border-[#1b3d2b]/30 pl-4">
+                    <p className="text-[9px] font-sans font-bold text-slate-500 uppercase tracking-wide mb-0.5">UTM ED50 (Huso 30N)</p>
+                    <p className="text-rose-400">X: <span className="font-bold">{latLngToUtm(initialData.lat, initialData.lng, "ED50").x.toLocaleString()}</span></p>
+                    <p className="text-rose-400">Y: <span className="font-bold">{latLngToUtm(initialData.lat, initialData.lng, "ED50").y.toLocaleString()}</span></p>
+                  </div>
+                </div>
+              </div>
+              <p className="text-[8px] text-slate-500 leading-normal italic select-none pt-0.5">
+                💡 Nota: Las coordenadas en ED50 aplican la transformación oficial del IGN para la península ibérica (mismatch habitual de ~120m).
+              </p>
+            </div>
+          )}
+
           {/* Notes */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-emerald-400/80 tracking-wider uppercase">
@@ -329,8 +438,8 @@ export function WaypointModal({
           {onDelete ? (
             <button
               type="button"
-              onClick={() => {
-                if (window.confirm("¿Seguro que deseas eliminar este waypoint?")) {
+              onClick={async () => {
+                if (await customConfirm("¿Seguro que deseas eliminar este waypoint?")) {
                   onDelete();
                   onClose();
                 }

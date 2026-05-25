@@ -28,11 +28,16 @@ import {
   ChevronUp,
   Check,
   LogOut,
+  X,
+  Settings,
 } from "lucide-react";
 import { LayerSelector, type BaseLayerId } from "./LayerSelector";
 import { StatsPanel } from "./StatsPanel";
 import { parseGPX, exportToGPX } from "../utils/gpxExporter";
 import { LANDSCAPE_IMAGES, type Track } from "../hooks/useRoutePlanner";
+import { useCustomDialog } from "./CustomDialog";
+
+
 
 interface SidebarProps {
   routeName: string;
@@ -63,6 +68,7 @@ interface SidebarProps {
   // Multi-track additions
   onCreateNewTrack: (name?: string) => string;
   onDeleteTrack: (id: string) => void;
+  onDeleteMultipleTracks?: (ids: string[]) => void;
   onToggleTrackVisibility: (id: string) => void;
   onSetTrackColor: (id: string, color: string) => void;
   onMergeTracks: (ids: string[], name?: string) => void;
@@ -79,9 +85,17 @@ interface SidebarProps {
   useImperial: boolean;
   onToggleUnits: () => void;
 
+  // Coordinate and Grid formatting settings
+  coordinateFormat: "dd" | "ddm" | "dms" | "utm" | "mgrs";
+  onChangeCoordinateFormat: (format: "dd" | "ddm" | "dms" | "utm" | "mgrs") => void;
+  gridOverlay: "none" | "dd" | "dms" | "utm" | "mgrs";
+  onChangeGridOverlay: (grid: "none" | "dd" | "dms" | "utm" | "mgrs") => void;
+  showGridLabels: boolean;
+  onToggleGridLabels: () => void;
+
   // Waypoint Groups / Challenges Props
   waypointGroups: any[];
-  onAddWaypointGroup: (group: { id?: string; name: string; description: string; color: string; visible: boolean; image?: string }) => void;
+  onAddWaypointGroup: (group: { id?: string; name: string; description: string; color: string; visible: boolean; image?: string }) => any;
   onDeleteWaypointGroup: (id: string) => void;
   onUpdateWaypointGroup: (id: string, group: { name?: string; description?: string; color?: string; visible?: boolean; image?: string }) => void;
   onToggleWaypointGroupVisibility: (id: string) => void;
@@ -93,6 +107,7 @@ interface SidebarProps {
   onSetOsmPois: (pois: any[]) => void;
   onAddOsmPoi: (poi: any) => void;
   onAddWaypoint: (wpt: any) => void;
+  onAddMultipleWaypoints?: (wpts: any[], trackName?: string) => void;
 
   // Authentication Props
   user: any | null;
@@ -102,9 +117,12 @@ interface SidebarProps {
 
   // Lifted selection state
   isBulkMode: boolean;
-  setIsBulkMode: (val: boolean) => void;
   selectedWptIds: string[];
   setSelectedWptIds: React.Dispatch<React.SetStateAction<string[]>>;
+  selectedPoiIds: string[];
+  onSetSelectedPoiIds: React.Dispatch<React.SetStateAction<string[]>>;
+  isCollapsed: boolean;
+  setIsCollapsed: (collapsed: boolean) => void;
 }
 
 type TabId = "search" | "layers" | "route" | "waypoints";
@@ -147,6 +165,7 @@ export function Sidebar({
   onUpdateWaypoint,
   onCreateNewTrack,
   onDeleteTrack,
+  onDeleteMultipleTracks,
   onToggleTrackVisibility,
   onSetTrackColor,
   onMergeTracks,
@@ -169,17 +188,29 @@ export function Sidebar({
   onSetOsmPois,
   onAddOsmPoi,
   onAddWaypoint,
+  onAddMultipleWaypoints,
   user,
   onSignOut,
   onSignInClick,
   isSupabaseConfigured,
   isBulkMode,
-  setIsBulkMode,
   selectedWptIds,
   setSelectedWptIds,
+  selectedPoiIds,
+  onSetSelectedPoiIds,
+  coordinateFormat,
+  onChangeCoordinateFormat,
+  gridOverlay,
+  onChangeGridOverlay,
+  showGridLabels,
+  onToggleGridLabels,
+  isCollapsed,
+  setIsCollapsed,
 }: SidebarProps) {
+  const { customAlert, customConfirm, customPrompt } = useCustomDialog();
   const [activeTab, setActiveTab] = useState<TabId>("route");
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  
+  const displayTracks = tracks.filter((t) => t.id !== "waypoints-global-track");
   
   // Track Library selection state for merging
   const [selectedMergeIds, setSelectedMergeIds] = useState<string[]>([]);
@@ -199,6 +230,8 @@ export function Sidebar({
   const [osmRadius, setOsmRadius] = useState(5); // default 5km
   const [osmLoading, setOsmLoading] = useState(false);
   const [osmSearchExecuted, setOsmSearchExecuted] = useState(false);
+  const [importTargetGroupId, setImportTargetGroupId] = useState<string>("default");
+  const [groupSearchQueries, setGroupSearchQueries] = useState<Record<string, string>>({});
 
   // Automatically clear OSM POIs from the map when search widget is closed or tab is changed
   React.useEffect(() => {
@@ -212,7 +245,7 @@ export function Sidebar({
 
   const handleOsmSearch = async () => {
     if (!mapCenter) {
-      alert("Coordenadas del mapa no disponibles. Mueve el mapa primero.");
+      await customAlert("Coordenadas del mapa no disponibles. Mueve el mapa primero.");
       return;
     }
     setOsmLoading(true);
@@ -301,7 +334,7 @@ export function Sidebar({
       }
     } catch (err) {
       console.error("OSM POI search failed:", err);
-      alert("Error al buscar en OpenStreetMap: " + (err as Error).message);
+      await customAlert("Error al buscar en OpenStreetMap: " + (err as Error).message);
     } finally {
       setOsmLoading(false);
     }
@@ -336,7 +369,10 @@ export function Sidebar({
           const yDelta = y - falseNorthing;
           const centralMeridian = -3 * Math.PI / 180; // Zone 30 is centered at 3°W (-3)
           
-          const mu = yDelta / (a * (1 - e2/4 - 3*e2*e2/64 - 5*e2*e2*e2/256));
+          // Meridional arc distance M = yDelta / k0
+          const M = yDelta / k0;
+          const mu = M / (a * (1 - e2/4 - 3*e2*e2/64 - 5*e2*e2*e2/256));
+          
           const phi1Rad = mu + (3*e1/2 - 27*e1*e1*e1/32) * Math.sin(2*mu) 
                           + (21*e1*e1/16 - 55*e1*e1*e1*e1/32) * Math.sin(4*mu)
                           + (151*e1*e1*e1/96) * Math.sin(6*mu)
@@ -371,7 +407,7 @@ export function Sidebar({
           createdGroupName = file.name.replace(".json", "") || "Overpass Import";
           
           const newGroupId = `group-${Date.now()}`;
-          onAddWaypointGroup({
+          await onAddWaypointGroup({
             id: newGroupId,
             name: createdGroupName,
             description: `Importado de OpenStreetMap (${parsedData.elements.length} nodos)`,
@@ -412,7 +448,7 @@ export function Sidebar({
         else if (parsedData && typeof parsedData === "object" && !Array.isArray(parsedData) && parsedData.name && Array.isArray(parsedData.waypoints)) {
           createdGroupName = parsedData.name;
           const newGroupId = `group-${Date.now()}`;
-          onAddWaypointGroup({
+          await onAddWaypointGroup({
             id: newGroupId,
             name: parsedData.name,
             description: parsedData.description || "Reto importado",
@@ -444,7 +480,7 @@ export function Sidebar({
 
           createdGroupName = file.name.replace(".json", "");
           const newGroupId = `group-${Date.now()}`;
-          onAddWaypointGroup({
+          await onAddWaypointGroup({
             id: newGroupId,
             name: createdGroupName,
             description: isGailurrakUtm 
@@ -462,16 +498,28 @@ export function Sidebar({
             let lat = item.lat;
             let lng = item.lng || item.lon;
 
-            if ((typeof lat !== "number" || typeof lng !== "number") && item.utm_etrs89) {
+            let utmString = item.utm_etrs89 || item.utm_ed50 || item.utm;
+            // Prioritize calculating coordinates from UTM if available, to ensure maximum accuracy
+            // and correct any historical deviation stored in standard decimal lat/lng fields.
+            if (utmString) {
               const regex = /X\s*([0-9\.]+)\s+Y\s*([0-9\.]+)/i;
-              const cleanStr = item.utm_etrs89.replace(/\./g, "");
+              const cleanStr = utmString.replace(/\./g, "");
               const match = cleanStr.match(regex);
               if (match) {
                 const x = parseFloat(match[1]);
                 const y = parseFloat(match[2]);
+                const isEd50 = !!item.utm_ed50 || utmString.toLowerCase().includes("ed50");
                 const converted = convertUtm30NToLatLng(x, y);
-                lat = converted.lat;
-                lng = converted.lng;
+                if (converted && !isNaN(converted.lat) && !isNaN(converted.lng)) {
+                  lat = converted.lat;
+                  lng = converted.lng;
+                  
+                  if (isEd50) {
+                    // Apply Spain ED50 to WGS84 Datum Shift (approximate localized translation)
+                    lat = lat - 0.00122;
+                    lng = lng - 0.00155;
+                  }
+                }
               }
             }
 
@@ -498,19 +546,24 @@ export function Sidebar({
           throw new Error("Formato JSON no soportado. Debe ser un reto exportado, una lista de marcas o una respuesta de Overpass API.");
         }
 
-        wptsToImport.forEach((wpt) => {
-          onAddWaypoint(wpt);
-          importedCount++;
-        });
+        if (onAddMultipleWaypoints) {
+          onAddMultipleWaypoints(wptsToImport, createdGroupName);
+          importedCount = wptsToImport.length;
+        } else {
+          wptsToImport.forEach((wpt) => {
+            onAddWaypoint(wpt);
+            importedCount++;
+          });
+        }
 
-        alert(`¡Importación exitosa! Se ha creado el reto "${createdGroupName}" y se han añadido ${importedCount} marcas a Summit GPS.`);
+        await customAlert(`¡Importación exitosa! Se ha creado el reto "${createdGroupName}" y se han añadido ${importedCount} marcas a Summit GPS.`);
         
         if (wptsToImport.length > 0) {
           onFlyToCoords(wptsToImport[0].lat, wptsToImport[0].lng);
         }
       } catch (err) {
         console.error("JSON Import failed:", err);
-        alert("Error al importar el archivo JSON: " + (err as Error).message);
+        await customAlert("Error al importar el archivo JSON: " + (err as Error).message);
       }
     };
     reader.readAsText(file);
@@ -540,7 +593,7 @@ export function Sidebar({
           onFlyToCoords(parsed.waypoints[0].lat, parsed.waypoints[0].lng);
         }
       } catch (err) {
-        alert("Error al parsear el archivo GPX: " + (err as Error).message);
+        await customAlert("Error al parsear el archivo GPX: " + (err as Error).message);
       }
     };
     reader.readAsText(file);
@@ -548,15 +601,15 @@ export function Sidebar({
   };
 
   // GPX Export (Exports the currently active track)
-  const handleGpxExport = () => {
+  const handleGpxExport = async () => {
     const activeTrack = tracks.find((t) => t.id === activeTrackId);
     if (!activeTrack) {
-      alert("Por favor, selecciona un track activo de la biblioteca para exportar.");
+      await customAlert("Por favor, selecciona un track activo de la biblioteca para exportar.");
       return;
     }
 
     if (activeTrack.points.length === 0 && activeTrack.waypoints.length === 0) {
-      alert("No hay ruta ni waypoints en el track activo para exportar.");
+      await customAlert("No hay ruta ni waypoints en el track activo para exportar.");
       return;
     }
 
@@ -587,15 +640,31 @@ export function Sidebar({
   };
 
   // Merge selected tracks
-  const handleMergeSelected = () => {
+  const handleMergeSelected = async () => {
     if (selectedMergeIds.length < 2) {
-      alert("Por favor, selecciona al menos 2 tracks de la biblioteca para unirlos.");
+      await customAlert("Por favor, selecciona al menos 2 tracks de la biblioteca para unirlos.");
       return;
     }
-    const name = window.prompt("Introduce el nombre de la ruta fusionada:", "Ruta Combinada");
+    const name = await customPrompt("Introduce el nombre de la ruta fusionada:", "Ruta Combinada");
     if (name === null) return; // cancelled
     onMergeTracks(selectedMergeIds, name || undefined);
     setSelectedMergeIds([]); // clear selection
+  };
+
+  // Delete selected tracks
+  const handleDeleteSelected = async () => {
+    if (selectedMergeIds.length === 0) return;
+    const confirmMessage = selectedMergeIds.length === 1
+      ? `¿Seguro que deseas eliminar la ruta seleccionada de la biblioteca?`
+      : `¿Seguro que deseas eliminar las ${selectedMergeIds.length} rutas seleccionadas de la biblioteca?`;
+    if (await customConfirm(confirmMessage)) {
+      if (onDeleteMultipleTracks) {
+        onDeleteMultipleTracks(selectedMergeIds);
+      } else {
+        selectedMergeIds.forEach((id) => onDeleteTrack(id));
+      }
+      setSelectedMergeIds([]); // clear selection
+    }
   };
 
   // Geocoding Search
@@ -646,8 +715,8 @@ export function Sidebar({
         <div className="w-[64px] h-full bg-[#0c120f]/95 border-r border-[#1b3d2b] flex flex-col items-center justify-between py-5 text-slate-400 select-none z-10">
           <div className="flex flex-col items-center gap-6 w-full">
             {/* Logo */}
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shadow-md">
-              <img src="/favicon.svg" alt="SUMMIT" className="w-5 h-5 filter drop-shadow-[0_0_4px_rgba(16,185,129,0.2)]" />
+            <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center shadow-md">
+              <img src="/logo.png" alt="SUMMIT" className="w-full h-full object-cover" />
             </div>
 
             {/* Vertical Icons */}
@@ -656,7 +725,7 @@ export function Sidebar({
                 { id: "route" as TabId, label: "Rutas", icon: Route },
                 { id: "layers" as TabId, label: "Capas", icon: LayersIcon },
                 { id: "waypoints" as TabId, label: "Marcas", icon: MapPin },
-                { id: "search" as TabId, label: "Buscar", icon: Search },
+                { id: "settings" as TabId, label: "Ajustes", icon: Settings },
               ].map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
@@ -709,8 +778,10 @@ export function Sidebar({
         <div className="w-full h-full bg-[#131b17]/95 border-r border-[#1b3d2b] text-slate-100 flex flex-col overflow-hidden backdrop-blur-md">
         {/* Header / Brand */}
         <div className="p-5 border-b border-[#1b3d2b] flex items-center justify-between bg-[#0c120f]">
-          <div className="flex items-center gap-2">
-            <img src="/favicon.svg" alt="SUMMIT GPS Logo" className="w-8 h-8 filter drop-shadow-[0_0_8px_rgba(16,185,129,0.25)] select-none pointer-events-none" />
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center shadow-md border border-[#1b3d2b]">
+              <img src="/logo.png" alt="SUMMIT GPS Logo" className="w-full h-full object-cover select-none pointer-events-none" />
+            </div>
             <div>
               <h1 className="text-sm font-extrabold tracking-wider text-emerald-400">
                 SUMMIT GPS
@@ -770,7 +841,7 @@ export function Sidebar({
             { id: "route" as TabId, label: "Rutas", icon: Route },
             { id: "layers" as TabId, label: "Capas", icon: LayersIcon },
             { id: "waypoints" as TabId, label: "Marcas", icon: MapPin },
-            { id: "search" as TabId, label: "Buscar", icon: Search },
+            { id: "settings" as TabId, label: "Ajustes", icon: Settings },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -800,21 +871,49 @@ export function Sidebar({
               {/* SECTION 1: LIBRARY OF TRACKS */}
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                    Biblioteca de Tracks ({tracks.length})
-                  </h4>
-                  {selectedMergeIds.length >= 2 && (
-                    <button
-                      onClick={handleMergeSelected}
-                      className="text-[9px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded-lg flex items-center gap-1 hover:bg-blue-500/30"
-                    >
-                      <Link className="w-3 h-3" />
-                      Unir Seleccionados
-                    </button>
-                  )}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                      Biblioteca de Tracks ({displayTracks.length})
+                    </h4>
+                    {displayTracks.length > 0 && (
+                      <button
+                        onClick={() => {
+                          const allSelected = selectedMergeIds.length === displayTracks.length;
+                          if (allSelected) {
+                            setSelectedMergeIds([]);
+                          } else {
+                            setSelectedMergeIds(displayTracks.map((t) => t.id));
+                          }
+                        }}
+                        className="text-[9px] font-bold text-emerald-400 hover:text-emerald-300 transition-colors uppercase tracking-wider bg-emerald-500/10 px-1.5 py-0.5 rounded cursor-pointer"
+                      >
+                        {selectedMergeIds.length === displayTracks.length ? "Ninguno" : "Todo"}
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {selectedMergeIds.length >= 2 && (
+                      <button
+                        onClick={handleMergeSelected}
+                        className="text-[9px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded-lg flex items-center gap-1 hover:bg-blue-500/30 transition-colors"
+                      >
+                        <Link className="w-3 h-3" />
+                        Unir Seleccionados
+                      </button>
+                    )}
+                    {selectedMergeIds.length >= 1 && (
+                      <button
+                        onClick={handleDeleteSelected}
+                        className="text-[9px] font-bold bg-red-500/20 text-red-300 border border-red-500/30 px-2 py-0.5 rounded-lg flex items-center gap-1 hover:bg-red-500/30 transition-colors"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        Eliminar Seleccionados
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                {tracks.length === 0 ? (
+                {displayTracks.length === 0 ? (
                   <div className="flex flex-col items-center justify-center p-6 border border-dashed border-[#1b3d2b]/40 rounded-xl text-center space-y-2 bg-[#0c120f]/50">
                     <Route className="w-5 h-5 text-slate-600" />
                     <span className="text-[11px] font-semibold text-slate-400">Biblioteca Vacía</span>
@@ -824,7 +923,7 @@ export function Sidebar({
                   </div>
                 ) : (
                   <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
-                    {tracks.map((track) => {
+                    {displayTracks.map((track) => {
                       const isActive = track.id === activeTrackId;
                       const isCheckedForMerge = selectedMergeIds.includes(track.id);
                       return (
@@ -902,9 +1001,9 @@ export function Sidebar({
 
                             {/* Delete icon */}
                             <button
-                              onClick={() => {
+                              onClick={async () => {
                                 if (
-                                  window.confirm(`¿Seguro que deseas eliminar la ruta "${track.name}" de la biblioteca?`)
+                                  await customConfirm(`¿Seguro que deseas eliminar la ruta "${track.name}" de la biblioteca?`)
                                 ) {
                                   onDeleteTrack(track.id);
                                 }
@@ -925,8 +1024,8 @@ export function Sidebar({
               {/* ACTION TOOLBAR */}
               <div className="border-t border-[#1b3d2b]/40 pt-4 flex gap-2">
                 <button
-                  onClick={() => {
-                    const name = window.prompt("Introduce el nombre de la nueva ruta:", "Nueva Ruta");
+                  onClick={async () => {
+                    const name = await customPrompt("Introduce el nombre de la nueva ruta:", "Nueva Ruta");
                     if (name) onCreateNewTrack(name);
                   }}
                   className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-emerald-400/30 bg-emerald-500/[0.03] hover:bg-emerald-500/[0.08] text-emerald-300 hover:text-emerald-200 transition-colors text-xs font-semibold"
@@ -1062,8 +1161,8 @@ export function Sidebar({
                       />
                       
                       <button
-                        onClick={() => {
-                          if (window.confirm("¿Seguro que deseas borrar todos los puntos de la ruta activa?")) {
+                        onClick={async () => {
+                          if (await customConfirm("¿Seguro que deseas borrar todos los puntos de la ruta activa?")) {
                             onClearRoute();
                           }
                         }}
@@ -1099,6 +1198,7 @@ export function Sidebar({
                   <Upload className="w-4 h-4" />
                   Importar y Añadir GPX
                   <input
+                    id="gpx-upload-input"
                     type="file"
                     accept=".gpx"
                     onChange={handleGpxUpload}
@@ -1128,31 +1228,17 @@ export function Sidebar({
           {activeTab === "waypoints" && (
             <div className="space-y-4 animate-fade-in flex flex-col h-full overflow-hidden">
               {/* Tab Title & Control Toolbar */}
-              <div className="flex items-center justify-between shrink-0">
+              <div className="flex flex-col gap-2.5 shrink-0">
                 <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                   Grupos de Marcas y Retos ({waypointGroups.length})
                 </h4>
-                <div className="flex gap-1.5">
-                  <button
-                    onClick={() => {
-                      setIsBulkMode(!isBulkMode);
-                      setSelectedWptIds([]); // Clear selection when toggling
-                    }}
-                    className={`flex items-center gap-1 text-[10px] font-bold border px-2 py-1 rounded-lg transition-all active:scale-95 cursor-pointer ${
-                      isBulkMode
-                        ? "bg-blue-500/20 border-blue-500/40 text-blue-300 shadow-[0_0_8px_rgba(59,130,246,0.15)]"
-                        : "bg-[#1c2921] border-[#1b3d2b] text-slate-300 hover:text-blue-400 hover:border-blue-500/25"
-                    }`}
-                    title="Seleccionar múltiples marcas para acciones en lote"
-                  >
-                    ☑️ Selección
-                  </button>
+                <div className="flex gap-2 w-full">
                   <button
                     onClick={() => {
                       setIsOsmSearchOpen(!isOsmSearchOpen);
                       if (isCreatingGroup) setIsCreatingGroup(false);
                     }}
-                    className={`flex items-center gap-1 text-[10px] font-bold border px-2 py-1 rounded-lg transition-all active:scale-95 cursor-pointer ${
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold border transition-all active:scale-95 cursor-pointer ${
                       isOsmSearchOpen
                         ? "bg-amber-500/20 border-amber-500/40 text-amber-300 shadow-[0_0_8px_rgba(245,158,11,0.15)]"
                         : "bg-[#1c2921] border-[#1b3d2b] text-slate-300 hover:text-amber-400 hover:border-amber-500/25"
@@ -1166,7 +1252,7 @@ export function Sidebar({
                       setIsCreatingGroup(!isCreatingGroup);
                       if (isOsmSearchOpen) setIsOsmSearchOpen(false);
                     }}
-                    className={`flex items-center gap-1 text-[10px] font-bold border px-2 py-1 rounded-lg transition-all active:scale-95 cursor-pointer ${
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold border transition-all active:scale-95 cursor-pointer ${
                       isCreatingGroup
                         ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.15)]"
                         : "bg-[#1c2921] border-[#1b3d2b] text-slate-300 hover:text-emerald-400 hover:border-emerald-500/25"
@@ -1253,11 +1339,79 @@ export function Sidebar({
                     {/* OSM Query Results list */}
                     {osmSearchExecuted && !osmLoading && (
                       <div className="border-t border-amber-500/10 pt-3.5 space-y-2">
-                        <div className="flex justify-between items-center">
-                          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
-                            Resultados ({osmPois.length})
-                          </span>
+                        {/* POI Selection Header */}
+                        <div className="flex justify-between items-center bg-[#070a08]/30 p-1.5 rounded-lg border border-amber-500/5 select-none text-[10px]">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+                              Resultados ({osmPois.length})
+                            </span>
+                            {osmPois.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const allSelected = selectedPoiIds.length === osmPois.length;
+                                  if (allSelected) {
+                                    onSetSelectedPoiIds([]);
+                                  } else {
+                                    onSetSelectedPoiIds(osmPois.map((p) => p.id));
+                                  }
+                                }}
+                                className="text-[8px] font-bold text-amber-400 hover:text-amber-300 transition-colors uppercase tracking-wider bg-amber-500/10 px-1.5 py-0.5 rounded cursor-pointer"
+                              >
+                                {selectedPoiIds.length === osmPois.length ? "Ninguno" : "Todo"}
+                              </button>
+                            )}
+                          </div>
                         </div>
+
+                        {/* Dropdown Selector Card for Target Challenge */}
+                        {selectedPoiIds.length > 0 && (
+                          <div className="flex flex-col gap-1.5 bg-emerald-500/[0.03] border border-emerald-500/20 rounded-xl p-3 shadow-inner animate-fade-in">
+                            <label className="text-[9.5px] font-bold text-slate-400 uppercase tracking-wider">
+                              🎯 Reto o Carpeta Destino:
+                            </label>
+                            <div className="flex gap-2">
+                              <select
+                                value={importTargetGroupId}
+                                onChange={(e) => setImportTargetGroupId(e.target.value)}
+                                className="flex-1 bg-[#050807] border border-[#1b3d2b] rounded-lg px-2 py-1.5 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-400 transition-colors"
+                              >
+                                <option value="default" className="bg-[#0c120f]">📍 Mis Marcadores (Defecto)</option>
+                                {waypointGroups.map((g) => (
+                                  <option key={g.id} value={g.id} className="bg-[#0c120f]">
+                                    🏆 {g.name}
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const poisToImport = osmPois.filter((p) => selectedPoiIds.includes(p.id));
+                                  if (onAddMultipleWaypoints && poisToImport.length > 0) {
+                                    const selectedGroup = waypointGroups.find(g => g.id === importTargetGroupId);
+                                    const targetColor = selectedGroup ? selectedGroup.color : "#3b82f6";
+                                    const wptsToImport = poisToImport.map((p) => ({
+                                      name: p.name,
+                                      lat: p.lat,
+                                      lng: p.lng,
+                                      icon: p.icon,
+                                      note: p.note,
+                                      color: targetColor,
+                                      groupId: importTargetGroupId,
+                                      completed: false,
+                                    }));
+                                    onAddMultipleWaypoints(wptsToImport);
+                                    onSetSelectedPoiIds([]);
+                                    customAlert(`¡Importación exitosa! Se han añadido ${wptsToImport.length} marcas a "${selectedGroup ? selectedGroup.name : 'Mis Marcadores'}".`);
+                                  }
+                                }}
+                                className="px-3 py-1.5 text-[10px] font-extrabold text-black bg-emerald-400 hover:bg-emerald-300 rounded-lg transition-all shadow-md shadow-emerald-500/10 cursor-pointer flex items-center gap-1 shrink-0"
+                              >
+                                📥 Importar ({selectedPoiIds.length})
+                              </button>
+                            </div>
+                          </div>
+                        )}
                         
                         {osmPois.length === 0 ? (
                           <p className="text-[10px] text-slate-500 text-center py-2 leading-relaxed">
@@ -1265,35 +1419,62 @@ export function Sidebar({
                           </p>
                         ) : (
                           <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-1">
-                            {osmPois.map((poi) => (
-                              <div
-                                key={poi.id}
-                                onClick={() => onFlyToCoords(poi.lat, poi.lng)}
-                                className="group flex items-center justify-between p-2 rounded-lg bg-[#050807]/60 border border-white/5 hover:border-amber-500/20 cursor-pointer transition-all"
-                              >
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-[11px] font-bold text-slate-200 truncate group-hover:text-amber-400 transition-colors">
-                                    {poi.name}
-                                  </p>
-                                  {poi.elevation && (
-                                    <p className="text-[8.5px] text-slate-500 font-semibold font-mono">
-                                      Altitud: {poi.elevation} m
-                                    </p>
-                                  )}
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onAddOsmPoi(poi);
+                            {osmPois.map((poi) => {
+                              const isSelected = selectedPoiIds.includes(poi.id);
+                              return (
+                                <div
+                                  key={poi.id}
+                                  onClick={() => {
+                                    // 1. Center map
+                                    onFlyToCoords(poi.lat, poi.lng);
+                                    // 2. Toggle checkbox
+                                    onSetSelectedPoiIds((prev) =>
+                                      prev.includes(poi.id)
+                                        ? prev.filter((id) => id !== poi.id)
+                                        : [...prev, poi.id]
+                                    );
                                   }}
-                                  className="ml-2 w-5.5 h-5.5 rounded bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-black border border-emerald-500/20 transition-all flex items-center justify-center shrink-0 cursor-pointer"
-                                  title="Importar marca a tus retos"
+                                  className={`group flex items-center justify-between p-2 rounded-lg border transition-all cursor-pointer ${
+                                    isSelected
+                                      ? "bg-amber-500/10 border-amber-500/40 hover:border-amber-500/50"
+                                      : "bg-[#050807]/60 border-white/5 hover:border-amber-500/20"
+                                  }`}
                                 >
-                                  <Plus className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            ))}
+                                  {/* Selection Checkbox on the left */}
+                                  <div className="mr-2 shrink-0 select-none">
+                                    {isSelected ? (
+                                      <div className="w-4 h-4 rounded-full bg-amber-500 border border-amber-500 flex items-center justify-center text-white shadow">
+                                        <Check className="w-2.5 h-2.5 stroke-[4]" />
+                                      </div>
+                                    ) : (
+                                      <div className="w-4 h-4 rounded-full border border-slate-600 bg-black/40 hover:border-amber-400" />
+                                    )}
+                                  </div>
+
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-[11px] font-bold text-slate-200 truncate group-hover:text-amber-400 transition-colors">
+                                      {poi.name}
+                                    </p>
+                                    {poi.elevation && (
+                                      <p className="text-[8.5px] text-slate-500 font-semibold font-mono">
+                                        Altitud: {poi.elevation} m
+                                      </p>
+                                    )}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onAddOsmPoi(poi);
+                                    }}
+                                    className="ml-2 w-5.5 h-5.5 rounded bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-black border border-emerald-500/20 transition-all flex items-center justify-center shrink-0 cursor-pointer"
+                                    title="Importar marca a tus retos"
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -1420,9 +1601,9 @@ export function Sidebar({
                     {/* Form Action */}
                     <button
                       type="button"
-                      onClick={() => {
+                      onClick={async () => {
                         if (!newGroupName.trim()) {
-                          alert("Por favor, introduce un nombre para el grupo.");
+                          await customAlert("Por favor, introduce un nombre para el grupo.");
                           return;
                         }
                         if (editingGroupId) {
@@ -1467,6 +1648,11 @@ export function Sidebar({
                       }
                       return w.groupId === group.id;
                     });
+
+                    const searchQuery = groupSearchQueries[group.id] || "";
+                    const filteredWaypoints = groupWaypoints.filter((w) =>
+                      w.name.toLowerCase().includes(searchQuery.toLowerCase())
+                    );
 
                     const totalCount = groupWaypoints.length;
                     const completedCount = groupWaypoints.filter((w) => w.completed).length;
@@ -1607,10 +1793,10 @@ export function Sidebar({
                             {group.id !== "default" && (
                               <button
                                 type="button"
-                                onClick={(e) => {
+                                onClick={async (e) => {
                                   e.stopPropagation();
                                   if (
-                                    window.confirm(
+                                    await customConfirm(
                                       `¿Seguro que deseas eliminar el reto "${group.name}"? Los waypoints asociados no se borrarán, volverán a "Mis Marcadores".`
                                     )
                                   ) {
@@ -1670,6 +1856,39 @@ export function Sidebar({
                                 </p>
                               )}
 
+                              {/* Local Search Input within this Challenge */}
+                              {groupWaypoints.length > 0 && (
+                                <div className="relative flex items-center animate-fade-in">
+                                  <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 pointer-events-none" />
+                                  <input
+                                    type="text"
+                                    value={searchQuery}
+                                    onChange={(e) => {
+                                      setGroupSearchQueries((prev) => ({
+                                        ...prev,
+                                        [group.id]: e.target.value,
+                                      }));
+                                    }}
+                                    placeholder="Buscar marcas en este reto..."
+                                    className="w-full bg-[#050807]/60 border border-[#1b3d2b]/60 hover:border-emerald-500/20 focus:border-emerald-400 rounded-lg pl-8 pr-8 py-1.5 text-[11px] text-slate-100 placeholder-slate-600 focus:outline-none transition-colors"
+                                  />
+                                  {searchQuery && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setGroupSearchQueries((prev) => ({
+                                          ...prev,
+                                          [group.id]: "",
+                                        }));
+                                      }}
+                                      className="absolute right-2.5 text-slate-500 hover:text-slate-300 transition-colors"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+
                               {/* Waypoints within this group */}
                               {groupWaypoints.length === 0 ? (
                                 <div className="py-4 text-center">
@@ -1677,9 +1896,42 @@ export function Sidebar({
                                     Sin marcas en este reto. Haz clic derecho en el mapa para añadir un waypoint y asígnalo a este reto.
                                   </p>
                                 </div>
+                              ) : filteredWaypoints.length === 0 ? (
+                                <div className="py-4 text-center animate-fade-in">
+                                  <p className="text-[10px] text-slate-500 max-w-[280px] mx-auto leading-relaxed">
+                                    🔍 No se encontraron marcas que coincidan con "{searchQuery}".
+                                  </p>
+                                </div>
                               ) : (
                                 <div className="space-y-1.5">
-                                  {groupWaypoints.map((wpt) => {
+                                  <div className="flex justify-between items-center bg-[#070a08]/30 px-2.5 py-1.5 rounded-lg border border-white/5 select-none mb-1.5">
+                                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+                                      {searchQuery ? "Resultados" : "Marcas en este reto"} ({filteredWaypoints.length})
+                                    </span>
+                                    {isBulkMode && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const groupWptIds = filteredWaypoints.map((w) => w.id);
+                                          const allSelected = groupWptIds.every((id) => selectedWptIds.includes(id));
+                                          
+                                          if (allSelected) {
+                                            setSelectedWptIds((prev) => prev.filter((id) => !groupWptIds.includes(id)));
+                                          } else {
+                                            setSelectedWptIds((prev) => {
+                                              const union = new Set([...prev, ...groupWptIds]);
+                                              return Array.from(union);
+                                            });
+                                          }
+                                        }}
+                                        className="text-[8.5px] font-extrabold text-blue-400 hover:text-blue-300 transition-colors uppercase tracking-wider bg-blue-500/10 px-2 py-0.5 rounded cursor-pointer animate-fade-in"
+                                      >
+                                        {filteredWaypoints.every((w) => selectedWptIds.includes(w.id)) ? "Ninguno" : "Todo"}
+                                      </button>
+                                    )}
+                                  </div>
+                                  {filteredWaypoints.map((wpt) => {
                                     const WptIcon = WPT_ICONS[wpt.icon] || MapPin;
                                     const isCompleted = !!wpt.completed;
                                     return (
@@ -1706,13 +1958,26 @@ export function Sidebar({
                                       >
                                         {/* Circular Checkbox for Bulk Selection Mode */}
                                         {isBulkMode && (
-                                          <div className="mr-0.5 mt-0.5 shrink-0 select-none">
+                                          <div 
+                                            title="Seleccionar para acciones en lote"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setSelectedWptIds((prev) =>
+                                                prev.includes(wpt.id)
+                                                  ? prev.filter((id) => id !== wpt.id)
+                                                  : [...prev, wpt.id]
+                                              );
+                                            }}
+                                            className="mr-0.5 mt-0.5 shrink-0 select-none cursor-pointer"
+                                          >
                                             {selectedWptIds.includes(wpt.id) ? (
                                               <div className="w-4 h-4 rounded-full bg-blue-500 border border-blue-500 flex items-center justify-center text-white shadow">
                                                 <Check className="w-2.5 h-2.5 stroke-[4]" />
                                               </div>
                                             ) : (
-                                              <div className="w-4 h-4 rounded-full border border-slate-600 bg-black/40 hover:border-blue-400" />
+                                              <div className="w-4 h-4 rounded-full border border-blue-500/30 bg-blue-500/5 hover:border-blue-400 flex items-center justify-center text-transparent hover:text-blue-400/40">
+                                                <Check className="w-2.5 h-2.5 stroke-[4]" />
+                                              </div>
                                             )}
                                           </div>
                                         )}
@@ -1720,22 +1985,28 @@ export function Sidebar({
                                         {/* Custom Checkbox for completed status */}
                                         <button
                                           type="button"
+                                          title="Marcar como Realizado/Visitado"
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             onToggleWaypointCompleted(wpt.id);
                                           }}
                                           className={`w-4 h-4 rounded mt-0.5 flex items-center justify-center border transition-all shrink-0 cursor-pointer ${
                                             isCompleted
-                                              ? "bg-emerald-400 border-emerald-400 text-black hover:bg-emerald-500"
-                                              : "border-slate-600 hover:border-emerald-400 bg-black/40"
+                                              ? "bg-emerald-500 border-emerald-500 text-black hover:bg-emerald-600 animate-fade-in"
+                                              : "border-emerald-500/30 bg-emerald-500/5 text-transparent hover:text-emerald-500/40 hover:border-emerald-400"
                                           }`}
                                         >
-                                          {isCompleted && <Check className="w-3 h-3 stroke-[3]" />}
+                                          <Check className="w-2.5 h-2.5 stroke-[3.5]" />
                                         </button>
 
                                         {/* Mini Category Icon */}
                                         <div
-                                          className="w-5 h-5 rounded flex items-center justify-center text-slate-900 shrink-0 mt-0.5"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            onFlyToCoords(wpt.lat, wpt.lng);
+                                          }}
+                                          title="Centrar mapa en este waypoint"
+                                          className="w-5 h-5 rounded flex items-center justify-center text-slate-900 shrink-0 mt-0.5 hover:scale-110 active:scale-95 transition-transform cursor-pointer"
                                           style={{ backgroundColor: wpt.color }}
                                         >
                                           <WptIcon className="w-3.5 h-3.5 text-white" />
@@ -1765,9 +2036,9 @@ export function Sidebar({
                                               </button>
                                               <button
                                                 type="button"
-                                                onClick={(e) => {
+                                                onClick={async (e) => {
                                                   e.stopPropagation();
-                                                  if (window.confirm("¿Seguro que deseas eliminar este waypoint?")) {
+                                                  if (await customConfirm("¿Seguro que deseas eliminar este waypoint?")) {
                                                     onDeleteWaypoint(wpt.id);
                                                   }
                                                 }}
@@ -1803,10 +2074,6 @@ export function Sidebar({
                                               </a>
                                             </div>
                                           )}
-
-                                          <p className="text-[8px] text-slate-600 font-mono pt-1">
-                                            {wpt.lat.toFixed(5)}, {wpt.lng.toFixed(5)}
-                                          </p>
                                         </div>
                                       </div>
                                     );
@@ -1840,13 +2107,23 @@ export function Sidebar({
                         <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">
                           Lote: {selectedWptIds.length} marcas seleccionadas
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedWptIds([])}
-                          className="text-[9px] font-bold text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
-                        >
-                          Desmarcar todas
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedWptIds(waypoints.map((w) => w.id))}
+                            className="text-[9px] font-bold text-blue-400 hover:text-blue-300 transition-colors cursor-pointer"
+                          >
+                            Marcar todas
+                          </button>
+                          <span className="text-slate-700 text-[9px] select-none">|</span>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedWptIds([])}
+                            className="text-[9px] font-bold text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                          >
+                            Desmarcar todas
+                          </button>
+                        </div>
                       </div>
                       
                       <div className="grid grid-cols-2 gap-2">
@@ -1868,7 +2145,6 @@ export function Sidebar({
                               }
                             });
                             setSelectedWptIds([]);
-                            setIsBulkMode(false);
                           }}
                           className="py-2 bg-emerald-400/10 hover:bg-emerald-400/20 text-emerald-400 border border-emerald-500/20 text-[10px] font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1"
                         >
@@ -1877,11 +2153,10 @@ export function Sidebar({
                         
                         <button
                           type="button"
-                          onClick={() => {
-                            if (window.confirm(`¿Seguro que deseas eliminar las ${selectedWptIds.length} marcas seleccionadas?`)) {
+                          onClick={async () => {
+                            if (await customConfirm(`¿Seguro que deseas eliminar las ${selectedWptIds.length} marcas seleccionadas?`)) {
                               selectedWptIds.forEach(id => onDeleteWaypoint(id));
                               setSelectedWptIds([]);
-                              setIsBulkMode(false);
                             }
                           }}
                           className="py-2 bg-red-400/10 hover:bg-red-400/20 text-red-400 border border-red-500/20 text-[10px] font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1"
@@ -1903,7 +2178,6 @@ export function Sidebar({
                                 }
                               });
                               setSelectedWptIds([]);
-                              setIsBulkMode(false);
                             }}
                             value=""
                             className="flex-1 bg-[#0a0f0d] border border-[#1b3d2b] rounded-lg px-2 py-1.5 text-[10px] text-slate-300 focus:outline-none focus:border-emerald-400 cursor-pointer"
@@ -1946,7 +2220,6 @@ export function Sidebar({
                                 }
                               });
                               setSelectedWptIds([]);
-                              setIsBulkMode(false);
                             }}
                             value=""
                             className="flex-1 bg-[#0a0f0d] border border-[#1b3d2b] rounded-lg px-2 py-1.5 text-[10px] text-slate-300 focus:outline-none focus:border-emerald-400 cursor-pointer"
@@ -1979,60 +2252,126 @@ export function Sidebar({
             </div>
           )}
 
-          {/* TAB: SEARCH */}
-          {activeTab === "search" && (
-            <div className="space-y-4 animate-fade-in">
-              <form onSubmit={handleSearch} className="flex gap-2">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-500" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Ej. Aneto, Picos de Europa..."
-                    className="w-full bg-[#0a0f0d]/80 border border-[#1b3d2b] rounded-xl pl-9 pr-4 py-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 transition-colors"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="px-4 bg-emerald-400 text-[#0c120f] hover:bg-emerald-300 rounded-xl text-xs font-bold transition-colors"
-                >
-                  Ir
-                </button>
-              </form>
+          {/* TAB: SETTINGS */}
+          {activeTab === "settings" && (
+            <div className="space-y-6 animate-fade-in text-slate-200">
+              <div className="space-y-1">
+                <h3 className="text-xs font-bold text-emerald-400 uppercase tracking-wider font-sans">Ajustes de la Aplicación</h3>
+                <p className="text-[10px] text-slate-500">Configura tus preferencias de visualización y unidades.</p>
+              </div>
 
-              {searchLoading && (
-                <div className="flex justify-center p-8">
-                  <Loader className="w-6 h-6 text-emerald-400 animate-spin" />
+              {/* Coordinate Format Section */}
+              <div className="space-y-3 bg-[#0c120f]/60 p-4 rounded-xl border border-[#1b3d2b]/25 shadow-lg">
+                <div className="flex items-center gap-2">
+                  <Compass className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-300 font-sans">Formato de Coordenadas</span>
                 </div>
-              )}
-
-              {searchResults.length > 0 && (
                 <div className="space-y-2">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                    Resultados encontrados
-                  </span>
-                  <div className="space-y-1.5 max-h-[50vh] overflow-y-auto pr-1">
-                    {searchResults.map((result, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => selectSearchResult(result)}
-                        className="w-full flex items-start gap-2.5 p-3 rounded-xl bg-[#0b100d] border border-white/5 hover:border-emerald-500/20 hover:bg-[#0f1612] text-left transition-all"
-                      >
-                        <Compass className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                        <div>
-                          <p className="text-xs font-bold text-slate-200">
-                            {result.display_name.split(",")[0]}
-                          </p>
-                          <p className="text-[10px] text-slate-500 line-clamp-2 mt-0.5 leading-tight">
-                            {result.display_name.split(",").slice(1).join(",").trim()}
-                          </p>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+                  {[
+                    { id: "dd", label: "Grados Decimales (DD)", desc: "Ej. 43.18705, -2.48745" },
+                    { id: "ddm", label: "Grados y Minutos Decimales (DDM)", desc: "Ej. 43° 11.223' N, 2° 29.247' W" },
+                    { id: "dms", label: "Grados, Minutos y Segundos (DMS)", desc: "Ej. 43° 11' 13.38\" N, 2° 29' 14.82\" W" },
+                    { id: "utm", label: "UTM", desc: "Ej. 30T 541673E 4781745N" },
+                    { id: "mgrs", label: "MGRS", desc: "Sistema de Referencia de Red Militar" },
+                  ].map((fmt) => (
+                    <button
+                      key={fmt.id}
+                      onClick={() => onChangeCoordinateFormat(fmt.id as any)}
+                      className={`w-full text-left p-2.5 rounded-lg border transition-all flex flex-col gap-0.5 cursor-pointer ${
+                        coordinateFormat === fmt.id
+                          ? "bg-emerald-500/10 border-emerald-500 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.1)]"
+                          : "bg-transparent border-white/5 hover:border-emerald-500/20 text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      <span className="text-[11px] font-bold">{fmt.label}</span>
+                      <span className="text-[9px] text-slate-500 font-mono leading-none">{fmt.desc}</span>
+                    </button>
+                  ))}
                 </div>
-              )}
+              </div>
+
+              {/* Grid Overlay Section */}
+              <div className="space-y-3 bg-[#0c120f]/60 p-4 rounded-xl border border-[#1b3d2b]/25 shadow-lg">
+                <div className="flex items-center gap-2">
+                  <Settings className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-300 font-sans">Cuadrícula del Mapa (Grid)</span>
+                </div>
+                <div className="space-y-2">
+                  {[
+                    { id: "none", label: "Ninguna", desc: "Sin cuadrícula en el mapa" },
+                    { id: "dd", label: "Lat/Lng (Grados Decimales)", desc: "Líneas geográficas de grados decimales" },
+                    { id: "dms", label: "Lat/Lng (Grados Minutos Segundos)", desc: "Líneas geográficas formato sexagesimal" },
+                    { id: "utm", label: "UTM", desc: "Cuadrícula métrica proyectada UTM" },
+                    { id: "mgrs", label: "MGRS", desc: "Cuadrícula militar estandarizada" },
+                  ].map((grid) => (
+                    <button
+                      key={grid.id}
+                      onClick={() => onChangeGridOverlay(grid.id as any)}
+                      className={`w-full text-left p-2.5 rounded-lg border transition-all flex flex-col gap-0.5 cursor-pointer ${
+                        gridOverlay === grid.id
+                          ? "bg-emerald-500/10 border-emerald-500 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.1)]"
+                          : "bg-transparent border-white/5 hover:border-emerald-500/20 text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      <span className="text-[11px] font-bold">{grid.label}</span>
+                      <span className="text-[9px] text-slate-500 leading-none">{grid.desc}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* ON/OFF toggle switch for showing coordinate text labels on the grid lines */}
+                {gridOverlay !== "none" && (
+                  <div className="pt-3 border-t border-[#1b3d2b]/20 flex items-center justify-between">
+                    <div className="flex flex-col gap-0.5 min-w-0">
+                      <span className="text-[11px] font-bold text-slate-300">Mostrar Datos Lat/Lng</span>
+                      <span className="text-[9px] text-slate-500 leading-none">Muestra valores en cada línea</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={onToggleGridLabels}
+                      className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        showGridLabels ? "bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.3)]" : "bg-slate-700"
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                          showGridLabels ? "translate-x-5" : "translate-x-0"
+                        }`}
+                      />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Distance Units Section */}
+              <div className="space-y-3 bg-[#0c120f]/60 p-4 rounded-xl border border-[#1b3d2b]/25 shadow-lg">
+                <div className="flex items-center gap-2">
+                  <Route className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-300 font-sans">Unidades de Medida</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => { if (useImperial) onToggleUnits(); }}
+                    className={`py-2 px-3 rounded-lg border text-xs font-bold transition-all text-center cursor-pointer ${
+                      !useImperial
+                        ? "bg-emerald-500/10 border-emerald-500 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.1)]"
+                        : "bg-transparent border-white/5 hover:border-emerald-500/20 text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    Métrica (km, m)
+                  </button>
+                  <button
+                    onClick={() => { if (!useImperial) onToggleUnits(); }}
+                    className={`py-2 px-3 rounded-lg border text-xs font-bold transition-all text-center cursor-pointer ${
+                      useImperial
+                        ? "bg-emerald-500/10 border-emerald-500 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.1)]"
+                        : "bg-transparent border-white/5 hover:border-emerald-500/20 text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    Imperial (mi, ft)
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>

@@ -5,14 +5,21 @@ import { ElevationProfile } from "./components/ElevationProfile";
 import { WaypointModal } from "./components/WaypointModal";
 import { useRoutePlanner, type Waypoint, type RoutePoint } from "./hooks/useRoutePlanner";
 import type { BaseLayerId } from "./components/LayerSelector";
-import { ChevronDown, ChevronUp, Search, X, Compass, Loader } from "lucide-react";
+import { ChevronDown, ChevronUp, Search, X, Compass, Loader, MapPin, Route, Square, Upload, Download } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "./utils/supabaseClient";
 import { AuthScreen } from "./components/AuthScreen";
+import { formatCoordinatesByFormat } from "./utils/geoUtils";
+import { exportToGPX } from "./utils/gpxExporter";
 
-export default function App() {
+import { CustomDialogProvider, useCustomDialog } from "./components/CustomDialog";
+
+function AppContent() {
   // Authentication States
   const [user, setUser] = useState<any | null>(null);
-  const [showAuthScreen, setShowAuthScreen] = useState<boolean>(isSupabaseConfigured);
+  const [showAuthScreen, setShowAuthScreen] = useState<boolean>(true); // Start as true to show login screen first
+  const [authChecking, setAuthChecking] = useState<boolean>(isSupabaseConfigured); // Check session if Supabase is configured
+
+  const { customAlert } = useCustomDialog();
 
   const {
     routeName,
@@ -34,12 +41,14 @@ export default function App() {
     clearRoute,
     importRouteData,
     addWaypoint,
+    addMultipleWaypoints,
     updateWaypoint,
     removeWaypoint,
     
     // Multi-track operations
     createNewTrack,
     deleteTrack,
+    deleteMultipleTracks,
     toggleTrackVisibility,
     setTrackColor,
     mergeTracks,
@@ -58,7 +67,140 @@ export default function App() {
   const [activeBaseLayer, setActiveBaseLayer] = useState<BaseLayerId>("osm");
   const [overlayOpacity, setOverlayOpacity] = useState<number>(0.4);
   const [showContours, setShowContours] = useState<boolean>(false);
-  const [useImperial, setUseImperial] = useState<boolean>(false);
+  const [useImperial, setUseImperial] = useState<boolean>(() => {
+    return localStorage.getItem("useImperial") === "true";
+  });
+  const [coordinateFormat, setCoordinateFormat] = useState<"dd" | "ddm" | "dms" | "utm" | "mgrs">(() => {
+    return (localStorage.getItem("coordinateFormat") as any) || "dd";
+  });
+  const [gridOverlay, setGridOverlay] = useState<"none" | "dd" | "dms" | "utm" | "mgrs">(() => {
+    return (localStorage.getItem("gridOverlay") as any) || "none";
+  });
+  const [showGridLabels, setShowGridLabels] = useState<boolean>(() => {
+    return localStorage.getItem("showGridLabels") !== "false"; // Default to true
+  });
+
+  // Persist settings
+  useEffect(() => {
+    localStorage.setItem("useImperial", String(useImperial));
+  }, [useImperial]);
+
+  useEffect(() => {
+    localStorage.setItem("coordinateFormat", coordinateFormat);
+  }, [coordinateFormat]);
+
+  useEffect(() => {
+    localStorage.setItem("gridOverlay", gridOverlay);
+  }, [gridOverlay]);
+
+  useEffect(() => {
+    localStorage.setItem("showGridLabels", String(showGridLabels));
+  }, [showGridLabels]);
+
+  const handleToggleGridLabels = useCallback(() => {
+    setShowGridLabels((prev) => !prev);
+  }, []);
+
+  // Marked Location details for right side panel
+  const [markedLocation, setMarkedLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [copiedCoords, setCopiedCoords] = useState<boolean>(false);
+  const [markedLocationDetails, setMarkedLocationDetails] = useState<{
+    elevation: number | null;
+    weather: {
+      temp: number;
+      windspeed: number;
+      weathercode: number;
+      daily?: {
+        time: string[];
+        weathercode: number[];
+        tempMax: number[];
+        tempMin: number[];
+      } | null;
+    } | null;
+    address: string | null;
+    loading: boolean;
+  }>({ elevation: null, weather: null, address: null, loading: false });
+
+  // Sidebar collapse state
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
+
+  // Automatically expand sidebar when a map location is marked
+  useEffect(() => {
+    if (markedLocation) {
+      setIsSidebarCollapsed(false);
+    }
+  }, [markedLocation]);
+
+  // Fetch location details (elevation, weather, reverse geocoding)
+  useEffect(() => {
+    if (!markedLocation) {
+      setMarkedLocationDetails({ elevation: null, weather: null, address: null, loading: false });
+      return;
+    }
+
+    let isMounted = true;
+    const fetchDetails = async () => {
+      setMarkedLocationDetails(prev => ({ ...prev, loading: true }));
+      try {
+        const { lat, lng } = markedLocation;
+        
+        // 1. Fetch Elevation
+        const elevPromise = fetch(`https://api.open-meteo.com/v1/elevation?latitude=${lat}&longitude=${lng}`)
+          .then(r => r.json())
+          .then(data => data.elevation?.[0] ?? null)
+          .catch(() => null);
+
+        // 2. Fetch Weather & Weekly Forecast
+        const weatherPromise = fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&daily=weathercode,temperature_2m_max,temperature_2m_min&timezone=auto`)
+          .then(r => r.json())
+          .then(data => {
+            if (!data.current_weather) return null;
+            return {
+              temp: data.current_weather.temperature,
+              windspeed: data.current_weather.windspeed,
+              weathercode: data.current_weather.weathercode,
+              daily: data.daily ? {
+                time: data.daily.time,
+                weathercode: data.daily.weathercode,
+                tempMax: data.daily.temperature_2m_max,
+                tempMin: data.daily.temperature_2m_min,
+              } : null
+            };
+          })
+          .catch(() => null);
+
+        // 3. Fetch Reverse Geocoding Address
+        const geoPromise = fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=14`, {
+          headers: { 'Accept-Language': 'es' }
+        })
+          .then(r => r.json())
+          .then(data => data.display_name ?? null)
+          .catch(() => null);
+
+        const [elevation, weather, address] = await Promise.all([elevPromise, weatherPromise, geoPromise]);
+
+        if (isMounted) {
+          setMarkedLocationDetails({
+            elevation,
+            weather,
+            address,
+            loading: false,
+          });
+        }
+      } catch (err) {
+        console.error("Error fetching location details:", err);
+        if (isMounted) {
+          setMarkedLocationDetails(prev => ({ ...prev, loading: false }));
+        }
+      }
+    };
+
+    fetchDetails();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [markedLocation]);
 
   // Synchronization and Viewport states
   const [hoverPoint, setHoverPoint] = useState<RoutePoint | null>(null);
@@ -79,8 +221,15 @@ export default function App() {
   const [floatingSearchLoading, setFloatingSearchLoading] = useState(false);
 
   // Lifted selection states for bulk waypoint actions
-  const [isBulkMode, setIsBulkMode] = useState<boolean>(false);
+  const [isBulkMode, _setIsBulkMode] = useState<boolean>(false);
   const [selectedWptIds, setSelectedWptIds] = useState<string[]>([]);
+  const [selectedPoiIds, setSelectedPoiIds] = useState<string[]>([]);
+  const [isSelectingArea, setIsSelectingArea] = useState<boolean>(false);
+
+  // Automatically clear POI selection when new search results load
+  useEffect(() => {
+    setSelectedPoiIds([]);
+  }, [osmPois]);
 
   // Derive all visible waypoints across all visible tracks in the library
   const visibleWaypoints = useMemo(() => {
@@ -148,9 +297,12 @@ export default function App() {
     setFloatingSearchQuery("");
   }, [handleFlyToCoords]);
 
-  // Listen to Supabase Auth state changes
+  // Listen to Supabase Auth state changes and manage checking state
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
+    if (!isSupabaseConfigured) {
+      setAuthChecking(false);
+      return;
+    }
 
     // Check active session on mount
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -158,6 +310,9 @@ export default function App() {
         setUser(session.user);
         setShowAuthScreen(false);
       }
+      setAuthChecking(false);
+    }).catch(() => {
+      setAuthChecking(false);
     });
 
     // Listen to changes
@@ -196,6 +351,31 @@ export default function App() {
     setEditingWaypoint(null);
     setIsWptModalOpen(true);
   }, []);
+
+  // Directly export the active route track to GPX
+  const handleExportGpxDirect = useCallback(async () => {
+    const activeTrack = tracks.find((t) => t.id === activeTrackId);
+    if (!activeTrack) {
+      customAlert("Por favor, selecciona una ruta activa de la biblioteca para exportar.");
+      return;
+    }
+
+    if (activeTrack.points.length === 0 && activeTrack.waypoints.length === 0) {
+      customAlert("No hay ruta ni marcas en la ruta activa para exportar.");
+      return;
+    }
+
+    const gpxString = exportToGPX(activeTrack.name, activeTrack.points, activeTrack.waypoints);
+    const blob = new Blob([gpxString], { type: "application/gpx+xml" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${activeTrack.name.replace(/\s+/g, "_") || "ruta_summit"}.gpx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [tracks, activeTrackId, customAlert]);
 
   // Handle clicking a waypoint on map to edit it
   const handleEditWaypoint = useCallback((wpt: Waypoint) => {
@@ -260,7 +440,7 @@ export default function App() {
           imageUrl = urlData.publicUrl;
         } catch (err: any) {
           console.error("Failed to upload image to Supabase Storage:", err);
-          alert("Error al subir la imagen a la nube: " + (err.message || err));
+          customAlert("Error al subir la imagen a la nube: " + (err.message || err));
         }
       }
 
@@ -308,7 +488,7 @@ export default function App() {
   }, [splitTrack]);
 
   return (
-    <div className="w-screen h-screen flex overflow-hidden bg-[#070a08] select-none">
+    <div className="w-screen h-screen flex overflow-hidden bg-[#070a08] select-none relative">
       {/* Sidebar Panel */}
       <Sidebar
         routeName={routeName}
@@ -337,6 +517,7 @@ export default function App() {
         onUpdateWaypoint={updateWaypoint}
         onCreateNewTrack={createNewTrack}
         onDeleteTrack={deleteTrack}
+        onDeleteMultipleTracks={deleteMultipleTracks}
         onToggleTrackVisibility={toggleTrackVisibility}
         onSetTrackColor={setTrackColor}
         onMergeTracks={mergeTracks}
@@ -359,15 +540,234 @@ export default function App() {
         onSetOsmPois={setOsmPois}
         onAddOsmPoi={handleAddOsmPoi}
         onAddWaypoint={addWaypoint}
+        onAddMultipleWaypoints={addMultipleWaypoints}
         user={user}
         onSignOut={handleSignOut}
         onSignInClick={useCallback(() => setShowAuthScreen(true), [])}
         isSupabaseConfigured={isSupabaseConfigured}
         isBulkMode={isBulkMode}
-        setIsBulkMode={setIsBulkMode}
         selectedWptIds={selectedWptIds}
         setSelectedWptIds={setSelectedWptIds}
+        selectedPoiIds={selectedPoiIds}
+        onSetSelectedPoiIds={setSelectedPoiIds}
+        coordinateFormat={coordinateFormat}
+        onChangeCoordinateFormat={setCoordinateFormat}
+        gridOverlay={gridOverlay}
+        onChangeGridOverlay={setGridOverlay}
+        showGridLabels={showGridLabels}
+        onToggleGridLabels={handleToggleGridLabels}
+        isCollapsed={isSidebarCollapsed}
+        setIsCollapsed={setIsSidebarCollapsed}
       />
+
+      {/* Point Info Drawer expanding the Sidebar */}
+      {!isSidebarCollapsed && markedLocation && (
+        <div className="w-[340px] md:w-[380px] h-full border-r border-[#1b3d2b] bg-[#131b17]/95 shadow-2xl backdrop-blur-md overflow-hidden flex flex-col z-[9998] animate-slide-in-left pointer-events-auto">
+          {/* Panel Header */}
+          <div className="flex items-center justify-between p-5 border-b border-[#1b3d2b]/40 bg-[#0c120f]/60">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                <Compass className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-sm font-extrabold tracking-wider text-emerald-400 uppercase font-sans">Ubicación Marcada</h3>
+                <p className="text-[9px] text-slate-400 font-mono mt-0.5 truncate">
+                  {formatCoordinatesByFormat(markedLocation.lat, markedLocation.lng, coordinateFormat)}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setMarkedLocation(null)}
+              className="p-1 rounded-lg hover:bg-[#1b3d2b]/40 text-slate-400 hover:text-slate-200 transition-all cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Panel Content */}
+          <div className="flex-1 overflow-y-auto p-5 space-y-5">
+            {markedLocationDetails.loading ? (
+              <div className="h-48 flex flex-col items-center justify-center gap-2">
+                <Loader className="w-6 h-6 text-emerald-400 animate-spin" />
+                <span className="text-[10px] text-slate-400 uppercase tracking-wider font-bold animate-pulse">Obteniendo datos...</span>
+              </div>
+            ) : (
+              <>
+                {/* Geocoding Location Name */}
+                <div className="space-y-1 bg-[#0c120f]/40 p-3.5 rounded-xl border border-[#1b3d2b]/25">
+                  <span className="text-[9px] text-emerald-400/60 uppercase font-bold tracking-wider">Ubicación</span>
+                  <p className="text-xs text-slate-200 font-medium leading-relaxed">
+                    {markedLocationDetails.address || "Área remota / Coordenadas de montaña"}
+                  </p>
+                </div>
+
+                {/* Elevation and Coordinate Card */}
+                <div className="grid grid-cols-2 gap-3.5">
+                  <div className="space-y-1 bg-[#0c120f]/40 p-3.5 rounded-xl border border-[#1b3d2b]/25">
+                    <span className="text-[9px] text-emerald-400/60 uppercase font-bold tracking-wider">Altitud</span>
+                    <p className="text-sm font-black text-slate-100">
+                      {markedLocationDetails.elevation !== null 
+                        ? (useImperial ? `${Math.round(markedLocationDetails.elevation * 3.28084)} ft` : `${Math.round(markedLocationDetails.elevation)} m`)
+                        : "No disponible"}
+                    </p>
+                  </div>
+                  
+                  <div className="space-y-1 bg-[#0c120f]/40 p-3.5 rounded-xl border border-[#1b3d2b]/25 min-w-0">
+                    <span className="text-[9px] text-emerald-400/60 uppercase font-bold tracking-wider">Copiar Coordenadas</span>
+                    <div className="flex items-center justify-between gap-1 mt-0.5">
+                      <p className="text-[10px] font-mono text-slate-200 truncate" title={formatCoordinatesByFormat(markedLocation.lat, markedLocation.lng, coordinateFormat)}>
+                        {formatCoordinatesByFormat(markedLocation.lat, markedLocation.lng, coordinateFormat)}
+                      </p>
+                      <button
+                        onClick={() => {
+                          const coordStr = formatCoordinatesByFormat(markedLocation.lat, markedLocation.lng, coordinateFormat);
+                          navigator.clipboard.writeText(coordStr);
+                          setCopiedCoords(true);
+                          setTimeout(() => setCopiedCoords(false), 2000);
+                        }}
+                        className="p-1 rounded bg-[#131b17] border border-[#1b3d2b] hover:border-emerald-500/40 text-slate-400 hover:text-emerald-400 transition-all cursor-pointer shrink-0"
+                        title="Copiar Coordenadas"
+                      >
+                        {copiedCoords ? (
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="20 6 9 17 4 12"/>
+                          </svg>
+                        ) : (
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                          </svg>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Current & Weekly Weather Card */}
+                {markedLocationDetails.weather && (
+                  <div className="space-y-4 bg-[#0c120f]/40 p-4 rounded-xl border border-[#1b3d2b]/25 shadow-lg">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] text-emerald-400/60 uppercase font-bold tracking-wider flex items-center gap-1">
+                        ⛅ Clima Actual
+                      </span>
+                      <span className="text-[9px] text-slate-400 font-mono">
+                        Open-Meteo
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-[9px] text-slate-400">Temperatura</span>
+                        <span className="text-sm font-bold text-slate-200">
+                          {markedLocationDetails.weather.temp.toFixed(1)}°C
+                        </span>
+                      </div>
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-[9px] text-slate-400">Viento</span>
+                        <span className="text-sm font-bold text-slate-200">
+                          {markedLocationDetails.weather.windspeed} km/h
+                        </span>
+                      </div>
+                      <div className="col-span-2 border-t border-[#1b3d2b]/10 pt-2 mt-1 flex items-center gap-1.5 text-slate-300">
+                        <span className="text-base">
+                          {getWeatherEmoji(markedLocationDetails.weather.weathercode)}
+                        </span>
+                        <span className="text-[10px] font-bold">
+                          {getWeatherDescription(markedLocationDetails.weather.weathercode)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Weekly Forecast Sub-Section */}
+                    {markedLocationDetails.weather.daily && (
+                      <div className="space-y-2 border-t border-[#1b3d2b]/15 pt-3.5 mt-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[9px] text-emerald-400/60 uppercase font-bold tracking-wider">
+                            📅 Previsión Semanal
+                          </span>
+                          <span className="text-[8px] text-slate-500 font-mono">7 Días</span>
+                        </div>
+
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                          {markedLocationDetails.weather.daily.time.map((timeStr, idx) => {
+                            const wcode = markedLocationDetails.weather!.daily!.weathercode[idx];
+                            const tMax = markedLocationDetails.weather!.daily!.tempMax[idx];
+                            const tMin = markedLocationDetails.weather!.daily!.tempMin[idx];
+                            const dayLabel = getSpanishDayName(timeStr, idx);
+
+                            return (
+                              <div
+                                key={timeStr}
+                                className="flex items-center justify-between bg-[#131b17]/50 hover:bg-[#131b17]/80 border border-[#1b3d2b]/10 hover:border-[#1b3d2b]/30 rounded-lg p-2 transition-all duration-200 text-[10.5px] font-sans"
+                              >
+                                <span className="w-16 font-semibold text-slate-300 truncate">
+                                  {dayLabel}
+                                </span>
+                                
+                                <div className="flex items-center gap-1.5 w-10 justify-center">
+                                  <span className="text-base" title={getWeatherDescription(wcode)}>
+                                    {getWeatherEmoji(wcode)}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-2 text-[10px] font-mono font-bold justify-end w-20">
+                                  <span className="text-red-400/90">{Math.round(tMax)}°</span>
+                                  <span className="text-slate-500">|</span>
+                                  <span className="text-blue-400/90">{Math.round(tMin)}°</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Location Actions */}
+                <div className="space-y-2.5 pt-2">
+                  <button
+                    onClick={() => {
+                      const templateWaypoint: Waypoint = {
+                        id: `temp-${Date.now()}`,
+                        name: "Ubicación Marcada",
+                        lat: markedLocation.lat,
+                        lng: markedLocation.lng,
+                        icon: "mountain",
+                        note: `Altitud: ${markedLocationDetails.elevation ? `${Math.round(markedLocationDetails.elevation)}m` : "No disponible"}`,
+                        color: "#f97316",
+                        groupId: "default",
+                        completed: false,
+                      };
+                      setEditingWaypoint(templateWaypoint);
+                      setNewWptCoords(null);
+                      setIsWptModalOpen(true);
+                    }}
+                    className="w-full py-2.5 px-4 rounded-xl border border-[#1b3d2b] hover:border-emerald-500 bg-[#0c120f]/60 hover:bg-emerald-500/10 text-emerald-400 hover:text-emerald-300 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-lg"
+                  >
+                    📥 Guardar Marca (Waypoint)
+                  </button>
+                  <button
+                    onClick={() => {
+                      let trackToUse = tracks.find(t => t.id === activeTrackId);
+                      if (!trackToUse) {
+                        const newTrackId = createNewTrack();
+                        setActiveTrackId(newTrackId);
+                      }
+                      addPoint(markedLocation.lat, markedLocation.lng);
+                      setIsDrawing(true);
+                      setMarkedLocation(null);
+                    }}
+                    className="w-full py-2.5 px-4 rounded-xl border border-[#1b3d2b] hover:border-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/25 text-emerald-400 hover:text-emerald-300 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-lg"
+                  >
+                    📐 Dibujar Ruta desde aquí
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Main Map Viewport & Collapsible Elevation Chart */}
       <div className="flex-1 h-full flex flex-col overflow-hidden relative">
@@ -393,8 +793,88 @@ export default function App() {
             isBulkMode={isBulkMode}
             selectedWptIds={selectedWptIds}
             onSetSelectedWptIds={setSelectedWptIds}
+            selectedPoiIds={selectedPoiIds}
+            onSetSelectedPoiIds={setSelectedPoiIds}
             waypoints={visibleWaypoints}
+            gridOverlay={gridOverlay}
+            showGridLabels={showGridLabels}
+            markedLocation={markedLocation}
+            onSetMarkedLocation={setMarkedLocation}
+            isSelectingArea={isSelectingArea}
+            setIsSelectingArea={setIsSelectingArea}
           />
+
+          {/* Floating vertical Tools toolbar overlaying the map on the left */}
+          {isDrawing && (
+            <div className="absolute top-20 left-6 z-[2000] flex flex-col items-center rounded-2xl border border-[#1b3d2b] bg-[#131b17]/95 shadow-2xl backdrop-blur-md overflow-hidden animate-fade-in p-2 w-14">
+              <div className="text-[9px] font-extrabold text-emerald-400/80 uppercase tracking-widest text-center mt-1 pb-2 border-b border-[#1b3d2b]/40 w-full select-none font-sans">
+                Tools
+              </div>
+              
+              <div className="flex flex-col gap-3.5 mt-4 w-full">
+                {/* Tool 1: Map Pin (Add Waypoint at center) */}
+                <button
+                  onClick={() => {
+                    if (mapCenter) {
+                      handleRightClickMap(mapCenter[0], mapCenter[1]);
+                    }
+                  }}
+                  title="Añadir Marca en el Centro del Mapa"
+                  className="w-10 h-10 rounded-xl bg-transparent hover:bg-emerald-500/10 text-slate-300 hover:text-emerald-400 transition-all flex items-center justify-center cursor-pointer border border-transparent hover:border-emerald-500/20"
+                >
+                  <MapPin className="w-5 h-5" />
+                </button>
+
+                {/* Tool 2: Draw Path (Active State indicator/toggle) */}
+                <button
+                  onClick={() => {
+                    setIsDrawing(!isDrawing);
+                  }}
+                  title="Dibujar Ruta (Activo)"
+                  className="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 transition-all flex items-center justify-center cursor-pointer shadow-[0_0_12px_rgba(16,185,129,0.2)] animate-pulse"
+                >
+                  <Route className="w-5 h-5" />
+                </button>
+
+                {/* Tool 3: Box Area Selection (Toggle area selection) */}
+                <button
+                  onClick={() => {
+                    setIsSelectingArea((prev) => !prev);
+                  }}
+                  title="Selección por Área (Arrastrar en el Mapa)"
+                  className={`w-10 h-10 rounded-xl transition-all flex items-center justify-center cursor-pointer border ${
+                    isSelectingArea
+                      ? "bg-blue-500/20 border-blue-500/40 text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.3)] animate-pulse"
+                      : "bg-transparent hover:bg-emerald-500/10 text-slate-300 hover:text-emerald-400 border-transparent hover:border-emerald-500/20"
+                  }`}
+                >
+                  <Square className="w-5 h-5 border-dashed border-2 rounded-sm border-current p-0.5" />
+                </button>
+
+                {/* Tool 4: Import GPX */}
+                <button
+                  onClick={() => {
+                    document.getElementById("gpx-upload-input")?.click();
+                  }}
+                  title="Importar GPX"
+                  className="w-10 h-10 rounded-xl bg-transparent hover:bg-emerald-500/10 text-slate-300 hover:text-emerald-400 transition-all flex items-center justify-center cursor-pointer border border-transparent hover:border-emerald-500/20"
+                >
+                  <Upload className="w-5 h-5" />
+                </button>
+
+                {/* Tool 5: Export GPX */}
+                <button
+                  onClick={handleExportGpxDirect}
+                  title="Exportar Ruta Activa a GPX"
+                  className="w-10 h-10 rounded-xl bg-transparent hover:bg-emerald-500/10 text-slate-300 hover:text-emerald-400 transition-all flex items-center justify-center cursor-pointer border border-transparent hover:border-emerald-500/20"
+                >
+                  <Download className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+          )}
+
+
 
           {/* Floating Glassmorphic Search Bar */}
           <div className="absolute top-4 left-4 z-[4000] w-72 md:w-96 flex flex-col pointer-events-auto">
@@ -504,6 +984,8 @@ export default function App() {
                 color: editingWaypoint.color,
                 groupId: editingWaypoint.groupId,
                 completed: editingWaypoint.completed,
+                lat: editingWaypoint.lat,
+                lng: editingWaypoint.lng,
               }
             : undefined
         }
@@ -516,9 +998,40 @@ export default function App() {
             : undefined
         }
       />
+      {/* Exclusive loading or login overlay */}
+      {authChecking && (
+        <div className="absolute inset-0 z-[99999] flex flex-col items-center justify-center bg-[#070a08] select-none text-slate-100 overflow-hidden">
+          {/* Deep background glow */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-emerald-500/5 rounded-full blur-[120px] pointer-events-none" />
+          
+          {/* Subtle mountain background pattern */}
+          <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1200&q=80')] bg-cover bg-center opacity-10 mix-blend-overlay pointer-events-none" />
+          
+          <div className="relative flex flex-col items-center space-y-6 animate-fade-in">
+            {/* Logo container */}
+            <div className="w-20 h-20 rounded-2xl overflow-hidden border border-[#1b3d2b]/60 flex items-center justify-center shadow-2xl bg-[#131b17]/90 relative">
+              <Compass className="w-9 h-9 text-emerald-400 animate-spin-slow" />
+            </div>
+            
+            {/* Text header */}
+            <div className="text-center space-y-1.5 select-none">
+              <h1 className="text-2xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-300">
+                SUMMIT GPS
+              </h1>
+              <p className="text-[9px] text-emerald-500/60 uppercase tracking-[0.25em] font-bold">
+                Cargando tu próxima aventura...
+              </p>
+            </div>
+            
+            {/* Loading bar progress tracker */}
+            <div className="w-36 h-0.5 bg-[#131b17] border border-[#1b3d2b]/30 rounded-full overflow-hidden relative">
+              <div className="absolute top-0 left-0 h-full bg-gradient-to-r from-emerald-400 to-teal-300 rounded-full w-full animate-loading-bar" />
+            </div>
+          </div>
+        </div>
+      )}
 
-      {/* Auth Screen Overlay */}
-      {showAuthScreen && (
+      {!authChecking && showAuthScreen && (
         <AuthScreen
           onAuthSuccess={handleAuthSuccess}
           onSkipAuth={handleSkipAuth}
@@ -526,4 +1039,54 @@ export default function App() {
       )}
     </div>
   );
+}
+
+export default function App() {
+  return (
+    <CustomDialogProvider>
+      <AppContent />
+    </CustomDialogProvider>
+  );
+}
+
+function getWeatherEmoji(code: number): string {
+  if (code === 0) return "☀️";
+  if (code >= 1 && code <= 3) return "⛅";
+  if (code === 45 || code === 48) return "🌫️";
+  if (code >= 51 && code <= 55) return "🌧️";
+  if (code >= 61 && code <= 65) return "🌧️";
+  if (code >= 71 && code <= 75) return "❄️";
+  if (code === 77) return "❄️";
+  if (code >= 80 && code <= 82) return "🌦️";
+  if (code >= 85 && code <= 86) return "🌨️";
+  if (code >= 95 && code <= 99) return "⛈️";
+  return "☁️";
+}
+
+function getWeatherDescription(code: number): string {
+  if (code === 0) return "Cielo Despejado";
+  if (code >= 1 && code <= 3) return "Parcialmente Nublado";
+  if (code === 45 || code === 48) return "Niebla";
+  if (code >= 51 && code <= 55) return "Llovizna";
+  if (code >= 61 && code <= 65) return "Lluvia Fuerte";
+  if (code >= 71 && code <= 75) return "Nieve";
+  if (code === 77) return "Nieve Granulada";
+  if (code >= 80 && code <= 82) return "Chubascos de Lluvia";
+  if (code >= 85 && code <= 86) return "Chubascos de Nieve";
+  if (code >= 95 && code <= 99) return "Tormenta Eléctrica";
+  return "Nubosidad";
+}
+
+function getSpanishDayName(dateStr: string, idx: number): string {
+  if (idx === 0) return "Hoy";
+  if (idx === 1) return "Mañana";
+  
+  try {
+    const date = new Date(dateStr);
+    const day = date.getDay();
+    const days = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+    return days[day];
+  } catch {
+    return dateStr;
+  }
 }

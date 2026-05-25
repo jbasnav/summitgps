@@ -4,6 +4,8 @@ import "leaflet/dist/leaflet.css";
 import type { BaseLayerId } from "./LayerSelector";
 import type { Track, RoutePoint, Waypoint, WaypointGroup } from "../hooks/useRoutePlanner";
 import { Plus, Scissors } from "lucide-react";
+import { useCustomDialog } from "./CustomDialog";
+import { formatCoordinatesByFormat, convertLatLngToUtm, convertUtmToLatLng } from "../utils/geoUtils";
 
 interface MapContainerProps {
   tracks: Track[];
@@ -29,6 +31,16 @@ interface MapContainerProps {
   selectedWptIds: string[];
   onSetSelectedWptIds: React.Dispatch<React.SetStateAction<string[]>>;
   waypoints: Waypoint[];
+  selectedPoiIds: string[];
+  onSetSelectedPoiIds: React.Dispatch<React.SetStateAction<string[]>>;
+  isSelectingArea: boolean;
+  setIsSelectingArea: React.Dispatch<React.SetStateAction<boolean>>;
+
+  // Grid and Location Click settings
+  gridOverlay: "none" | "dd" | "dms" | "utm" | "mgrs";
+  showGridLabels: boolean;
+  markedLocation: { lat: number; lng: number } | null;
+  onSetMarkedLocation: (loc: { lat: number; lng: number } | null) => void;
 }
 
 // Map Tile Providers
@@ -72,9 +84,19 @@ export function MapContainer({
   selectedWptIds,
   onSetSelectedWptIds,
   waypoints,
+  selectedPoiIds,
+  onSetSelectedPoiIds,
+  gridOverlay,
+  showGridLabels,
+  markedLocation,
+  onSetMarkedLocation,
+  isSelectingArea,
+  setIsSelectingArea,
 }: MapContainerProps) {
+  const { customConfirm } = useCustomDialog();
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
+  const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
   
   // Ref maps to manage layers dynamically
   const tileLayerRef = useRef<L.TileLayer | null>(null);
@@ -84,9 +106,10 @@ export function MapContainer({
   const waypointMarkersRef = useRef<Record<string, L.Marker>>({});
   const osmPoiMarkersRef = useRef<Record<string, L.Marker>>({});
   const hoverIndicatorRef = useRef<L.CircleMarker | null>(null);
+  const markedLocationMarkerRef = useRef<L.Marker | null>(null);
+  const gridGroupRef = useRef<L.LayerGroup | null>(null);
 
-  // Box Area Selection states and refs
-  const [isSelectingArea, setIsSelectingArea] = useState(false);
+  // Box Area Selection refs (isSelectingArea state is now a prop)
   const activeRectRef = useRef<L.Rectangle | null>(null);
   const startLatLngRef = useRef<L.LatLng | null>(null);
 
@@ -116,6 +139,7 @@ export function MapContainer({
     hillshadeLayerRef.current = hillshadeLayer;
 
     mapRef.current = map;
+    setMapInstance(map);
 
     // Report initial coordinates
     if (onMapMove) {
@@ -137,40 +161,39 @@ export function MapContainer({
 
   // Update Base Layer
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !tileLayerRef.current) return;
+    if (!mapInstance || !tileLayerRef.current) return;
 
-    map.removeLayer(tileLayerRef.current);
-    const newBaseLayer = L.tileLayer(TILE_LAYERS[activeBaseLayer], { maxZoom: 19, zIndex: 1 }).addTo(map);
+    mapInstance.removeLayer(tileLayerRef.current);
+    const newBaseLayer = L.tileLayer(TILE_LAYERS[activeBaseLayer], { maxZoom: 19, zIndex: 1 }).addTo(mapInstance);
     tileLayerRef.current = newBaseLayer;
-  }, [activeBaseLayer]);
+  }, [mapInstance, activeBaseLayer]);
 
   // Update Hillshade Overlay
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !hillshadeLayerRef.current) return;
+    if (!mapInstance || !hillshadeLayerRef.current) return;
 
     if (showContours) {
       hillshadeLayerRef.current.setOpacity(overlayOpacity);
-      if (!map.hasLayer(hillshadeLayerRef.current)) {
-        hillshadeLayerRef.current.addTo(map);
+      if (!mapInstance.hasLayer(hillshadeLayerRef.current)) {
+        hillshadeLayerRef.current.addTo(mapInstance);
       }
     } else {
       hillshadeLayerRef.current.setOpacity(0);
-      if (map.hasLayer(hillshadeLayerRef.current)) {
-        map.removeLayer(hillshadeLayerRef.current);
+      if (mapInstance.hasLayer(hillshadeLayerRef.current)) {
+        mapInstance.removeLayer(hillshadeLayerRef.current);
       }
     }
-  }, [showContours, overlayOpacity]);
+  }, [mapInstance, showContours, overlayOpacity]);
 
   // Handle map drawing clicks & right clicks
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
+    if (!mapInstance) return;
 
     const onMapClick = (e: L.LeafletMouseEvent) => {
       if (isDrawing) {
         onAddPoint(e.latlng.lat, e.latlng.lng);
+      } else if (!isSplitting && !isSelectingArea && !isBulkMode) {
+        onSetMarkedLocation({ lat: e.latlng.lat, lng: e.latlng.lng });
       }
     };
 
@@ -178,26 +201,25 @@ export function MapContainer({
       onRightClickMap(e.latlng.lat, e.latlng.lng);
     };
 
-    map.on("click", onMapClick);
-    map.on("contextmenu", onMapRightClick);
+    mapInstance.on("click", onMapClick);
+    mapInstance.on("contextmenu", onMapRightClick);
 
     return () => {
-      map.off("click", onMapClick);
-      map.off("contextmenu", onMapRightClick);
+      mapInstance.off("click", onMapClick);
+      mapInstance.off("contextmenu", onMapRightClick);
     };
-  }, [isDrawing, onAddPoint, onRightClickMap]);
+  }, [mapInstance, isDrawing, isSplitting, isSelectingArea, isBulkMode, onAddPoint, onSetMarkedLocation, onRightClickMap]);
 
   // Render Polylines for ALL visible tracks
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
+    if (!mapInstance) return;
 
     const currentTrackIds = new Set(tracks.filter((t) => t.visible).map((t) => t.id));
 
     // 1. Clean up polylines for tracks that are no longer visible or deleted
     Object.keys(polylinesRef.current).forEach((id) => {
       if (!currentTrackIds.has(id)) {
-        map.removeLayer(polylinesRef.current[id]);
+        mapInstance.removeLayer(polylinesRef.current[id]);
         delete polylinesRef.current[id];
       }
     });
@@ -222,19 +244,18 @@ export function MapContainer({
         existingPoly.setLatLngs(latlngs);
         existingPoly.setStyle(polylineOpts);
       } else {
-        const polyline = L.polyline(latlngs, polylineOpts).addTo(map);
+        const polyline = L.polyline(latlngs, polylineOpts).addTo(mapInstance);
         polylinesRef.current[track.id] = polyline;
       }
     });
-  }, [tracks, activeTrackId, isDrawing]);
+  }, [mapInstance, tracks, activeTrackId, isDrawing]);
 
   // Render Active Track Control Points & Splitting Vertices
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
+    if (!mapInstance) return;
 
     // Clear old control markers
-    controlMarkersRef.current.forEach((marker) => map.removeLayer(marker));
+    controlMarkersRef.current.forEach((marker) => mapInstance.removeLayer(marker));
     controlMarkersRef.current = [];
 
     const activeTrack = tracks.find((t) => t.id === activeTrackId);
@@ -259,7 +280,7 @@ export function MapContainer({
           color: isSplitMode ? "#ffffff" : "#ffffff",
           weight: isSplitMode ? 2.5 : 1.5,
           className: isSplitMode ? "animate-pulse cursor-scissors" : "cursor-pointer",
-        }).addTo(map);
+        }).addTo(mapInstance);
 
         // Tooltip for split vertices
         if (isSplitMode) {
@@ -269,9 +290,9 @@ export function MapContainer({
             </div>
           `, { direction: "top", offset: [0, -6] });
 
-          marker.on("click", (e) => {
+          marker.on("click", async (e) => {
             L.DomEvent.stopPropagation(e);
-            if (window.confirm(`¿Seguro que deseas dividir la ruta "${activeTrack.name}" en este punto?`)) {
+            if (await customConfirm(`¿Seguro que deseas dividir la ruta "${activeTrack.name}" en este punto?`)) {
               onSplitTrackAt(activeTrack.id, idx);
             }
           });
@@ -285,15 +306,14 @@ export function MapContainer({
 
   // Sync Waypoints with selection indicators and customized click behavior
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
+    if (!mapInstance) return;
 
     const currentWptIds = new Set(waypoints.map((w) => w.id));
 
     // 1. Remove hidden/deleted waypoint markers
     Object.keys(waypointMarkersRef.current).forEach((id) => {
       if (!currentWptIds.has(id)) {
-        map.removeLayer(waypointMarkersRef.current[id]);
+        mapInstance.removeLayer(waypointMarkersRef.current[id]);
         delete waypointMarkersRef.current[id];
       }
     });
@@ -343,7 +363,9 @@ export function MapContainer({
             prev.includes(wpt.id) ? prev.filter((id) => id !== wpt.id) : [...prev, wpt.id]
           );
         } else {
-          onEditWaypoint(wpt);
+          mapInstance.setView([wpt.lat, wpt.lng], Math.max(mapInstance.getZoom() || 14, 14), {
+            animate: true,
+          });
         }
       };
 
@@ -359,7 +381,7 @@ export function MapContainer({
         `);
       } else {
         const marker = L.marker([wpt.lat, wpt.lng], { icon: customIcon })
-          .addTo(map)
+          .addTo(mapInstance)
           .bindTooltip(`
             <div class="px-2 py-1 text-slate-200 text-xs font-semibold bg-[#131b17]/95 border border-[#1b3d2b] rounded-lg shadow-xl">
               ${wpt.name}
@@ -371,30 +393,29 @@ export function MapContainer({
       }
     });
 
-  }, [waypoints, onEditWaypoint, isBulkMode, selectedWptIds, onSetSelectedWptIds]);
+  }, [mapInstance, waypoints, onEditWaypoint, isBulkMode, selectedWptIds, onSetSelectedWptIds]);
 
   // Leaflet mouse event-based click-and-drag Box Selection
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
+    if (!mapInstance) return;
 
     if (!isSelectingArea) {
-      map.dragging.enable();
+      mapInstance.dragging.enable();
       if (activeRectRef.current) {
-        map.removeLayer(activeRectRef.current);
+        mapInstance.removeLayer(activeRectRef.current);
         activeRectRef.current = null;
       }
       startLatLngRef.current = null;
       return;
     }
 
-    map.dragging.disable();
+    mapInstance.dragging.disable();
 
     const onMouseDown = (e: L.LeafletMouseEvent) => {
       if (e.originalEvent.button !== 0) return; // Only left click
       startLatLngRef.current = e.latlng;
       if (activeRectRef.current) {
-        map.removeLayer(activeRectRef.current);
+        mapInstance.removeLayer(activeRectRef.current);
       }
       activeRectRef.current = L.rectangle([[e.latlng.lat, e.latlng.lng], [e.latlng.lat, e.latlng.lng]], {
         color: "#3b82f6",
@@ -402,7 +423,7 @@ export function MapContainer({
         fillColor: "#3b82f6",
         fillOpacity: 0.15,
         dashArray: "4, 4",
-      }).addTo(map);
+      }).addTo(mapInstance);
       L.DomEvent.stopPropagation(e.originalEvent);
     };
 
@@ -431,55 +452,80 @@ export function MapContainer({
         });
       }
 
+      // Also select OSM POIs inside the dragged area
+      const newlySelectedPoiIds: string[] = [];
+      osmPois.forEach((poi) => {
+        const poiLatLng = L.latLng(poi.lat, poi.lng);
+        if (bounds.contains(poiLatLng)) {
+          newlySelectedPoiIds.push(poi.id);
+        }
+      });
+
+      if (newlySelectedPoiIds.length > 0) {
+        onSetSelectedPoiIds((prev) => {
+          const union = new Set([...prev, ...newlySelectedPoiIds]);
+          return Array.from(union);
+        });
+      }
+
       if (activeRectRef.current) {
-        map.removeLayer(activeRectRef.current);
+        mapInstance.removeLayer(activeRectRef.current);
         activeRectRef.current = null;
       }
       startLatLngRef.current = null;
       setIsSelectingArea(false);
     };
 
-    map.on("mousedown", onMouseDown);
-    map.on("mousemove", onMouseMove);
-    map.on("mouseup", onMouseUp);
+    mapInstance.on("mousedown", onMouseDown);
+    mapInstance.on("mousemove", onMouseMove);
+    mapInstance.on("mouseup", onMouseUp);
 
     return () => {
-      map.off("mousedown", onMouseDown);
-      map.off("mousemove", onMouseMove);
-      map.off("mouseup", onMouseUp);
-      map.dragging.enable();
+      mapInstance.off("mousedown", onMouseDown);
+      mapInstance.off("mousemove", onMouseMove);
+      mapInstance.off("mouseup", onMouseUp);
+      mapInstance.dragging.enable();
       if (activeRectRef.current) {
-        map.removeLayer(activeRectRef.current);
+        mapInstance.removeLayer(activeRectRef.current);
         activeRectRef.current = null;
       }
     };
-  }, [isSelectingArea, waypoints, onSetSelectedWptIds]);
+  }, [mapInstance, isSelectingArea, waypoints, onSetSelectedWptIds, osmPois, onSetSelectedPoiIds]);
 
   // Sync Temporary OSM POIs on the map
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
+    if (!mapInstance) return;
 
     const currentOsmPoiIds = new Set(osmPois.map((p) => p.id));
 
     // 1. Remove old OSM POI markers that are no longer active
     Object.keys(osmPoiMarkersRef.current).forEach((id) => {
       if (!currentOsmPoiIds.has(id)) {
-        map.removeLayer(osmPoiMarkersRef.current[id]);
+        mapInstance.removeLayer(osmPoiMarkersRef.current[id]);
         delete osmPoiMarkersRef.current[id];
       }
     });
 
     // 2. Render active OSM POI markers with a distinctive translucid look and click-to-import action
     osmPois.forEach((poi) => {
+      const isSelected = selectedPoiIds.includes(poi.id);
       const svg = WPT_SVG_PATHS[poi.icon] || WPT_SVG_PATHS.mountain;
       
       const customHtml = `
         <div class="relative w-8 h-8 flex items-center justify-center animate-pulse cursor-pointer">
-          <div class="absolute w-8 h-8 rounded-full border border-dashed border-white bg-amber-500/60 hover:bg-amber-500/90 shadow-lg flex items-center justify-center transition-all scale-90 hover:scale-100">
-            ${svg}
-          </div>
-          <div class="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 rounded-full border border-white flex items-center justify-center text-[9px] font-extrabold text-white shadow-sm font-sans">+</div>
+          ${
+            isSelected
+              ? `<div class="absolute w-10 h-10 rounded-full border border-blue-400 bg-blue-500/25 animate-ping opacity-75"></div>
+                 <div class="absolute w-9 h-9 rounded-full border-2 border-blue-400 bg-blue-500/20 shadow-[0_0_8px_rgba(59,130,246,0.6)]"></div>
+                 <div class="absolute w-8 h-8 rounded-full border-2 border-white bg-blue-600 shadow-lg flex items-center justify-center transition-all">
+                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-white"><polyline points="20 6 9 17 4 12"/></svg>
+                 </div>
+                 <div class="absolute -top-1 -right-1 w-3.5 h-3.5 bg-blue-500 rounded-full border border-white flex items-center justify-center text-[9px] font-extrabold text-white shadow-sm font-sans">✓</div>`
+              : `<div class="absolute w-8 h-8 rounded-full border border-dashed border-white bg-amber-500/60 hover:bg-amber-500/90 shadow-lg flex items-center justify-center transition-all scale-90 hover:scale-100">
+                   ${svg}
+                 </div>
+                 <div class="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 rounded-full border border-white flex items-center justify-center text-[9px] font-extrabold text-white shadow-sm font-sans">+</div>`
+          }
         </div>
       `;
 
@@ -490,36 +536,53 @@ export function MapContainer({
         iconAnchor: [16, 16],
       });
 
+      const handleClick = (e: L.LeafletMouseEvent) => {
+        L.DomEvent.stopPropagation(e);
+        // 1. Center map
+        mapInstance.setView([poi.lat, poi.lng], Math.max(mapInstance.getZoom() || 14, 14), {
+          animate: true,
+        });
+        // 2. Toggle selection
+        onSetSelectedPoiIds((prev) =>
+          prev.includes(poi.id) ? prev.filter((id) => id !== poi.id) : [...prev, poi.id]
+        );
+      };
+
       const existingMarker = osmPoiMarkersRef.current[poi.id];
       if (existingMarker) {
         existingMarker.setLatLng([poi.lat, poi.lng]);
         existingMarker.setIcon(customIcon);
+        existingMarker.off("click");
+        existingMarker.on("click", handleClick);
+        existingMarker.setTooltipContent(`
+          <div class="px-2 py-1 text-slate-100 text-xs font-semibold bg-[#131b17]/95 border border-[#1b3d2b] rounded-lg shadow-xl">
+            🗺️ ${poi.name} ${poi.elevation ? `(${poi.elevation}m)` : ""} ${isSelected ? "☑️" : ""}
+            <p class="text-[9px] text-slate-300 font-bold mt-0.5">${isSelected ? "Seleccionado (Clic para deseleccionar)" : "Clic para Seleccionar"}</p>
+          </div>
+        `);
       } else {
         const marker = L.marker([poi.lat, poi.lng], { icon: customIcon })
-          .addTo(map)
+          .addTo(mapInstance)
           .bindTooltip(`
-            <div class="px-2 py-1 text-slate-100 text-xs font-semibold bg-amber-950/90 border border-amber-600/40 rounded-lg shadow-xl">
-              🗺️ ${poi.name} ${poi.elevation ? `(${poi.elevation}m)` : ""}
-              <p class="text-[9px] text-slate-300 font-bold mt-0.5">Clic para Importar</p>
+            <div class="px-2 py-1 text-slate-100 text-xs font-semibold bg-[#131b17]/95 border border-[#1b3d2b] rounded-lg shadow-xl">
+              🗺️ ${poi.name} ${poi.elevation ? `(${poi.elevation}m)` : ""} ${isSelected ? "☑️" : ""}
+              <p class="text-[9px] text-slate-300 font-bold mt-0.5">${isSelected ? "Seleccionado (Clic para deseleccionar)" : "Clic para Seleccionar"}</p>
             </div>
           `, { direction: "top", offset: [0, -16], opacity: 0.9 })
-          .on("click", () => {
-            onAddOsmPoi(poi);
-          });
+          .on("click", handleClick);
 
         osmPoiMarkersRef.current[poi.id] = marker;
       }
     });
 
-  }, [osmPois, onAddOsmPoi]);
+  }, [mapInstance, osmPois, onAddOsmPoi, selectedPoiIds, onSetSelectedPoiIds]);
 
   // Sync Hover Marker (Synchronized Elevation Chart Hover Indicator)
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
+    if (!mapInstance) return;
 
     if (hoverIndicatorRef.current) {
-      map.removeLayer(hoverIndicatorRef.current);
+      mapInstance.removeLayer(hoverIndicatorRef.current);
       hoverIndicatorRef.current = null;
     }
 
@@ -531,7 +594,7 @@ export function MapContainer({
         color: "#ffffff",
         weight: 2,
         className: "animate-ping-slow",
-      }).addTo(map);
+      }).addTo(mapInstance);
 
       indicator.bindTooltip(`
         <div class="px-2 py-1 text-slate-100 text-[10px] font-bold bg-[#131b17] border border-orange-500/30 rounded-lg shadow-md">
@@ -541,18 +604,330 @@ export function MapContainer({
 
       hoverIndicatorRef.current = indicator;
     }
-  }, [hoverPoint]);
+  }, [mapInstance, hoverPoint]);
+
+  // Sync Marked Location Marker
+  useEffect(() => {
+    if (!mapInstance) return;
+
+    if (markedLocationMarkerRef.current) {
+      mapInstance.removeLayer(markedLocationMarkerRef.current);
+      markedLocationMarkerRef.current = null;
+    }
+
+    if (markedLocation) {
+      // Create a gorgeous orange pin marker with a pulsing ring!
+      const customHtml = `
+        <div class="relative w-8 h-8 flex items-center justify-center">
+          <div class="absolute w-8 h-8 rounded-full bg-orange-500/35 border border-orange-400 animate-ping opacity-75"></div>
+          <div class="absolute w-6 h-6 rounded-full border-2 border-white bg-orange-500 shadow-lg flex items-center justify-center transition-all duration-300">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 text-white">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+              <circle cx="12" cy="10" r="3"></circle>
+            </svg>
+          </div>
+        </div>
+      `;
+
+      const customIcon = L.divIcon({
+        html: customHtml,
+        className: "marked-location-icon",
+        iconSize: [32, 32],
+        iconAnchor: [16, 24],
+      });
+
+      const marker = L.marker([markedLocation.lat, markedLocation.lng], { icon: customIcon }).addTo(mapInstance);
+      markedLocationMarkerRef.current = marker;
+    }
+  }, [mapInstance, markedLocation]);
+
+  // Sync Grid Overlay
+  useEffect(() => {
+    if (!mapInstance) return;
+
+    if (!gridGroupRef.current) {
+      gridGroupRef.current = L.layerGroup().addTo(mapInstance);
+    }
+
+    const gridGroup = gridGroupRef.current;
+
+    // Create a custom high index overlay pane for the grid to render ABOVE base tile layers but BELOW markers
+    if (!mapInstance.getPane("gridPane")) {
+      const pane = mapInstance.createPane("gridPane");
+      pane.style.zIndex = "450"; // Above overlayPane (400) but below markerPane (600)
+      pane.style.pointerEvents = "none";
+    }
+
+    const drawGrid = () => {
+      gridGroup.clearLayers();
+      if (!gridOverlay || gridOverlay === "none") return;
+
+      const bounds = mapInstance.getBounds();
+      const zoom = mapInstance.getZoom();
+
+      const west = bounds.getWest();
+      const east = bounds.getEast();
+      const south = bounds.getSouth();
+      const north = bounds.getNorth();
+
+      // Check if zoom is too small to avoid browser lag
+      if (zoom < 4) return;
+
+      if (gridOverlay === "dd" || gridOverlay === "dms") {
+        // Geographical Grid: degrees
+        let step = 1.0;
+        if (zoom >= 17) step = 0.001;
+        else if (zoom >= 15) step = 0.005;
+        else if (zoom >= 13) step = 0.02;
+        else if (zoom >= 11) step = 0.1;
+        else if (zoom >= 9) step = 0.5;
+        else if (zoom >= 7) step = 1.0;
+        else if (zoom >= 5) step = 2.0;
+        else step = 5.0;
+
+        const startLng = Math.floor(west / step) * step;
+        const endLng = Math.ceil(east / step) * step;
+        const startLat = Math.floor(south / step) * step;
+        const endLat = Math.ceil(north / step) * step;
+
+        // Draw Longitude Lines (Vertical)
+        for (let lng = startLng; lng <= endLng; lng += step) {
+          const points = [
+            L.latLng(south, lng),
+            L.latLng(north, lng)
+          ];
+          L.polyline(points, {
+            color: "#3b82f6", // Intense Electric Blue hex
+            opacity: 0.65,     // Set opacity explicitly
+            weight: 1.4,
+            dashArray: "3, 6",
+            interactive: false,
+            pane: "gridPane",
+          }).addTo(gridGroup);
+
+          // Draw a label if enabled
+          if (showGridLabels) {
+            const latMid = (south + north) / 2;
+            const labelText = gridOverlay === "dd" 
+              ? `${lng.toFixed(4)}°` 
+              : formatCoordinatesByFormat(latMid, lng, "dms").split(", ")[1];
+
+            const labelIcon = L.divIcon({
+              className: "grid-label",
+              html: `<div class="text-[9px] font-mono font-bold text-blue-400 bg-[#0c1218]/90 px-1.5 py-0.5 rounded border border-blue-500/30 shadow-lg backdrop-blur-sm whitespace-nowrap">${labelText}</div>`,
+              iconSize: [60, 18],
+              iconAnchor: [30, 9],
+            });
+            L.marker([latMid, lng], { icon: labelIcon, interactive: false, pane: "gridPane" }).addTo(gridGroup);
+          }
+        }
+
+        // Draw Latitude Lines (Horizontal)
+        for (let lat = startLat; lat <= endLat; lat += step) {
+          if (lat < -85 || lat > 85) continue;
+          
+          const points = [
+            L.latLng(lat, west),
+            L.latLng(lat, east)
+          ];
+          L.polyline(points, {
+            color: "#3b82f6", // Intense Electric Blue hex
+            opacity: 0.65,
+            weight: 1.4,
+            dashArray: "3, 6",
+            interactive: false,
+            pane: "gridPane",
+          }).addTo(gridGroup);
+
+          // Draw a label if enabled
+          if (showGridLabels) {
+            const lngMid = (west + east) / 2;
+            const labelText = gridOverlay === "dd"
+              ? `${lat.toFixed(4)}°`
+              : formatCoordinatesByFormat(lat, lngMid, "dms").split(", ")[0];
+
+            const labelIcon = L.divIcon({
+              className: "grid-label",
+              html: `<div class="text-[9px] font-mono font-bold text-blue-400 bg-[#0c1218]/90 px-1.5 py-0.5 rounded border border-blue-500/30 shadow-lg backdrop-blur-sm whitespace-nowrap">${labelText}</div>`,
+              iconSize: [60, 18],
+              iconAnchor: [30, 9],
+            });
+            L.marker([lat, lngMid], { icon: labelIcon, interactive: false, pane: "gridPane" }).addTo(gridGroup);
+          }
+        }
+      } else if (gridOverlay === "utm" || gridOverlay === "mgrs") {
+        // Projected Grid: UTM or MGRS based on meters
+        const center = mapInstance.getCenter();
+        const centerZone = Math.floor((center.lng + 180) / 6) + 1;
+        const southernHemisphere = center.lat < 0;
+
+        const sw = bounds.getSouthWest();
+        const ne = bounds.getNorthEast();
+        
+        const swUtmStr = convertLatLngToUtm(sw.lat, sw.lng);
+        
+        const parseUtmStr = (utmStr: string) => {
+          const match = utmStr.match(/(\d+)[A-Z]\s+(\d+)E\s+(\d+)N/);
+          if (match) {
+            return {
+              zone: parseInt(match[1], 10),
+              easting: parseInt(match[2], 10),
+              northing: parseInt(match[3], 10),
+            };
+          }
+          return null;
+        };
+
+        const swUtm = parseUtmStr(swUtmStr);
+        const neUtm = parseUtmStr(convertLatLngToUtm(ne.lat, ne.lng));
+
+        if (swUtm && neUtm) {
+          let minEasting = Math.min(swUtm.easting, neUtm.easting);
+          let maxEasting = Math.max(swUtm.easting, neUtm.easting);
+          let minNorthing = Math.min(swUtm.northing, neUtm.northing);
+          let maxNorthing = Math.max(swUtm.northing, neUtm.northing);
+
+          minEasting = Math.floor(minEasting / 100000) * 100000 - 200000;
+          maxEasting = Math.ceil(maxEasting / 100000) * 100000 + 200000;
+          minNorthing = Math.floor(minNorthing / 100000) * 100000 - 200000;
+          maxNorthing = Math.ceil(maxNorthing / 100000) * 100000 + 200000;
+
+          let step = 100000;
+          if (zoom >= 17) step = 100;
+          else if (zoom >= 15) step = 500;
+          else if (zoom >= 13) step = 1000;
+          else if (zoom >= 11) step = 5000;
+          else if (zoom >= 9) step = 20000;
+          else if (zoom >= 7) step = 50000;
+          else step = 100000;
+
+          const startE = Math.floor(minEasting / step) * step;
+          const endE = Math.ceil(maxEasting / step) * step;
+          const startN = Math.floor(minNorthing / step) * step;
+          const endN = Math.ceil(maxNorthing / step) * step;
+
+          // Vertical Lines (Constant Easting)
+          for (let easting = startE; easting <= endE; easting += step) {
+            const pathLatLngs: L.LatLng[] = [];
+            const numSamples = 5;
+            for (let i = 0; i <= numSamples; i++) {
+              const northingVal = startN + (i / numSamples) * (endN - startN);
+              try {
+                const [lat, lng] = convertUtmToLatLng(easting, northingVal, centerZone, southernHemisphere);
+                if (!isNaN(lat) && !isNaN(lng) && lat >= -85 && lat <= 85 && lng >= -180 && lng <= 180) {
+                  pathLatLngs.push(L.latLng(lat, lng));
+                }
+              } catch (e) {
+                // Ignore
+              }
+            }
+
+            if (pathLatLngs.length >= 2) {
+              L.polyline(pathLatLngs, {
+                color: "#3b82f6", // Intense Electric Blue hex
+                opacity: 0.65,
+                weight: 1.4,
+                dashArray: "3, 6",
+                interactive: false,
+                pane: "gridPane",
+              }).addTo(gridGroup);
+
+              const midIdx = Math.floor(pathLatLngs.length / 2);
+              const midLatLng = pathLatLngs[midIdx];
+              if (bounds.contains(midLatLng)) {
+                let labelText = "";
+                if (gridOverlay === "utm") {
+                  labelText = `${Math.round(easting)}E`;
+                } else {
+                  labelText = formatCoordinatesByFormat(midLatLng.lat, midLatLng.lng, "mgrs").split(" ").slice(0, 2).join(" ");
+                }
+
+                if (showGridLabels) {
+                  const labelIcon = L.divIcon({
+                    className: "grid-label",
+                    html: `<div class="text-[9px] font-mono font-bold text-blue-400 bg-[#0c1218]/90 px-1.5 py-0.5 rounded border border-blue-500/30 shadow-lg backdrop-blur-sm whitespace-nowrap">${labelText}</div>`,
+                    iconSize: [80, 18],
+                    iconAnchor: [40, 9],
+                  });
+                  L.marker(midLatLng, { icon: labelIcon, interactive: false, pane: "gridPane" }).addTo(gridGroup);
+                }
+              }
+            }
+          }
+
+          // Horizontal Lines (Constant Northing)
+          for (let northing = startN; northing <= endN; northing += step) {
+            const pathLatLngs: L.LatLng[] = [];
+            const numSamples = 5;
+            for (let i = 0; i <= numSamples; i++) {
+              const eastingVal = startE + (i / numSamples) * (endE - startE);
+              try {
+                const [lat, lng] = convertUtmToLatLng(eastingVal, northing, centerZone, southernHemisphere);
+                if (!isNaN(lat) && !isNaN(lng) && lat >= -85 && lat <= 85 && lng >= -180 && lng <= 180) {
+                  pathLatLngs.push(L.latLng(lat, lng));
+                }
+              } catch (e) {
+                // Ignore
+              }
+            }
+
+            if (pathLatLngs.length >= 2) {
+              L.polyline(pathLatLngs, {
+                color: "#3b82f6", // Intense Electric Blue hex
+                opacity: 0.65,
+                weight: 1.4,
+                dashArray: "3, 6",
+                interactive: false,
+                pane: "gridPane",
+              }).addTo(gridGroup);
+
+              const midIdx = Math.floor(pathLatLngs.length / 2);
+              const midLatLng = pathLatLngs[midIdx];
+              if (bounds.contains(midLatLng)) {
+                let labelText = "";
+                if (gridOverlay === "utm") {
+                  labelText = `${Math.round(northing)}N`;
+                } else {
+                  labelText = formatCoordinatesByFormat(midLatLng.lat, midLatLng.lng, "mgrs").split(" ").slice(0, 2).join(" ");
+                }
+
+                if (showGridLabels) {
+                  const labelIcon = L.divIcon({
+                    className: "grid-label",
+                    html: `<div class="text-[9px] font-mono font-bold text-blue-400 bg-[#0c1218]/90 px-1.5 py-0.5 rounded border border-blue-500/30 shadow-lg backdrop-blur-sm whitespace-nowrap">${labelText}</div>`,
+                    iconSize: [80, 18],
+                    iconAnchor: [40, 9],
+                  });
+                  L.marker(midLatLng, { icon: labelIcon, interactive: false, pane: "gridPane" }).addTo(gridGroup);
+                }
+              }
+            }
+          }
+        }
+      }
+    };
+
+    drawGrid();
+
+    mapInstance.on("moveend", drawGrid);
+    mapInstance.on("zoomend", drawGrid);
+
+    return () => {
+      mapInstance.off("moveend", drawGrid);
+      mapInstance.off("zoomend", drawGrid);
+      gridGroup.clearLayers();
+    };
+  }, [mapInstance, gridOverlay, showGridLabels]);
 
   // Handle flying to specific coordinates
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !flyToCoords) return;
+    if (!mapInstance || !flyToCoords) return;
 
-    map.flyTo(flyToCoords, 14, {
+    mapInstance.flyTo(flyToCoords, 14, {
       animate: true,
       duration: 1.5,
     });
-  }, [flyToCoords]);
+  }, [mapInstance, flyToCoords]);
 
   return (
     <div className={`relative w-full h-full bg-[#0a0e0c] overflow-hidden ${isDrawing || isSelectingArea ? "leaflet-crosshair" : isSplitting ? "leaflet-scissors" : ""}`}>

@@ -98,9 +98,15 @@ export function parseGPX(gpxString: string): {
     routeName = metadataNameNode.textContent.trim();
   }
 
+  const getChildByLocalName = (parent: Element, localName: string): Element | undefined => {
+    return Array.from(parent.children).find((c) => c.localName.toLowerCase() === localName.toLowerCase());
+  };
+
   // Parse Waypoints
   const waypoints: Waypoint[] = [];
-  const wptNodes = xmlDoc.getElementsByTagName("wpt");
+  const allNodes = Array.from(xmlDoc.getElementsByTagName("*"));
+  const wptNodes = allNodes.filter((n) => n.localName.toLowerCase() === "wpt");
+
   for (let i = 0; i < wptNodes.length; i++) {
     const node = wptNodes[i];
     const latAttr = node.getAttribute("lat");
@@ -110,9 +116,9 @@ export function parseGPX(gpxString: string): {
       const lat = parseFloat(latAttr);
       const lng = parseFloat(lonAttr);
       
-      const nameNode = node.getElementsByTagName("name")[0];
-      const descNode = node.getElementsByTagName("desc")[0] || node.getElementsByTagName("cmt")[0];
-      const symNode = node.getElementsByTagName("sym")[0];
+      const nameNode = getChildByLocalName(node, "name");
+      const descNode = getChildByLocalName(node, "desc") || getChildByLocalName(node, "cmt");
+      const symNode = getChildByLocalName(node, "sym");
 
       const name = nameNode && nameNode.textContent ? nameNode.textContent.trim() : `Waypoint ${i + 1}`;
       const note = descNode && descNode.textContent ? descNode.textContent.trim() : "";
@@ -132,7 +138,7 @@ export function parseGPX(gpxString: string): {
 
   // Parse Trackpoints
   const routePoints: RoutePoint[] = [];
-  const trkptNodes = xmlDoc.getElementsByTagName("trkpt");
+  const trkptNodes = allNodes.filter((n) => n.localName.toLowerCase() === "trkpt");
   for (let i = 0; i < trkptNodes.length; i++) {
     const node = trkptNodes[i];
     const latAttr = node.getAttribute("lat");
@@ -142,7 +148,7 @@ export function parseGPX(gpxString: string): {
       const lat = parseFloat(latAttr);
       const lng = parseFloat(lonAttr);
       
-      const eleNode = node.getElementsByTagName("ele")[0];
+      const eleNode = getChildByLocalName(node, "ele");
       const elevation = eleNode && eleNode.textContent ? parseFloat(eleNode.textContent) : undefined;
 
       routePoints.push({
