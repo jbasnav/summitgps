@@ -5,7 +5,7 @@ import { ElevationProfile } from "./components/ElevationProfile";
 import { WaypointModal } from "./components/WaypointModal";
 import { useRoutePlanner, type Waypoint, type RoutePoint } from "./hooks/useRoutePlanner";
 import type { BaseLayerId } from "./components/LayerSelector";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, Search, X, Compass, Loader } from "lucide-react";
 
 export default function App() {
   const {
@@ -67,6 +67,11 @@ export default function App() {
   const [editingWaypoint, setEditingWaypoint] = useState<Waypoint | null>(null);
   const [newWptCoords, setNewWptCoords] = useState<[number, number] | null>(null);
 
+  // Floating Geocoding Search States
+  const [floatingSearchQuery, setFloatingSearchQuery] = useState("");
+  const [floatingSearchResults, setFloatingSearchResults] = useState<any[]>([]);
+  const [floatingSearchLoading, setFloatingSearchLoading] = useState(false);
+
   // Derive all visible waypoints across all visible tracks in the library
   const visibleWaypoints = useMemo(() => {
     const list: Waypoint[] = [];
@@ -100,6 +105,38 @@ export default function App() {
     setFlyToCoords([lat, lng]);
     setTimeout(() => setFlyToCoords(null), 1600);
   }, []);
+
+  // Handle floating search submit query to Nominatim
+  const handleFloatingSearchSubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!floatingSearchQuery.trim()) return;
+
+    setFloatingSearchLoading(true);
+    setFloatingSearchResults([]);
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+          floatingSearchQuery
+        )}&limit=5`
+      );
+      if (!response.ok) throw new Error("Search service error");
+      const data = await response.json();
+      setFloatingSearchResults(data);
+    } catch (err) {
+      console.error("Floating search failed:", err);
+    } finally {
+      setFloatingSearchLoading(false);
+    }
+  }, [floatingSearchQuery]);
+
+  // Handle flying to selected search result location and clearing lists
+  const handleSelectFloatingResult = useCallback((result: any) => {
+    const lat = parseFloat(result.lat);
+    const lon = parseFloat(result.lon);
+    handleFlyToCoords(lat, lon);
+    setFloatingSearchResults([]);
+    setFloatingSearchQuery("");
+  }, [handleFlyToCoords]);
 
   // Handle right-click on map to drop waypoint
   const handleRightClickMap = useCallback((lat: number, lng: number) => {
@@ -243,6 +280,63 @@ export default function App() {
             osmPois={osmPois}
             onAddOsmPoi={handleAddOsmPoi}
           />
+
+          {/* Floating Glassmorphic Search Bar */}
+          <div className="absolute top-4 left-4 z-[4000] w-72 md:w-96 flex flex-col pointer-events-auto">
+            <form
+              onSubmit={handleFloatingSearchSubmit}
+              className="relative flex items-center shadow-lg rounded-xl overflow-hidden bg-[#131b17]/95 border border-[#1b3d2b] backdrop-blur-md transition-all focus-within:border-emerald-400"
+            >
+              <Search className="w-4 h-4 text-emerald-400 absolute left-3.5" />
+              <input
+                type="text"
+                value={floatingSearchQuery}
+                onChange={(e) => setFloatingSearchQuery(e.target.value)}
+                placeholder="Buscar ciudad, pico, lugar..."
+                className="w-full bg-transparent pl-10 pr-10 py-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none"
+              />
+              {floatingSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFloatingSearchQuery("");
+                    setFloatingSearchResults([]);
+                  }}
+                  className="absolute right-3.5 text-slate-400 hover:text-slate-200 transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </form>
+
+            {floatingSearchLoading && (
+              <div className="mt-2 p-4 bg-[#131b17]/95 border border-[#1b3d2b] rounded-xl flex justify-center shadow-xl backdrop-blur-md">
+                <Loader className="w-5 h-5 text-emerald-400 animate-spin" />
+              </div>
+            )}
+
+            {floatingSearchResults.length > 0 && (
+              <div className="mt-2 max-h-60 overflow-y-auto rounded-xl border border-[#1b3d2b] bg-[#131b17]/95 p-2 space-y-1.5 shadow-2xl backdrop-blur-md pr-1">
+                {floatingSearchResults.map((result, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => handleSelectFloatingResult(result)}
+                    className="w-full flex items-start gap-2.5 p-2.5 rounded-lg bg-transparent hover:bg-emerald-500/10 hover:border-emerald-400/20 text-left transition-all group border border-transparent"
+                  >
+                    <Compass className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-slate-200 truncate group-hover:text-emerald-300 transition-colors">
+                        {result.display_name.split(",")[0]}
+                      </p>
+                      <p className="text-[9.5px] text-slate-500 truncate mt-0.5 leading-tight">
+                        {result.display_name.split(",").slice(1).join(",").trim()}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Collapsible Elevation Chart */}
