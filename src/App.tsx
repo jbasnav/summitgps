@@ -330,6 +330,7 @@ export default function App() {
         onFlyToCoords={handleFlyToCoords}
         onDeleteWaypoint={removeWaypoint}
         onEditWaypoint={handleEditWaypoint}
+        onUpdateWaypoint={updateWaypoint}
         onCreateNewTrack={createNewTrack}
         onDeleteTrack={deleteTrack}
         onToggleTrackVisibility={toggleTrackVisibility}

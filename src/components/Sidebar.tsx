@@ -60,6 +60,7 @@ interface SidebarProps {
   onFlyToCoords: (lat: number, lng: number) => void;
   onDeleteWaypoint: (id: string) => void;
   onEditWaypoint: (wpt: any) => void;
+  onUpdateWaypoint?: (id: string, fields: any) => void;
   
   // Multi-track additions
   onCreateNewTrack: (name?: string) => string;
@@ -139,6 +140,7 @@ export function Sidebar({
   onFlyToCoords,
   onDeleteWaypoint,
   onEditWaypoint,
+  onUpdateWaypoint,
   onCreateNewTrack,
   onDeleteTrack,
   onToggleTrackVisibility,
@@ -170,6 +172,8 @@ export function Sidebar({
 }: SidebarProps) {
   const [activeTab, setActiveTab] = useState<TabId>("route");
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isBulkMode, setIsBulkMode] = useState(false);
+  const [selectedWptIds, setSelectedWptIds] = useState<string[]>([]);
   
   // Track Library selection state for merging
   const [selectedMergeIds, setSelectedMergeIds] = useState<string[]>([]);
@@ -449,7 +453,7 @@ export function Sidebar({
   return (
     <div
       className={`relative z-[9999] h-full flex transition-all duration-300 ${
-        isCollapsed ? "w-0" : "w-[380px] max-w-[90vw]"
+        isCollapsed ? "w-[64px]" : "w-[380px] max-w-[90vw]"
       }`}
     >
       {/* Collapse Toggle Button */}
@@ -460,8 +464,72 @@ export function Sidebar({
         {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
       </button>
 
-      {/* Main Sidebar Panel */}
-      <div className="w-full h-full bg-[#131b17]/95 border-r border-[#1b3d2b] text-slate-100 flex flex-col overflow-hidden backdrop-blur-md">
+      {isCollapsed ? (
+        /* Sleek Vertical Dock Panel when collapsed */
+        <div className="w-[64px] h-full bg-[#0c120f]/95 border-r border-[#1b3d2b] flex flex-col items-center justify-between py-5 text-slate-400 select-none z-10">
+          <div className="flex flex-col items-center gap-6 w-full">
+            {/* Logo */}
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shadow-md">
+              <img src="/favicon.svg" alt="SUMMIT" className="w-5 h-5 filter drop-shadow-[0_0_4px_rgba(16,185,129,0.2)]" />
+            </div>
+
+            {/* Vertical Icons */}
+            <div className="flex flex-col gap-4 w-full px-2">
+              {[
+                { id: "route" as TabId, label: "Rutas", icon: Route },
+                { id: "layers" as TabId, label: "Capas", icon: LayersIcon },
+                { id: "waypoints" as TabId, label: "Marcas", icon: MapPin },
+                { id: "search" as TabId, label: "Buscar", icon: Search },
+              ].map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => {
+                      setActiveTab(tab.id);
+                      setIsCollapsed(false); // Expand when clicking a function icon!
+                    }}
+                    title={tab.label}
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
+                      isActive
+                        ? "bg-emerald-400/10 text-emerald-400 border border-emerald-400/20 shadow-md shadow-emerald-400/5 font-bold"
+                        : "hover:bg-white/[0.04] hover:text-slate-200 text-slate-500 border border-transparent"
+                    }`}
+                  >
+                    <Icon className="w-5 h-5" />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* User Profile / Guest indicator at bottom of dock */}
+          <div className="flex flex-col items-center gap-4">
+            {user ? (
+              <button
+                onClick={onSignOut}
+                title={`Cerrar sesión (${user.email})`}
+                className="w-10 h-10 rounded-xl hover:bg-red-500/10 text-slate-500 hover:text-red-400 flex items-center justify-center cursor-pointer transition-all border border-transparent hover:border-red-500/10"
+              >
+                <LogOut className="w-5 h-5" />
+              </button>
+            ) : (
+              isSupabaseConfigured && (
+                <button
+                  onClick={onSignInClick}
+                  title="Iniciar Sesión"
+                  className="w-10 h-10 rounded-xl bg-amber-500/5 hover:bg-emerald-500/10 text-amber-500 hover:text-emerald-400 flex items-center justify-center cursor-pointer transition-all border border-amber-500/20 hover:border-emerald-500/20 animate-pulse"
+                >
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                </button>
+              )
+            )}
+          </div>
+        </div>
+      ) : (
+        /* Main Sidebar Panel */
+        <div className="w-full h-full bg-[#131b17]/95 border-r border-[#1b3d2b] text-slate-100 flex flex-col overflow-hidden backdrop-blur-md">
         {/* Header / Brand */}
         <div className="p-5 border-b border-[#1b3d2b] flex items-center justify-between bg-[#0c120f]">
           <div className="flex items-center gap-2">
@@ -890,6 +958,20 @@ export function Sidebar({
                 <div className="flex gap-1.5">
                   <button
                     onClick={() => {
+                      setIsBulkMode(!isBulkMode);
+                      setSelectedWptIds([]); // Clear selection when toggling
+                    }}
+                    className={`flex items-center gap-1 text-[10px] font-bold border px-2 py-1 rounded-lg transition-all active:scale-95 cursor-pointer ${
+                      isBulkMode
+                        ? "bg-blue-500/20 border-blue-500/40 text-blue-300 shadow-[0_0_8px_rgba(59,130,246,0.15)]"
+                        : "bg-[#1c2921] border-[#1b3d2b] text-slate-300 hover:text-blue-400 hover:border-blue-500/25"
+                    }`}
+                    title="Seleccionar múltiples marcas para acciones en lote"
+                  >
+                    ☑️ Selección
+                  </button>
+                  <button
+                    onClick={() => {
                       setIsOsmSearchOpen(!isOsmSearchOpen);
                       if (isCreatingGroup) setIsCreatingGroup(false);
                     }}
@@ -1217,24 +1299,34 @@ export function Sidebar({
                     return (
                       <div
                         key={group.id}
-                        className="border border-[#1b3d2b]/40 rounded-xl overflow-hidden bg-[#0c120f]/30 transition-all duration-300"
+                        className="border border-[#1b3d2b]/40 rounded-xl overflow-hidden bg-[#1c2921]/45 hover:bg-[#1c2921]/55 transition-all duration-300 shadow-md"
                       >
                         {/* Accordion Header */}
                         <div
                           onClick={() => setExpandedGroupId(isExpanded ? null : group.id)}
-                          className="flex items-center justify-between p-3 bg-[#0c120f]/60 hover:bg-[#0c120f]/90 transition-colors cursor-pointer gap-2"
+                          className="flex items-center justify-between p-3 bg-[#1c2921]/20 hover:bg-[#1c2921]/40 transition-colors cursor-pointer gap-2.5"
                         >
                           <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                            {/* Folder Icon indicating status */}
-                            <div
-                              className="shrink-0 flex items-center justify-center animate-bounce-short"
-                              style={{ color: group.color }}
-                            >
-                              {isExpanded ? (
-                                <FolderOpen className="w-4 h-4" />
-                              ) : (
-                                <Folder className="w-4 h-4" />
-                              )}
+                            {/* Blurred Image Thumbnail touching borders */}
+                            <div className="w-12 h-12 rounded-lg overflow-hidden relative shrink-0 border border-[#1b3d2b]/60 bg-[#0c120f]/80 select-none shadow-md">
+                              <img
+                                src={group.image || "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=150&q=80"}
+                                alt={group.name}
+                                className="w-full h-full object-cover filter blur-[1px] scale-110 opacity-75"
+                              />
+                              {/* Colored indicator dot */}
+                              <div
+                                className="absolute top-1 left-1 w-2 h-2 rounded-full border border-black/30 shadow-sm"
+                                style={{ backgroundColor: group.color }}
+                              />
+                              {/* Overlay expand indicator */}
+                              <div className="absolute inset-0 bg-black/10 flex items-center justify-center">
+                                {isExpanded ? (
+                                  <FolderOpen className="w-3.5 h-3.5 text-white/90 drop-shadow" />
+                                ) : (
+                                  <Folder className="w-3.5 h-3.5 text-white/80 drop-shadow" />
+                                )}
+                              </div>
                             </div>
 
                             <div className="min-w-0 flex-1">
@@ -1393,13 +1485,38 @@ export function Sidebar({
                                     return (
                                       <div
                                         key={wpt.id}
-                                        onClick={() => onFlyToCoords(wpt.lat, wpt.lng)}
+                                        onClick={() => {
+                                          if (isBulkMode) {
+                                            setSelectedWptIds((prev) =>
+                                              prev.includes(wpt.id)
+                                                ? prev.filter((id) => id !== wpt.id)
+                                                : [...prev, wpt.id]
+                                            );
+                                          } else {
+                                            onFlyToCoords(wpt.lat, wpt.lng);
+                                          }
+                                        }}
                                         className={`group flex items-start gap-2.5 p-2 rounded-lg border transition-all cursor-pointer ${
-                                          isCompleted
+                                          isBulkMode && selectedWptIds.includes(wpt.id)
+                                            ? "bg-blue-500/10 border-blue-500/40 hover:border-blue-500/50"
+                                            : isCompleted
                                             ? "bg-emerald-500/[0.01] border-emerald-500/10 hover:border-emerald-500/20 hover:bg-[#0f1612]/30"
                                             : "bg-[#0b100d]/80 border-white/5 hover:border-emerald-500/10 hover:bg-[#0f1612]/30"
                                         }`}
                                       >
+                                        {/* Circular Checkbox for Bulk Selection Mode */}
+                                        {isBulkMode && (
+                                          <div className="mr-0.5 mt-0.5 shrink-0 select-none">
+                                            {selectedWptIds.includes(wpt.id) ? (
+                                              <div className="w-4 h-4 rounded-full bg-blue-500 border border-blue-500 flex items-center justify-center text-white shadow">
+                                                <Check className="w-2.5 h-2.5 stroke-[4]" />
+                                              </div>
+                                            ) : (
+                                              <div className="w-4 h-4 rounded-full border border-slate-600 bg-black/40 hover:border-blue-400" />
+                                            )}
+                                          </div>
+                                        )}
+
                                         {/* Custom Checkbox for completed status */}
                                         <button
                                           type="button"
@@ -1505,6 +1622,89 @@ export function Sidebar({
                 </div>
               </div>
 
+              {/* 3.5. FLOATING BULK ACTIONS PANEL */}
+              {isBulkMode && selectedWptIds.length > 0 && (
+                <div className="bg-[#18231e] border border-blue-500/30 rounded-xl p-3.5 space-y-2.5 shadow-xl animate-fade-in shrink-0">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">
+                      Lote: {selectedWptIds.length} marcas seleccionadas
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedWptIds([])}
+                      className="text-[9px] font-bold text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                    >
+                      Desmarcar todas
+                    </button>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // Completar en lote
+                        selectedWptIds.forEach(id => {
+                          let foundWpt = null;
+                          for (const t of tracks) {
+                            const found = t.waypoints.find(w => w.id === id);
+                            if (found) {
+                              foundWpt = found;
+                              break;
+                            }
+                          }
+                          if (foundWpt && !foundWpt.completed) {
+                            onToggleWaypointCompleted(id);
+                          }
+                        });
+                        setSelectedWptIds([]);
+                        setIsBulkMode(false);
+                      }}
+                      className="py-2 bg-emerald-400/10 hover:bg-emerald-400/20 text-emerald-400 border border-emerald-500/20 text-[10px] font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1"
+                    >
+                      ✅ Completar
+                    </button>
+                    
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm(`¿Seguro que deseas eliminar las ${selectedWptIds.length} marcas seleccionadas?`)) {
+                          selectedWptIds.forEach(id => onDeleteWaypoint(id));
+                          setSelectedWptIds([]);
+                          setIsBulkMode(false);
+                        }
+                      }}
+                      className="py-2 bg-red-400/10 hover:bg-red-400/20 text-red-400 border border-red-500/20 text-[10px] font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1"
+                    >
+                      🗑️ Eliminar
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-2 border-t border-[#1b3d2b]/20">
+                    <span className="text-[9.5px] text-slate-400 font-semibold shrink-0">Mover a:</span>
+                    <select
+                      onChange={(e) => {
+                        const targetGroupId = e.target.value;
+                        if (!targetGroupId) return;
+                        selectedWptIds.forEach(id => {
+                          if (onUpdateWaypoint) {
+                            onUpdateWaypoint(id, { groupId: targetGroupId });
+                          }
+                        });
+                        setSelectedWptIds([]);
+                        setIsBulkMode(false);
+                      }}
+                      value=""
+                      className="flex-1 bg-[#0a0f0d] border border-[#1b3d2b] rounded-lg px-2 py-1.5 text-[10px] text-slate-300 focus:outline-none focus:border-emerald-400 cursor-pointer"
+                    >
+                      <option value="" disabled>Seleccionar reto...</option>
+                      {waypointGroups.map(g => (
+                        <option key={g.id} value={g.id}>{g.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
               {/* 4. JSON IMPORT WIDGET */}
               <div className="border-t border-[#1b3d2b]/40 pt-3 flex gap-2 shrink-0">
                 <label className="w-full py-2.5 rounded-xl border border-[#1b3d2b] bg-[#0c120f] hover:bg-[#0f1612] text-slate-300 hover:text-emerald-400 cursor-pointer transition-all text-xs font-semibold flex items-center justify-center gap-1.5">
@@ -1579,6 +1779,7 @@ export function Sidebar({
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }
