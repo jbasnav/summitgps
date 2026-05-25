@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { BaseLayerId } from "./LayerSelector";
@@ -23,6 +23,12 @@ interface MapContainerProps {
   onMapMove?: (lat: number, lng: number) => void;
   osmPois: any[];
   onAddOsmPoi: (poi: any) => void;
+
+  // Bulk selection props
+  isBulkMode: boolean;
+  selectedWptIds: string[];
+  onSetSelectedWptIds: React.Dispatch<React.SetStateAction<string[]>>;
+  waypoints: Waypoint[];
 }
 
 // Map Tile Providers
@@ -58,10 +64,14 @@ export function MapContainer({
   onRightClickMap,
   onEditWaypoint,
   onSplitTrackAt,
-  waypointGroups,
+  // waypointGroups is kept in Props but not destructured here to avoid unused variable warning
   onMapMove,
   osmPois,
   onAddOsmPoi,
+  isBulkMode,
+  selectedWptIds,
+  onSetSelectedWptIds,
+  waypoints,
 }: MapContainerProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -74,6 +84,11 @@ export function MapContainer({
   const waypointMarkersRef = useRef<Record<string, L.Marker>>({});
   const osmPoiMarkersRef = useRef<Record<string, L.Marker>>({});
   const hoverIndicatorRef = useRef<L.CircleMarker | null>(null);
+
+  // Box Area Selection states and refs
+  const [isSelectingArea, setIsSelectingArea] = useState(false);
+  const activeRectRef = useRef<L.Rectangle | null>(null);
+  const startLatLngRef = useRef<L.LatLng | null>(null);
 
   // Initialize Map
   useEffect(() => {
@@ -268,31 +283,12 @@ export function MapContainer({
 
   }, [tracks, activeTrackId, isSplitting, onSplitTrackAt]);
 
-  // Sync Waypoints for ALL visible tracks
+  // Sync Waypoints with selection indicators and customized click behavior
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    // Gather all visible waypoints
-    const visibleWaypoints: Waypoint[] = [];
-    const waypointToTrackMap: Record<string, string> = {}; // maps wptId to trackColor for fallback
-    const groupVisibilityMap = new Map(waypointGroups.map((g) => [g.id, g.visible]));
-
-    tracks.forEach((t) => {
-      if (t.visible) {
-        t.waypoints.forEach((w) => {
-          const groupId = w.groupId || "default";
-          const isGroupVisible = groupVisibilityMap.get(groupId) !== false; // Default to true if not found
-
-          if (isGroupVisible) {
-            visibleWaypoints.push(w);
-            waypointToTrackMap[w.id] = t.color;
-          }
-        });
-      }
-    });
-
-    const currentWptIds = new Set(visibleWaypoints.map((w) => w.id));
+    const currentWptIds = new Set(waypoints.map((w) => w.id));
 
     // 1. Remove hidden/deleted waypoint markers
     Object.keys(waypointMarkersRef.current).forEach((id) => {
@@ -303,15 +299,31 @@ export function MapContainer({
     });
 
     // 2. Render visible waypoint markers
-    visibleWaypoints.forEach((wpt) => {
+    waypoints.forEach((wpt) => {
+      const isSelected = selectedWptIds.includes(wpt.id);
       const svg = WPT_SVG_PATHS[wpt.icon] || WPT_SVG_PATHS.mountain;
-      const markerColor = wpt.color || waypointToTrackMap[wpt.id] || "#10b981";
+      const markerColor = wpt.color || "#10b981";
+      
       const customHtml = `
         <div class="relative w-8 h-8 flex items-center justify-center animate-bounce-short">
-          <div class="absolute w-8 h-8 rounded-full border-2 border-white shadow-lg flex items-center justify-center" style="background-color: ${markerColor}">
-            ${svg}
+          ${
+            isBulkMode && isSelected
+              ? `<div class="absolute w-10 h-10 rounded-full border border-blue-400 bg-blue-500/25 animate-ping opacity-75"></div>
+                 <div class="absolute w-9 h-9 rounded-full border-2 border-blue-400 bg-blue-500/20 shadow-[0_0_8px_rgba(59,130,246,0.6)]"></div>`
+              : ""
+          }
+          <div class="absolute w-8 h-8 rounded-full border-2 border-white shadow-lg flex items-center justify-center transition-all duration-300" style="background-color: ${
+            isBulkMode && isSelected ? "#3b82f6" : markerColor
+          }">
+            ${
+              isBulkMode && isSelected
+                ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-white"><polyline points="20 6 9 17 4 12"/></svg>`
+                : svg
+            }
           </div>
-          <div class="absolute -bottom-1 w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[4px]" style="border-t-color: ${markerColor}"></div>
+          <div class="absolute -bottom-1 w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[4px] transition-colors duration-300" style="border-t-color: ${
+            isBulkMode && isSelected ? "#3b82f6" : markerColor
+          }"></div>
         </div>
       `;
 
@@ -323,12 +335,26 @@ export function MapContainer({
       });
 
       const existingMarker = waypointMarkersRef.current[wpt.id];
+      
+      const handleClick = (e: L.LeafletMouseEvent) => {
+        L.DomEvent.stopPropagation(e);
+        if (isBulkMode) {
+          onSetSelectedWptIds((prev) =>
+            prev.includes(wpt.id) ? prev.filter((id) => id !== wpt.id) : [...prev, wpt.id]
+          );
+        } else {
+          onEditWaypoint(wpt);
+        }
+      };
+
       if (existingMarker) {
         existingMarker.setLatLng([wpt.lat, wpt.lng]);
         existingMarker.setIcon(customIcon);
+        existingMarker.off("click");
+        existingMarker.on("click", handleClick);
         existingMarker.setTooltipContent(`
           <div class="px-2 py-1 text-slate-200 text-xs font-semibold bg-[#131b17] border border-[#1b3d2b] rounded-lg shadow-md">
-            ${wpt.name}
+            ${wpt.name} ${isBulkMode && isSelected ? "☑️" : ""}
           </div>
         `);
       } else {
@@ -339,15 +365,95 @@ export function MapContainer({
               ${wpt.name}
             </div>
           `, { direction: "top", offset: [0, -32], opacity: 0.9 })
-          .on("click", () => {
-            onEditWaypoint(wpt);
-          });
+          .on("click", handleClick);
         
         waypointMarkersRef.current[wpt.id] = marker;
       }
     });
 
-  }, [tracks, onEditWaypoint, waypointGroups]);
+  }, [waypoints, onEditWaypoint, isBulkMode, selectedWptIds, onSetSelectedWptIds]);
+
+  // Leaflet mouse event-based click-and-drag Box Selection
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (!isSelectingArea) {
+      map.dragging.enable();
+      if (activeRectRef.current) {
+        map.removeLayer(activeRectRef.current);
+        activeRectRef.current = null;
+      }
+      startLatLngRef.current = null;
+      return;
+    }
+
+    map.dragging.disable();
+
+    const onMouseDown = (e: L.LeafletMouseEvent) => {
+      if (e.originalEvent.button !== 0) return; // Only left click
+      startLatLngRef.current = e.latlng;
+      if (activeRectRef.current) {
+        map.removeLayer(activeRectRef.current);
+      }
+      activeRectRef.current = L.rectangle([[e.latlng.lat, e.latlng.lng], [e.latlng.lat, e.latlng.lng]], {
+        color: "#3b82f6",
+        weight: 1.5,
+        fillColor: "#3b82f6",
+        fillOpacity: 0.15,
+        dashArray: "4, 4",
+      }).addTo(map);
+      L.DomEvent.stopPropagation(e.originalEvent);
+    };
+
+    const onMouseMove = (e: L.LeafletMouseEvent) => {
+      if (!startLatLngRef.current || !activeRectRef.current) return;
+      activeRectRef.current.setBounds(L.latLngBounds(startLatLngRef.current, e.latlng));
+    };
+
+    const onMouseUp = () => {
+      if (!startLatLngRef.current || !activeRectRef.current) return;
+
+      const bounds = activeRectRef.current.getBounds();
+      const newlySelectedIds: string[] = [];
+
+      waypoints.forEach((wpt) => {
+        const wptLatLng = L.latLng(wpt.lat, wpt.lng);
+        if (bounds.contains(wptLatLng)) {
+          newlySelectedIds.push(wpt.id);
+        }
+      });
+
+      if (newlySelectedIds.length > 0) {
+        onSetSelectedWptIds((prev) => {
+          const union = new Set([...prev, ...newlySelectedIds]);
+          return Array.from(union);
+        });
+      }
+
+      if (activeRectRef.current) {
+        map.removeLayer(activeRectRef.current);
+        activeRectRef.current = null;
+      }
+      startLatLngRef.current = null;
+      setIsSelectingArea(false);
+    };
+
+    map.on("mousedown", onMouseDown);
+    map.on("mousemove", onMouseMove);
+    map.on("mouseup", onMouseUp);
+
+    return () => {
+      map.off("mousedown", onMouseDown);
+      map.off("mousemove", onMouseMove);
+      map.off("mouseup", onMouseUp);
+      map.dragging.enable();
+      if (activeRectRef.current) {
+        map.removeLayer(activeRectRef.current);
+        activeRectRef.current = null;
+      }
+    };
+  }, [isSelectingArea, waypoints, onSetSelectedWptIds]);
 
   // Sync Temporary OSM POIs on the map
   useEffect(() => {
@@ -449,7 +555,7 @@ export function MapContainer({
   }, [flyToCoords]);
 
   return (
-    <div className={`relative w-full h-full bg-[#0a0e0c] overflow-hidden ${isDrawing ? "leaflet-crosshair" : isSplitting ? "leaflet-scissors" : ""}`}>
+    <div className={`relative w-full h-full bg-[#0a0e0c] overflow-hidden ${isDrawing || isSelectingArea ? "leaflet-crosshair" : isSplitting ? "leaflet-scissors" : ""}`}>
       <div ref={mapContainerRef} className="w-full h-full z-10" />
 
       {/* Map Drawing overlay badge */}
@@ -465,6 +571,53 @@ export function MapContainer({
         <div className="absolute top-5 left-1/2 transform -translate-x-1/2 z-[2000] bg-orange-500/90 border border-orange-400/30 text-white font-bold text-[11px] uppercase tracking-wider px-4 py-2 rounded-full flex items-center gap-1.5 shadow-2xl backdrop-blur-sm animate-pulse pointer-events-none">
           <Scissors className="w-4 h-4" />
           Modo División Activo: Haz clic en un vértice naranja para cortar
+        </div>
+      )}
+
+      {/* Floating Bulk Selection Control Widget */}
+      {isBulkMode && (
+        <div className="absolute top-4 right-4 z-[2000] flex flex-col items-end gap-2 pointer-events-auto">
+          <div className="bg-[#131b17]/90 border border-blue-500/30 rounded-xl p-3 shadow-2xl backdrop-blur-md flex flex-col gap-2 min-w-56 text-slate-200">
+            <div className="flex items-center justify-between border-b border-[#1b3d2b]/40 pb-1.5">
+              <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1">
+                ☑️ Selección en Lote
+              </span>
+              <span className="text-[9px] bg-blue-500/20 text-blue-400 font-bold px-1.5 py-0.5 rounded-full border border-blue-500/30">
+                {selectedWptIds.length}
+              </span>
+            </div>
+            
+            <p className="text-[9.5px] text-slate-400 leading-tight">
+              Haz clic en marcas o activa la herramienta para seleccionar un área del mapa.
+            </p>
+
+            <button
+              type="button"
+              onClick={() => setIsSelectingArea((prev) => !prev)}
+              className={`w-full py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 border cursor-pointer ${
+                isSelectingArea
+                  ? "bg-blue-500/25 border-blue-400 text-blue-300 shadow-[0_0_12px_rgba(59,130,246,0.3)] animate-pulse"
+                  : "bg-blue-500/10 hover:bg-blue-500/20 border-blue-500/30 text-blue-400"
+              }`}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="4 4" />
+                <path d="M12 8v8" />
+                <path d="M8 12h8" />
+              </svg>
+              {isSelectingArea ? "Arrastra en el mapa..." : "Selección por Área"}
+            </button>
+
+            {selectedWptIds.length > 0 && (
+              <button
+                type="button"
+                onClick={() => onSetSelectedWptIds([])}
+                className="w-full py-1 text-center text-[10px] font-medium text-slate-500 hover:text-slate-300 transition-colors"
+              >
+                Limpiar selección
+              </button>
+            )}
+          </div>
         </div>
       )}
       

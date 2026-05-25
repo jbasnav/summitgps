@@ -78,6 +78,10 @@ export default function App() {
   const [floatingSearchResults, setFloatingSearchResults] = useState<any[]>([]);
   const [floatingSearchLoading, setFloatingSearchLoading] = useState(false);
 
+  // Lifted selection states for bulk waypoint actions
+  const [isBulkMode, setIsBulkMode] = useState<boolean>(false);
+  const [selectedWptIds, setSelectedWptIds] = useState<string[]>([]);
+
   // Derive all visible waypoints across all visible tracks in the library
   const visibleWaypoints = useMemo(() => {
     const list: Waypoint[] = [];
@@ -359,6 +363,10 @@ export default function App() {
         onSignOut={handleSignOut}
         onSignInClick={useCallback(() => setShowAuthScreen(true), [])}
         isSupabaseConfigured={isSupabaseConfigured}
+        isBulkMode={isBulkMode}
+        setIsBulkMode={setIsBulkMode}
+        selectedWptIds={selectedWptIds}
+        setSelectedWptIds={setSelectedWptIds}
       />
 
       {/* Main Map Viewport & Collapsible Elevation Chart */}
@@ -382,6 +390,10 @@ export default function App() {
             onMapMove={useCallback((lat: number, lng: number) => setMapCenter([lat, lng]), [])}
             osmPois={osmPois}
             onAddOsmPoi={handleAddOsmPoi}
+            isBulkMode={isBulkMode}
+            selectedWptIds={selectedWptIds}
+            onSetSelectedWptIds={setSelectedWptIds}
+            waypoints={visibleWaypoints}
           />
 
           {/* Floating Glassmorphic Search Bar */}

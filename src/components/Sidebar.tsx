@@ -99,6 +99,12 @@ interface SidebarProps {
   onSignOut: () => void;
   onSignInClick: () => void;
   isSupabaseConfigured: boolean;
+
+  // Lifted selection state
+  isBulkMode: boolean;
+  setIsBulkMode: (val: boolean) => void;
+  selectedWptIds: string[];
+  setSelectedWptIds: React.Dispatch<React.SetStateAction<string[]>>;
 }
 
 type TabId = "search" | "layers" | "route" | "waypoints";
@@ -167,11 +173,13 @@ export function Sidebar({
   onSignOut,
   onSignInClick,
   isSupabaseConfigured,
+  isBulkMode,
+  setIsBulkMode,
+  selectedWptIds,
+  setSelectedWptIds,
 }: SidebarProps) {
   const [activeTab, setActiveTab] = useState<TabId>("route");
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [isBulkMode, setIsBulkMode] = useState(false);
-  const [selectedWptIds, setSelectedWptIds] = useState<string[]>([]);
   
   // Track Library selection state for merging
   const [selectedMergeIds, setSelectedMergeIds] = useState<string[]>([]);
@@ -1671,28 +1679,73 @@ export function Sidebar({
                         </button>
                       </div>
 
-                      <div className="flex items-center gap-2 pt-2 border-t border-[#1b3d2b]/20">
-                        <span className="text-[9.5px] text-slate-400 font-semibold shrink-0">Mover a:</span>
-                        <select
-                          onChange={(e) => {
-                            const targetGroupId = e.target.value;
-                            if (!targetGroupId) return;
-                            selectedWptIds.forEach(id => {
-                              if (onUpdateWaypoint) {
-                                onUpdateWaypoint(id, { groupId: targetGroupId });
-                              }
-                            });
-                            setSelectedWptIds([]);
-                            setIsBulkMode(false);
-                          }}
-                          value=""
-                          className="flex-1 bg-[#0a0f0d] border border-[#1b3d2b] rounded-lg px-2 py-1.5 text-[10px] text-slate-300 focus:outline-none focus:border-emerald-400 cursor-pointer"
-                        >
-                          <option value="" disabled>Seleccionar reto...</option>
-                          {waypointGroups.map(g => (
-                            <option key={g.id} value={g.id}>{g.name}</option>
-                          ))}
-                        </select>
+                      <div className="flex flex-col gap-2 pt-2 border-t border-[#1b3d2b]/20">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[9.5px] text-slate-400 font-semibold w-14 shrink-0">Mover a:</span>
+                          <select
+                            onChange={(e) => {
+                              const targetGroupId = e.target.value;
+                              if (!targetGroupId) return;
+                              selectedWptIds.forEach(id => {
+                                if (onUpdateWaypoint) {
+                                  onUpdateWaypoint(id, { groupId: targetGroupId });
+                                }
+                              });
+                              setSelectedWptIds([]);
+                              setIsBulkMode(false);
+                            }}
+                            value=""
+                            className="flex-1 bg-[#0a0f0d] border border-[#1b3d2b] rounded-lg px-2 py-1.5 text-[10px] text-slate-300 focus:outline-none focus:border-emerald-400 cursor-pointer"
+                          >
+                            <option value="" disabled>Seleccionar reto...</option>
+                            {waypointGroups.map(g => (
+                              <option key={g.id} value={g.id}>{g.name}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="text-[9.5px] text-slate-400 font-semibold w-14 shrink-0">Copiar a:</span>
+                          <select
+                            onChange={(e) => {
+                              const targetGroupId = e.target.value;
+                              if (!targetGroupId) return;
+                              selectedWptIds.forEach(id => {
+                                let foundWpt = null;
+                                for (const t of tracks) {
+                                  const found = t.waypoints.find(w => w.id === id);
+                                  if (found) {
+                                    foundWpt = found;
+                                    break;
+                                  }
+                                }
+                                if (foundWpt) {
+                                  onAddWaypoint({
+                                    name: foundWpt.name,
+                                    lat: foundWpt.lat,
+                                    lng: foundWpt.lng,
+                                    icon: foundWpt.icon,
+                                    note: foundWpt.note,
+                                    color: foundWpt.color,
+                                    groupId: targetGroupId,
+                                    completed: false,
+                                    image: foundWpt.image,
+                                    link: foundWpt.link,
+                                  });
+                                }
+                              });
+                              setSelectedWptIds([]);
+                              setIsBulkMode(false);
+                            }}
+                            value=""
+                            className="flex-1 bg-[#0a0f0d] border border-[#1b3d2b] rounded-lg px-2 py-1.5 text-[10px] text-slate-300 focus:outline-none focus:border-emerald-400 cursor-pointer"
+                          >
+                            <option value="" disabled>Seleccionar reto...</option>
+                            {waypointGroups.map(g => (
+                              <option key={g.id} value={g.id}>{g.name}</option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
                     </>
                   )}
