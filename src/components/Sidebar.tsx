@@ -315,31 +315,199 @@ export function Sidebar({
     reader.onload = async (event) => {
       try {
         const text = event.target?.result as string;
-        const list = JSON.parse(text);
-        if (!Array.isArray(list)) {
-          throw new Error("El archivo JSON debe contener una lista de marcas (Array).");
-        }
-
+        const parsedData = JSON.parse(text);
+        
         let importedCount = 0;
-        list.forEach((item: any) => {
-          if (item.name && typeof item.lat === "number" && typeof item.lng === "number") {
-            onAddWaypoint({
+        let createdGroupName = "";
+
+        // 1. Helper function to convert UTM Zone 30N coordinates to Lat/Lng
+        const convertUtm30NToLatLng = (x: number, y: number) => {
+          const a = 6378137.0; // semi-major axis
+          const f = 1 / 298.257223563; // flattening
+          const b = a * (1 - f); // semi-minor axis
+          const e2 = (a*a - b*b) / (a*a); // eccentricity squared
+          const ePrime2 = (a*a - b*b) / (b*b); // second eccentricity squared
+          const e1 = (1 - Math.sqrt(1 - e2)) / (1 + Math.sqrt(1 - e2));
+          const k0 = 0.9996; // scale factor
+          const falseEasting = 500000;
+          const falseNorthing = 0;
+          
+          const xDelta = x - falseEasting;
+          const yDelta = y - falseNorthing;
+          const centralMeridian = -3 * Math.PI / 180; // Zone 30 is centered at 3°W (-3)
+          
+          const mu = yDelta / (a * (1 - e2/4 - 3*e2*e2/64 - 5*e2*e2*e2/256));
+          const phi1Rad = mu + (3*e1/2 - 27*e1*e1*e1/32) * Math.sin(2*mu) 
+                          + (21*e1*e1/16 - 55*e1*e1*e1*e1/32) * Math.sin(4*mu)
+                          + (151*e1*e1*e1/96) * Math.sin(6*mu)
+                          + (1097*e1*e1*e1*e1/512) * Math.sin(8*mu);
+          
+          const n1 = a / Math.sqrt(1 - e2 * Math.sin(phi1Rad) * Math.sin(phi1Rad));
+          const r1 = a * (1 - e2) / Math.pow(1 - e2 * Math.sin(phi1Rad) * Math.sin(phi1Rad), 1.5);
+          const d = xDelta / (n1 * k0);
+          
+          const lat = phi1Rad - (n1 * Math.tan(phi1Rad) / r1) * (
+            d*d/2 - (5 + 3*Math.tan(phi1Rad)*Math.tan(phi1Rad) + 10*n1/r1 - 4*(n1/r1)*(n1/r1) - 9*ePrime2)*Math.pow(d, 4)/24
+            + (61 + 90*Math.tan(phi1Rad)*Math.tan(phi1Rad) + 298*ePrime2 + 45*Math.pow(Math.tan(phi1Rad), 4) - 252*ePrime2*ePrime2 - 3*ePrime2*ePrime2)*Math.pow(d, 6)/720
+          );
+          
+          const lng = centralMeridian + (
+            d - (1 + 2*Math.tan(phi1Rad)*Math.tan(phi1Rad) + ePrime2)*d*d*d/6
+            + (5 - 2*ePrime2 + 28*Math.tan(phi1Rad)*Math.tan(phi1Rad) - 3*ePrime2*ePrime2 + 8*Math.pow(Math.tan(phi1Rad), 4) + 24*ePrime2*ePrime2)*Math.pow(d, 5)/120
+          ) / Math.cos(phi1Rad);
+          
+          return {
+            lat: lat * 180 / Math.PI,
+            lng: lng * 180 / Math.PI
+          };
+        };
+
+        // 2. Format Detection & Normalization
+        let wptsToImport: any[] = [];
+        let targetGroupId = "default";
+
+        // Case 1: Overpass API JSON Format (copyright/elements structure)
+        if (parsedData && parsedData.elements && Array.isArray(parsedData.elements)) {
+          createdGroupName = file.name.replace(".json", "") || "Overpass Import";
+          
+          const newGroupId = `group-${Date.now()}`;
+          onAddWaypointGroup({
+            name: createdGroupName,
+            description: `Importado de OpenStreetMap (${parsedData.elements.length} nodos)`,
+            color: "#3b82f6",
+            visible: true,
+          });
+          targetGroupId = newGroupId;
+
+          parsedData.elements.forEach((el: any) => {
+            if (el.type === "node" && typeof el.lat === "number" && typeof el.lon === "number") {
+              const name = el.tags?.name || el.tags?.["name:es"] || el.tags?.["name:eu"] || `POI #${el.id}`;
+              const ele = el.tags?.ele;
+              const natural = el.tags?.natural;
+              const amenity = el.tags?.amenity;
+              const tourism = el.tags?.tourism;
+
+              let icon = "info";
+              if (natural === "peak") icon = "mountain";
+              else if (amenity === "shelter" || tourism === "camp_site") icon = "camp";
+              else if (amenity === "drinking_water") icon = "water";
+
+              wptsToImport.push({
+                name,
+                lat: el.lat,
+                lng: el.lon,
+                icon,
+                note: `Altitud: ${ele ? `${ele}m` : "No disponible"} - OSM ID: ${el.id}`,
+                color: "#3b82f6",
+                groupId: targetGroupId,
+                completed: false,
+                image: el.tags?.image || (el.tags?.wikimedia_commons ? `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(el.tags.wikimedia_commons.replace("File:", ""))}` : undefined),
+                link: el.tags?.website || (el.tags?.wikipedia ? `https://es.wikipedia.org/wiki/${encodeURIComponent(el.tags.wikipedia.split(":")[1] || el.tags.wikipedia)}` : undefined),
+              });
+            }
+          });
+        }
+        // Case 2: SUMMIT GPS Challenge Export Package
+        else if (parsedData && typeof parsedData === "object" && !Array.isArray(parsedData) && parsedData.name && Array.isArray(parsedData.waypoints)) {
+          createdGroupName = parsedData.name;
+          const newGroupId = `group-${Date.now()}`;
+          onAddWaypointGroup({
+            name: parsedData.name,
+            description: parsedData.description || "Reto importado",
+            color: parsedData.color || "#10b981",
+            visible: true,
+            image: parsedData.image,
+          });
+          targetGroupId = newGroupId;
+
+          parsedData.waypoints.forEach((item: any) => {
+            wptsToImport.push({
               name: item.name,
               lat: item.lat,
               lng: item.lng,
               icon: item.icon || "mountain",
               note: item.note || "",
-              color: item.color || "#10b981",
-              groupId: "default", // goes to default group
+              color: item.color || parsedData.color || "#10b981",
+              groupId: targetGroupId,
               completed: !!item.completed,
+              image: item.image,
+              link: item.link,
             });
-            importedCount++;
-          }
+          });
+        }
+        // Case 3: Flat Array of Objects (Traditional list / 600 Gailurrak UTM list)
+        else if (Array.isArray(parsedData)) {
+          const firstItem = parsedData[0];
+          const isGailurrakUtm = firstItem && firstItem.utm_etrs89;
+
+          createdGroupName = file.name.replace(".json", "");
+          const newGroupId = `group-${Date.now()}`;
+          onAddWaypointGroup({
+            name: createdGroupName,
+            description: isGailurrakUtm 
+              ? `Reto de ${parsedData.length} cimas importadas con coordenadas UTM ETRS89.`
+              : `Importación de lista con ${parsedData.length} marcas.`,
+            color: "#eab308",
+            visible: true,
+          });
+          targetGroupId = newGroupId;
+
+          parsedData.forEach((item: any) => {
+            const name = item.nombre || item.name;
+            if (!name) return;
+
+            let lat = item.lat;
+            let lng = item.lng || item.lon;
+
+            if ((typeof lat !== "number" || typeof lng !== "number") && item.utm_etrs89) {
+              const regex = /X\s*([0-9\.]+)\s+Y\s*([0-9\.]+)/i;
+              const cleanStr = item.utm_etrs89.replace(/\./g, "");
+              const match = cleanStr.match(regex);
+              if (match) {
+                const x = parseFloat(match[1]);
+                const y = parseFloat(match[2]);
+                const converted = convertUtm30NToLatLng(x, y);
+                lat = converted.lat;
+                lng = converted.lng;
+              }
+            }
+
+            if (typeof lat === "number" && typeof lng === "number") {
+              const note = item.altitud 
+                ? `Altitud: ${item.altitud}m - Territorio: ${item.territorio || "N/D"}`
+                : item.note || "";
+
+              wptsToImport.push({
+                name,
+                lat,
+                lng,
+                icon: item.icon || "mountain",
+                note,
+                color: item.color || "#eab308",
+                groupId: targetGroupId,
+                completed: !!item.completed,
+                image: item.image,
+                link: item.link,
+              });
+            }
+          });
+        } else {
+          throw new Error("Formato JSON no soportado. Debe ser un reto exportado, una lista de marcas o una respuesta de Overpass API.");
+        }
+
+        wptsToImport.forEach((wpt) => {
+          onAddWaypoint(wpt);
+          importedCount++;
         });
 
-        alert(`¡Importación exitosa! Se han añadido ${importedCount} marcas a Summit GPS.`);
+        alert(`¡Importación exitosa! Se ha creado el reto "${createdGroupName}" y se han añadido ${importedCount} marcas a Summit GPS.`);
+        
+        if (wptsToImport.length > 0) {
+          onFlyToCoords(wptsToImport[0].lat, wptsToImport[0].lng);
+        }
       } catch (err) {
-        alert("Error al parsear el archivo JSON: " + (err as Error).message);
+        console.error("JSON Import failed:", err);
+        alert("Error al importar el archivo JSON: " + (err as Error).message);
       }
     };
     reader.readAsText(file);
@@ -1367,6 +1535,46 @@ export function Sidebar({
                               ) : (
                                 <EyeOff className="w-3.5 h-3.5 text-slate-600" />
                               )}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const challengeData = {
+                                  name: group.name,
+                                  description: group.description,
+                                  color: group.color,
+                                  image: group.image,
+                                  waypoints: groupWaypoints.map((w) => ({
+                                    name: w.name,
+                                    lat: w.lat,
+                                    lng: w.lng,
+                                    icon: w.icon,
+                                    note: w.note,
+                                    color: w.color,
+                                    completed: !!w.completed,
+                                    image: w.image,
+                                    link: w.link,
+                                  })),
+                                };
+
+                                const blob = new Blob([JSON.stringify(challengeData, null, 2)], {
+                                  type: "application/json",
+                                });
+                                const url = URL.createObjectURL(blob);
+                                const link = document.createElement("a");
+                                link.href = url;
+                                link.download = `${group.name.replace(/\s+/g, "_")}_reto.json`;
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                                URL.revokeObjectURL(url);
+                              }}
+                              className="text-slate-400 hover:text-blue-400 p-0.5 rounded transition-colors cursor-pointer"
+                              title="Exportar reto a archivo JSON"
+                            >
+                              <Download className="w-3.5 h-3.5" />
                             </button>
 
                             {group.id !== "default" && (

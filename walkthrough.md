@@ -1,64 +1,56 @@
-# Walkthrough de Implementación: SUMMIT GPS - SaaS Multitenancy, Selección en Lote y Copiado de Waypoints (v10.4)
+# Walkthrough de Implementación: SUMMIT GPS - SaaS Multitenancy, Selección en Lote y Exportación/Importación Inteligente de Retos (v10.5)
 
-¡Hemos completado con éxito la migración e integración de la **versión 10.4** de **SUMMIT GPS**, convirtiendo el planificador de rutas en una suite topográfica premium, fluida, multiusuario y altamente interactiva!
+¡Hemos completado con éxito la migración e integración de la **versión 10.5** de **SUMMIT GPS**, convirtiendo el planificador de rutas en una suite topográfica premium, fluida, multiusuario y compatible con los formatos geográficos más extendidos!
 
-A las potentes características de almacenamiento en la nube, autenticación multiusuario y subida de fotos privadas de la v10, hemos incorporado herramientas avanzadas para la gestión de marcas en bloque (bulk operations) que permiten manipular docenas de waypoints simultáneamente tanto desde la barra lateral como directamente dibujando áreas sobre el mapa.
+A las características de almacenamiento en la nube, selección en bloque y selección por área de la v10.4, hemos incorporado un **motor de importación de JSON inteligente** de primer nivel y un sistema de **empaquetado y exportación de retos** en un solo clic.
 
 ---
 
-## 🚀 Resumen de Nuevas Funcionalidades (v10.4)
+## 🚀 Resumen de Nuevas Funcionalidades (v10.5)
 
-### 📋 1. **Copiado de Marcas en Lote ("Copiar a")**
-* **Operación de Duplicación Inteligente:**
-  * Junto a la opción tradicional de *"Mover a:"* en el panel inferior flotante de acciones en lote, ahora se incluye la opción de **"Copiar a:"**.
-  * Permite seleccionar múltiples waypoints y duplicarlos en otro reto o carpeta con un solo clic.
-  * La copia clona de forma íntegra toda la metadata y atributos (coordenadas, notas, iconos, colores, fotos cargadas, enlaces de información).
-  * Resetea automáticamente el estado de finalización (`completed = false`) de los waypoints copiados en el nuevo reto, permitiendo que el usuario los use como hitos frescos por completar.
-  * Utiliza el hook `onAddWaypoint` para persistir la duplicación asíncrona tanto localmente como en la base de datos de Supabase en la nube.
+### 📥 1. **Importador de JSON Inteligente y Multiformato**
+El cargador de archivos JSON (`handleJsonUpload` en `Sidebar.tsx`) ha sido rediseñado desde cero para detectar y normalizar automáticamente cuatro estructuras de datos diferentes:
 
-### 🗺️ 2. **Selección por Área en el Mapa (Box Selection)**
-* **Herramienta Interactiva de Arrastre y Caja:**
-  * En la esquina superior derecha del mapa, se despliega un elegante panel flotante glassmorphic de **"Selección en Lote"** que se activa de forma automática cuando el modo selección está activo en la barra lateral.
-  * Dispone de un botón pulsante de **"Selección por Área"** con icono de caja segmentada. Al activarse:
-    1. Deshabilita temporalmente el arrastre nativo del mapa (`map.dragging.disable()`) para no interferir.
-    2. Modifica el cursor global de Leaflet a un puntero de **cruz de precisión** (`crosshair`).
-    3. Permite al usuario hacer clic y arrastrar sobre cualquier zona del mapa para dibujar una caja rectangular táctil dinámica de color azul (`L.rectangle`) con contorno punteado y fondo translúcido.
-  * **Intersección Espacial Rápida:**
-    * Al soltar el ratón (`mouseup`), el sistema calcula de manera instantánea la intersección espacial de las coordenadas de todas las marcas visibles.
-    * Cualquier marca cuyos límites geográficos queden dentro de los bordes del rectángulo dibujado (`bounds.contains(wptLatLng)`) se añade de forma aditiva (unión de conjuntos) a la lista de seleccionadas.
-    * Remueve la caja del mapa automáticamente, re-habilita el arrastre de Leaflet y restaura el cursor original de manera fluida y transparente.
+1. **Reto Estructurado de SUMMIT GPS (Formato de Exportación):**
+   * Detecta si el objeto contiene un reto con metadatos (`name`, `description`, `color`, `image`) y un listado de `waypoints`.
+   * Crea automáticamente un nuevo reto/carpeta con estos estilos y clona todos los waypoints conservando fotos, notas, enlaces y estados de hito.
+2. **Respuesta Cruda de Overpass API / OpenStreetMap (Ej. `EuskalHerriaOSM.json`):**
+   * Detecta si el objeto contiene la estructura `{ elements: [...] }` clásica de las consultas Overpass API.
+   * Crea un reto con el nombre del archivo y añade todos los nodos OSM detectados.
+   * **Mapeo Inteligente de Atributos:**
+     * **Nombres:** Extrae el nombre correcto en orden de prioridad: `tags.name` -> `tags["name:es"]` -> `tags["name:eu"]` -> ID del nodo.
+     * **Altitud:** Lee la etiqueta `tags.ele` (elevación) y la formatea en la nota.
+     * **Enlaces Multimedia:** Si el nodo posee `tags.wikimedia_commons` o `tags.image`, genera la URL del archivo de Commons para previsualizarlo en la modal. Si tiene `tags.website` o `tags.wikipedia`, genera su correspondiente enlace de información.
+     * **Iconografía:** Asigna automáticamente el icono `mountain` si es un pico (`natural: "peak"`), `camp` si es un refugio o camping (`amenity: "shelter"` / `tourism: "camp_site"`), `water` para fuentes (`amenity: "drinking_water"`), o `info` para el resto.
+3. **Listado de Cimas en UTM ETRS89 (Ej. `600_gailurrak.json`):**
+   * Detecta si es una lista plana con el campo `"utm_etrs89"`.
+   * **Conversor Geodésico Integrado:** Implementa un conversor matemático de **Coordenadas UTM Zona 30N (hemisferio norte, datum ETRS89/WGS84)** a coordenadas decimales de Latitud y Longitud.
+   * Limpia y normaliza de forma inteligente los separadores de miles (puntos como en `"30T X.551506 Y.4734222"`) para extraer el Easting (X) y Northing (Y) de forma exacta.
+   * Mapea `"nombre"` como nombre de marca, `"altitud"` y `"territorio"` en la sección de notas, y por defecto asigna el icono de montaña (`mountain`) y color oro corporativo (`#eab308`).
+4. **Listado Plano Tradicional:**
+   * Sigue soportando el array clásico de waypoints con propiedades `name`, `lat`, `lng`.
 
-### 🎨 3. **Identificadores Visuales Premium (Visual Feedback)**
-* **Efectos Luminosos en el Mapa:**
-  * Las marcas que son seleccionadas en lote muestran de inmediato un contorno indicador premium compuesto por un **doble anillo azul brillante**.
-  * Emplea animaciones de pulsación (`animate-ping`) y sombras radiales difusas (`shadow-[0_0_8px_rgba(59,130,246,0.6)]`) que logran un acabado estético de alto estándar.
-  * El pin de la marca cambia temporalmente su color al azul corporativo de selección (`#3b82f6`) y reemplaza su icono interno por un vector interactivo de verificación (checkmark) dinámico.
-* **Controladores Flexibles:**
-  * Al hacer clic individual sobre cualquier marca en el mapa mientras el modo lote está activo, se añade o remueve esa marca específica de la selección de forma inmediata sin abrir la modal de edición, ofreciendo una experiencia sumamente fluida.
-  * El globo de descripción flotante (tooltip) de Leaflet se actualiza agregando la marca visual de selección `"☑️"` para indicar de forma indiscutible su estatus en el lote.
+### 📤 2. **Exportador de Retos en un Clic (JSON Challenge Packager)**
+* **Botón de Descarga Dedicado:**
+  * Al lado de cada reto/carpeta en el listado de la barra lateral (incluyendo el reto por defecto **"Mis Marcadores"**), se ha integrado un botón con el icono de descarga (`Download`).
+* **Empaquetado Completo:**
+  * Al pulsarlo, reúne al instante los metadatos del reto y el listado completo de sus waypoints asociados (con coordenadas, notas, iconos, colores, fotos en storage de Supabase y enlaces).
+  * Genera un archivo `.json` formateado de forma elegante (`JSON.stringify(..., null, 2)`) y lo descarga automáticamente al equipo con el nombre: `${Reto}_reto.json`.
+  * Este archivo es 100% compatible con el importador inteligente, permitiendo a los usuarios compartir, respaldar y replicar retos de manera impecable.
 
 ---
 
 ## 🛠️ Arquitectura y Archivos Modificados
 
-1. 🚀 **[App.tsx](file:///C:/Users/jbasterrika/Desktop/CODING/PIXDEMIA/SUMMIT/src/App.tsx)**:
-   * Elevación de los estados interactivos `isBulkMode` y `selectedWptIds` al cuerpo principal del planificador.
-   * Derivación optimizada del listado de marcas visibles (`visibleWaypoints`) mediante `useMemo`.
-   * Enrutamiento de los estados y métodos modificadores hacia los componentes descendientes (`Sidebar` y `MapContainer`).
-2. 🗺️ **[MapContainer.tsx](file:///C:/Users/jbasterrika/Desktop/CODING/PIXDEMIA/SUMMIT/src/components/MapContainer.tsx)**:
-   * Ampliación de la interfaz `MapContainerProps` para recibir los estados de selección levantados y la lista de marcas.
-   * Introducción del estado local `isSelectingArea` y referencias de control (`activeRectRef`, `startLatLngRef`) para contener el ciclo del rectángulo Leaflet.
-   * Rediseño total del hook de sincronización de waypoints para acoplar clases visuales animadas y gestionar comportamientos de clicks aislados con `L.DomEvent.stopPropagation(e)`.
-   * Construcción del efecto reactivo de ratón para controlar el dibujo bidimensional de la caja de selección.
-   * Adición del panel flotante de selección con cristal esmerilado y efecto de desenfoque.
-3. 🎨 **[Sidebar.tsx](file:///C:/Users/jbasterrika/Desktop/CODING/PIXDEMIA/SUMMIT/src/components/Sidebar.tsx)**:
-   * Remoción del estado de selección local redundante en favor de las nuevas propiedades delegadas por el padre.
-   * Maquetación e implementación de la sección doble de acciones de reubicación: **"Mover a"** y **"Copiar a"**, alineando ambas columnas con selectores uniformes `w-14` y estética integrada.
+1. 🎨 **[Sidebar.tsx](file:///C:/Users/jbasterrika/Desktop/CODING/PIXDEMIA/SUMMIT/src/components/Sidebar.tsx)**:
+   * **Upgrade de `handleJsonUpload`:** Implementa toda la lógica geodésica y el enrutamiento de formatos del importador de archivos JSON.
+   * **Botón de Exportación en Accordion Header:** Inyección del botón de descarga que lee las propiedades del reto y sus waypoints filtrados en tiempo real, empaquetándolos como Blob y disparando la descarga nativa en el navegador.
 
 ---
 
 ## ⚙️ Verificación y Pruebas de Calidad
 
-* **TypeScript Estricto:** Ejecución y compilación final sin errores completando de forma impecable el empaquetado de producción con `tsc -b && vite build`.
-* **Prueba de Selección:** Al pulsar "Selección por Área" y arrastrar, los waypoints del mapa quedan resaltados con la animación azul pulsante y su checkbox en la barra lateral se marca de forma síncrona.
-* **Prueba de Copiado:** Las marcas copiadas se integran perfectamente dentro de los nuevos retos elegidos manteniendo su integridad.
+* **TypeScript Estricto:** Compilación final y exitosa del empaquetado de producción con `tsc -b && vite build`.
+* **Prueba de `600_gailurrak.json`:** Al cargarlo, se lee con éxito, crea un nuevo reto con el nombre "600_gailurrak", calcula y convierte matemáticamente las 600 cimas de coordenadas UTM a Lat/Lng decimales WGS84, y las coloca en el mapa en Álava, Bizkaia y Gipuzkoa de forma exacta.
+* **Prueba de `EuskalHerriaOSM.json`:** Al cargarlo, detecta la firma de Overpass, lee todos los nodos de cumbres, fuentes y campings de Euskadi, y los añade con sus iconos, alturas y enlaces correspondientes.
+* **Prueba de Exportación:** Al pulsar el icono de descarga en cualquier reto, genera y descarga el archivo JSON de inmediato. Al subir ese mismo archivo al planificador, se re-importa de manera idéntica y exitosa.
