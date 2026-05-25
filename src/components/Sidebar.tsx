@@ -23,8 +23,6 @@ import {
   Scissors,
   Link,
   Edit2,
-  Folder,
-  FolderOpen,
   Trophy,
   ChevronDown,
   ChevronUp,
@@ -1299,71 +1297,54 @@ export function Sidebar({
                     return (
                       <div
                         key={group.id}
-                        className="border border-[#1b3d2b]/40 rounded-xl overflow-hidden bg-[#1c2921]/45 hover:bg-[#1c2921]/55 transition-all duration-300 shadow-md"
+                        className="relative border border-[#1b3d2b]/40 rounded-xl overflow-hidden bg-[#1c2921]/45 hover:bg-[#1c2921]/55 transition-all duration-300 shadow-md"
                       >
                         {/* Accordion Header */}
                         <div
                           onClick={() => setExpandedGroupId(isExpanded ? null : group.id)}
-                          className="flex items-center justify-between p-3 bg-[#1c2921]/20 hover:bg-[#1c2921]/40 transition-colors cursor-pointer gap-2.5"
+                          className="relative flex items-center justify-between p-3.5 transition-colors cursor-pointer gap-2.5 min-h-[58px]"
+                          style={{ borderLeft: `4px solid ${group.color}` }}
                         >
-                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                            {/* Blurred Image Thumbnail touching borders */}
-                            <div className="w-12 h-12 rounded-lg overflow-hidden relative shrink-0 border border-[#1b3d2b]/60 bg-[#0c120f]/80 select-none shadow-md">
-                              <img
-                                src={group.image || "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=150&q=80"}
-                                alt={group.name}
-                                className="w-full h-full object-cover filter blur-[1px] scale-110 opacity-75"
-                              />
-                              {/* Colored indicator dot */}
-                              <div
-                                className="absolute top-1 left-1 w-2 h-2 rounded-full border border-black/30 shadow-sm"
-                                style={{ backgroundColor: group.color }}
-                              />
-                              {/* Overlay expand indicator */}
-                              <div className="absolute inset-0 bg-black/10 flex items-center justify-center">
-                                {isExpanded ? (
-                                  <FolderOpen className="w-3.5 h-3.5 text-white/90 drop-shadow" />
-                                ) : (
-                                  <Folder className="w-3.5 h-3.5 text-white/80 drop-shadow" />
-                                )}
-                              </div>
-                            </div>
-
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-xs font-bold text-slate-200 truncate">
-                                  {group.name}
-                                </span>
-                                {isFullyCompleted && (
-                                  <span title="¡Reto completado al 100%!">
-                                    <Trophy className="w-3.5 h-3.5 text-yellow-400 shrink-0 animate-bounce" />
-                                  </span>
-                                )}
-                              </div>
-                              
-                              {/* Short Progress metrics */}
-                              <div className="flex items-center gap-2 mt-0.5 text-[9px] text-slate-500 font-semibold uppercase tracking-wider">
-                                <span>
-                                  {completedCount} / {totalCount} cimas
-                                </span>
-                                <span>•</span>
-                                <span className={isFullyCompleted ? "text-yellow-400 animate-pulse font-bold" : "text-emerald-400"}>
-                                  {completionPercent}%
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Lateral Blurred Image Thumbnail */}
+                          {/* Full-height Left Fading Cover Image */}
                           {group.image && (
-                            <div className="relative w-11 h-7 rounded-lg overflow-hidden shrink-0 border border-white/10 shadow-inner flex items-center justify-center filter saturate-75">
-                              <img src={group.image} alt="" className="w-full h-full object-cover" />
-                              <div className="absolute inset-0 bg-[#0c120f]/30 backdrop-blur-[0.5px]" />
+                            <div className="absolute inset-y-0 left-0 w-36 overflow-hidden pointer-events-none select-none">
+                              <img
+                                src={group.image}
+                                alt=""
+                                className="w-full h-full object-cover opacity-35"
+                              />
+                              {/* Sleek fade out gradient mask towards the interior (right) */}
+                              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#1c2921]/85 to-[#1c2921]" />
                             </div>
                           )}
 
-                          {/* Visibility & Delete icons */}
-                          <div className="flex items-center gap-2 shrink-0 pl-1 border-l border-white/5">
+                          {/* Text and Info Content */}
+                          <div className="relative z-10 flex-1 min-w-0 pr-1 pl-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-bold text-slate-100 truncate shadow-sm">
+                                {group.name}
+                              </span>
+                              {isFullyCompleted && (
+                                <span title="¡Reto completado al 100%!">
+                                  <Trophy className="w-3.5 h-3.5 text-yellow-400 shrink-0 animate-bounce" />
+                                </span>
+                              )}
+                            </div>
+                            
+                            {/* Short Progress metrics */}
+                            <div className="flex items-center gap-2 mt-0.5 text-[9px] text-slate-400 font-semibold uppercase tracking-wider select-none">
+                              <span>
+                                {completedCount} / {totalCount} cimas
+                              </span>
+                              <span>•</span>
+                              <span className={isFullyCompleted ? "text-yellow-400 animate-pulse font-bold" : "text-emerald-400"}>
+                                {completionPercent}%
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Visibility, Edit & Delete icons */}
+                          <div className="relative z-10 flex items-center gap-2 shrink-0 pl-2 border-l border-white/5">
                             <button
                               type="button"
                               onClick={(e) => {
@@ -1623,85 +1604,98 @@ export function Sidebar({
               </div>
 
               {/* 3.5. FLOATING BULK ACTIONS PANEL */}
-              {isBulkMode && selectedWptIds.length > 0 && (
+              {isBulkMode && (
                 <div className="bg-[#18231e] border border-blue-500/30 rounded-xl p-3.5 space-y-2.5 shadow-xl animate-fade-in shrink-0">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">
-                      Lote: {selectedWptIds.length} marcas seleccionadas
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedWptIds([])}
-                      className="text-[9px] font-bold text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
-                    >
-                      Desmarcar todas
-                    </button>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        // Completar en lote
-                        selectedWptIds.forEach(id => {
-                          let foundWpt = null;
-                          for (const t of tracks) {
-                            const found = t.waypoints.find(w => w.id === id);
-                            if (found) {
-                              foundWpt = found;
-                              break;
+                  {selectedWptIds.length === 0 ? (
+                    <div className="text-center py-2">
+                      <p className="text-[10px] text-blue-300 font-bold flex items-center justify-center gap-1">
+                        ☑️ Modo de Selección Activo
+                      </p>
+                      <p className="text-[9px] text-slate-400 mt-1 leading-normal">
+                        Haz clic sobre las marcas en la barra lateral para seleccionarlas y aplicar acciones en lote.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">
+                          Lote: {selectedWptIds.length} marcas seleccionadas
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedWptIds([])}
+                          className="text-[9px] font-bold text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                        >
+                          Desmarcar todas
+                        </button>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // Completar en lote
+                            selectedWptIds.forEach(id => {
+                              let foundWpt = null;
+                              for (const t of tracks) {
+                                const found = t.waypoints.find(w => w.id === id);
+                                if (found) {
+                                  foundWpt = found;
+                                  break;
+                                }
+                              }
+                              if (foundWpt && !foundWpt.completed) {
+                                onToggleWaypointCompleted(id);
+                              }
+                            });
+                            setSelectedWptIds([]);
+                            setIsBulkMode(false);
+                          }}
+                          className="py-2 bg-emerald-400/10 hover:bg-emerald-400/20 text-emerald-400 border border-emerald-500/20 text-[10px] font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1"
+                        >
+                          ✅ Completar
+                        </button>
+                        
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm(`¿Seguro que deseas eliminar las ${selectedWptIds.length} marcas seleccionadas?`)) {
+                              selectedWptIds.forEach(id => onDeleteWaypoint(id));
+                              setSelectedWptIds([]);
+                              setIsBulkMode(false);
                             }
-                          }
-                          if (foundWpt && !foundWpt.completed) {
-                            onToggleWaypointCompleted(id);
-                          }
-                        });
-                        setSelectedWptIds([]);
-                        setIsBulkMode(false);
-                      }}
-                      className="py-2 bg-emerald-400/10 hover:bg-emerald-400/20 text-emerald-400 border border-emerald-500/20 text-[10px] font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1"
-                    >
-                      ✅ Completar
-                    </button>
-                    
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (window.confirm(`¿Seguro que deseas eliminar las ${selectedWptIds.length} marcas seleccionadas?`)) {
-                          selectedWptIds.forEach(id => onDeleteWaypoint(id));
-                          setSelectedWptIds([]);
-                          setIsBulkMode(false);
-                        }
-                      }}
-                      className="py-2 bg-red-400/10 hover:bg-red-400/20 text-red-400 border border-red-500/20 text-[10px] font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1"
-                    >
-                      🗑️ Eliminar
-                    </button>
-                  </div>
+                          }}
+                          className="py-2 bg-red-400/10 hover:bg-red-400/20 text-red-400 border border-red-500/20 text-[10px] font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1"
+                        >
+                          🗑️ Eliminar
+                        </button>
+                      </div>
 
-                  <div className="flex items-center gap-2 pt-2 border-t border-[#1b3d2b]/20">
-                    <span className="text-[9.5px] text-slate-400 font-semibold shrink-0">Mover a:</span>
-                    <select
-                      onChange={(e) => {
-                        const targetGroupId = e.target.value;
-                        if (!targetGroupId) return;
-                        selectedWptIds.forEach(id => {
-                          if (onUpdateWaypoint) {
-                            onUpdateWaypoint(id, { groupId: targetGroupId });
-                          }
-                        });
-                        setSelectedWptIds([]);
-                        setIsBulkMode(false);
-                      }}
-                      value=""
-                      className="flex-1 bg-[#0a0f0d] border border-[#1b3d2b] rounded-lg px-2 py-1.5 text-[10px] text-slate-300 focus:outline-none focus:border-emerald-400 cursor-pointer"
-                    >
-                      <option value="" disabled>Seleccionar reto...</option>
-                      {waypointGroups.map(g => (
-                        <option key={g.id} value={g.id}>{g.name}</option>
-                      ))}
-                    </select>
-                  </div>
+                      <div className="flex items-center gap-2 pt-2 border-t border-[#1b3d2b]/20">
+                        <span className="text-[9.5px] text-slate-400 font-semibold shrink-0">Mover a:</span>
+                        <select
+                          onChange={(e) => {
+                            const targetGroupId = e.target.value;
+                            if (!targetGroupId) return;
+                            selectedWptIds.forEach(id => {
+                              if (onUpdateWaypoint) {
+                                onUpdateWaypoint(id, { groupId: targetGroupId });
+                              }
+                            });
+                            setSelectedWptIds([]);
+                            setIsBulkMode(false);
+                          }}
+                          value=""
+                          className="flex-1 bg-[#0a0f0d] border border-[#1b3d2b] rounded-lg px-2 py-1.5 text-[10px] text-slate-300 focus:outline-none focus:border-emerald-400 cursor-pointer"
+                        >
+                          <option value="" disabled>Seleccionar reto...</option>
+                          {waypointGroups.map(g => (
+                            <option key={g.id} value={g.id}>{g.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
