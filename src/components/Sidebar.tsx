@@ -225,11 +225,37 @@ export function Sidebar({
       }
 
       const query = `[out:json][timeout:15];(${overpassFilter});out body;`;
-      const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
       
-      const response = await fetch(url);
-      if (!response.ok) throw new Error("Error de red en Overpass API.");
-      const data = await response.json();
+      const endpoints = [
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter",
+        "https://lz4.overpass-api.de/api/interpreter",
+        "https://z.overpass-api.de/api/interpreter"
+      ];
+      
+      let data = null;
+      let lastError = null;
+      
+      for (const endpoint of endpoints) {
+        try {
+          const url = `${endpoint}?data=${encodeURIComponent(query)}`;
+          const response = await fetch(url);
+          if (response.ok) {
+            data = await response.json();
+            break; // Success!
+          } else {
+            console.warn(`OSM endpoint ${endpoint} returned status ${response.status}`);
+            lastError = new Error(`Status ${response.status} from ${endpoint}`);
+          }
+        } catch (err: any) {
+          console.warn(`OSM endpoint ${endpoint} failed:`, err);
+          lastError = err;
+        }
+      }
+      
+      if (!data) {
+        throw lastError || new Error("No se pudo obtener datos de ningún servidor de OpenStreetMap.");
+      }
 
       if (data && data.elements) {
         const mappedPois = data.elements.map((el: any) => {
