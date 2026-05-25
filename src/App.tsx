@@ -109,12 +109,29 @@ function AppContent() {
     weather: {
       temp: number;
       windspeed: number;
+      windgusts: number;
+      winddirection: number;
       weathercode: number;
+      rainProbability: number;
+      sunset: string;
+      sunrise: string;
+      night: {
+        temp: number;
+        weathercode: number;
+        rainProbability: number;
+        windspeed: number;
+        windgusts: number;
+        winddirection: number;
+      } | null;
       daily?: {
         time: string[];
         weathercode: number[];
         tempMax: number[];
         tempMin: number[];
+        rainProbabilityMax: number[];
+        windspeedMax: number[];
+        windgustsMax: number[];
+        winddirectionDominant: number[];
       } | null;
     } | null;
     address: string | null;
@@ -151,19 +168,82 @@ function AppContent() {
           .catch(() => null);
 
         // 2. Fetch Weather & Weekly Forecast
-        const weatherPromise = fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&daily=weathercode,temperature_2m_max,temperature_2m_min&timezone=auto`)
+        const weatherPromise = fetch(
+          `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true` +
+          `&hourly=temperature_2m,precipitation_probability,windspeed_10m,windgusts_10m,winddirection_10m,weathercode` +
+          `&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max,windgusts_10m_max,winddirection_10m_dominant,sunrise,sunset` +
+          `&timezone=auto`
+        )
           .then(r => r.json())
           .then(data => {
             if (!data.current_weather) return null;
+            
+            // Extract current rain probability and gusts
+            let currentRainProb = 0;
+            let currentWindGusts = data.current_weather.windspeed;
+            
+            if (data.hourly && data.hourly.time) {
+              const currentHourStr = data.current_weather.time;
+              const currentIdx = data.hourly.time.indexOf(currentHourStr);
+              if (currentIdx !== -1) {
+                currentRainProb = data.hourly.precipitation_probability?.[currentIdx] ?? 0;
+                currentWindGusts = data.hourly.windgusts_10m?.[currentIdx] ?? data.current_weather.windspeed;
+              }
+            }
+
+            // Extract "Night" details (using 22:00 / 10 PM of today)
+            let nightDetails = null;
+            if (data.hourly && data.hourly.time) {
+              const todayDateStr = data.current_weather.time.substring(0, 10);
+              const nightHourStr = `${todayDateStr}T22:00`;
+              let nightIdx = data.hourly.time.indexOf(nightHourStr);
+              if (nightIdx === -1) {
+                nightIdx = 22; // fallback
+              }
+              if (data.hourly.time[nightIdx]) {
+                nightDetails = {
+                  temp: data.hourly.temperature_2m[nightIdx] ?? data.current_weather.temperature,
+                  weathercode: data.hourly.weathercode[nightIdx] ?? data.current_weather.weathercode,
+                  rainProbability: data.hourly.precipitation_probability?.[nightIdx] ?? 0,
+                  windspeed: data.hourly.windspeed_10m?.[nightIdx] ?? data.current_weather.windspeed,
+                  windgusts: data.hourly.windgusts_10m?.[nightIdx] ?? data.current_weather.windspeed,
+                  winddirection: data.hourly.winddirection_10m?.[nightIdx] ?? 0,
+                };
+              }
+            }
+
+            // Parse Sunrise / Sunset
+            const formatTime = (timeStr: string) => {
+              if (!timeStr) return "--:--";
+              try {
+                return new Date(timeStr).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+              } catch {
+                return "--:--";
+              }
+            };
+
+            const sunriseTime = data.daily?.sunrise?.[0] ? formatTime(data.daily.sunrise[0]) : "--:--";
+            const sunsetTime = data.daily?.sunset?.[0] ? formatTime(data.daily.sunset[0]) : "--:--";
+
             return {
               temp: data.current_weather.temperature,
               windspeed: data.current_weather.windspeed,
+              windgusts: currentWindGusts,
+              winddirection: data.current_weather.winddirection ?? 0,
               weathercode: data.current_weather.weathercode,
+              rainProbability: currentRainProb,
+              sunset: sunsetTime,
+              sunrise: sunriseTime,
+              night: nightDetails,
               daily: data.daily ? {
                 time: data.daily.time,
                 weathercode: data.daily.weathercode,
                 tempMax: data.daily.temperature_2m_max,
                 tempMin: data.daily.temperature_2m_min,
+                rainProbabilityMax: data.daily.precipitation_probability_max ?? data.daily.time.map(() => 0),
+                windspeedMax: data.daily.windspeed_10m_max ?? data.daily.time.map(() => 0),
+                windgustsMax: data.daily.windgusts_10m_max ?? data.daily.time.map(() => 0),
+                winddirectionDominant: data.daily.winddirection_10m_dominant ?? data.daily.time.map(() => 0),
               } : null
             };
           })
@@ -561,31 +641,39 @@ function AppContent() {
       />
 
       {/* Point Info Drawer expanding the Sidebar */}
+      {/* Point Info Drawer expanding the Sidebar */}
       {!isSidebarCollapsed && markedLocation && (
         <div className="w-[340px] md:w-[380px] h-full border-r border-[#1b3d2b] bg-[#131b17]/95 shadow-2xl backdrop-blur-md overflow-hidden flex flex-col z-[9998] animate-slide-in-left pointer-events-auto">
-          {/* Panel Header */}
-          <div className="flex items-center justify-between p-5 border-b border-[#1b3d2b]/40 bg-[#0c120f]/60">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
-                <Compass className="w-4 h-4" />
+          {/* Panel Header (Styled like GaiaGPS Premium Card) */}
+          <div className="flex items-center justify-between p-5 border-b border-[#1b3d2b]/40 bg-[#0c120f]/60 select-none">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-full bg-[#1b3d2b]/25 border border-[#1b3d2b]/60 flex items-center justify-center text-emerald-400 shrink-0 shadow-md">
+                <svg className="w-5 h-5 text-emerald-400 fill-current" viewBox="0 0 24 24">
+                  <path d="M12 2L2 22h20L12 2zm0 4l6.5 13H5.5L12 6z"/>
+                </svg>
               </div>
               <div className="min-w-0">
-                <h3 className="text-sm font-extrabold tracking-wider text-emerald-400 uppercase font-sans">Ubicación Marcada</h3>
-                <p className="text-[9px] text-slate-400 font-mono mt-0.5 truncate">
-                  {formatCoordinatesByFormat(markedLocation.lat, markedLocation.lng, coordinateFormat)}
+                <h3 className="text-sm font-black text-slate-100 tracking-wide truncate">
+                  {markedLocationDetails.loading ? "Buscando..." : (markedLocationDetails.address?.split(',')?.[0] || "Ubicación Marcada")}
+                </h3>
+                <p className="text-[10.5px] text-slate-400 font-mono mt-0.5 select-all leading-none">
+                  {markedLocation.lat.toFixed(5)}, {markedLocation.lng.toFixed(5)}
+                  {markedLocationDetails.elevation !== null && (
+                    <span className="text-emerald-400/90 font-sans font-semibold"> • Altitud: {useImperial ? `${Math.round(markedLocationDetails.elevation * 3.28084)} ft` : `${Math.round(markedLocationDetails.elevation)} m`}</span>
+                  )}
                 </p>
               </div>
             </div>
             <button
               onClick={() => setMarkedLocation(null)}
-              className="p-1 rounded-lg hover:bg-[#1b3d2b]/40 text-slate-400 hover:text-slate-200 transition-all cursor-pointer"
+              className="p-1.5 rounded-lg hover:bg-[#1b3d2b]/40 text-slate-400 hover:text-slate-200 transition-all cursor-pointer shrink-0"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
 
           {/* Panel Content */}
-          <div className="flex-1 overflow-y-auto p-5 space-y-5">
+          <div className="flex-1 overflow-y-auto p-5 space-y-4">
             {markedLocationDetails.loading ? (
               <div className="h-48 flex flex-col items-center justify-center gap-2">
                 <Loader className="w-6 h-6 text-emerald-400 animate-spin" />
@@ -593,127 +681,199 @@ function AppContent() {
               </div>
             ) : (
               <>
-                {/* Geocoding Location Name */}
-                <div className="space-y-1 bg-[#0c120f]/40 p-3.5 rounded-xl border border-[#1b3d2b]/25">
-                  <span className="text-[9px] text-emerald-400/60 uppercase font-bold tracking-wider">Ubicación</span>
-                  <p className="text-xs text-slate-200 font-medium leading-relaxed">
-                    {markedLocationDetails.address || "Área remota / Coordenadas de montaña"}
-                  </p>
-                </div>
-
-                {/* Elevation and Coordinate Card */}
-                <div className="grid grid-cols-2 gap-3.5">
-                  <div className="space-y-1 bg-[#0c120f]/40 p-3.5 rounded-xl border border-[#1b3d2b]/25">
-                    <span className="text-[9px] text-emerald-400/60 uppercase font-bold tracking-wider">Altitud</span>
-                    <p className="text-sm font-black text-slate-100">
-                      {markedLocationDetails.elevation !== null 
-                        ? (useImperial ? `${Math.round(markedLocationDetails.elevation * 3.28084)} ft` : `${Math.round(markedLocationDetails.elevation)} m`)
-                        : "No disponible"}
-                    </p>
+                {/* Clean Location Context */}
+                {markedLocationDetails.address && (
+                  <div className="text-[11px] text-slate-400 bg-[#0c120f]/20 border border-[#1b3d2b]/15 px-3.5 py-2.5 rounded-lg leading-relaxed select-text flex items-center justify-between gap-2">
+                    <span className="truncate">{markedLocationDetails.address.split(',').slice(1).join(',').trim() || "Área de montaña"}</span>
+                    <button
+                      onClick={() => {
+                        const coordStr = formatCoordinatesByFormat(markedLocation.lat, markedLocation.lng, coordinateFormat);
+                        navigator.clipboard.writeText(coordStr);
+                        setCopiedCoords(true);
+                        setTimeout(() => setCopiedCoords(false), 2000);
+                      }}
+                      className="p-1 rounded bg-[#131b17] border border-[#1b3d2b]/40 hover:border-emerald-500/40 text-slate-400 hover:text-emerald-400 transition-all cursor-pointer shrink-0"
+                      title="Copiar Coordenadas"
+                    >
+                      {copiedCoords ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                        </svg>
+                      )}
+                    </button>
                   </div>
-                  
-                  <div className="space-y-1 bg-[#0c120f]/40 p-3.5 rounded-xl border border-[#1b3d2b]/25 min-w-0">
-                    <span className="text-[9px] text-emerald-400/60 uppercase font-bold tracking-wider">Copiar Coordenadas</span>
-                    <div className="flex items-center justify-between gap-1 mt-0.5">
-                      <p className="text-[10px] font-mono text-slate-200 truncate" title={formatCoordinatesByFormat(markedLocation.lat, markedLocation.lng, coordinateFormat)}>
-                        {formatCoordinatesByFormat(markedLocation.lat, markedLocation.lng, coordinateFormat)}
-                      </p>
-                      <button
-                        onClick={() => {
-                          const coordStr = formatCoordinatesByFormat(markedLocation.lat, markedLocation.lng, coordinateFormat);
-                          navigator.clipboard.writeText(coordStr);
-                          setCopiedCoords(true);
-                          setTimeout(() => setCopiedCoords(false), 2000);
-                        }}
-                        className="p-1 rounded bg-[#131b17] border border-[#1b3d2b] hover:border-emerald-500/40 text-slate-400 hover:text-emerald-400 transition-all cursor-pointer shrink-0"
-                        title="Copiar Coordenadas"
-                      >
-                        {copiedCoords ? (
-                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                            <polyline points="20 6 9 17 4 12"/>
-                          </svg>
-                        ) : (
-                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                          </svg>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                )}
 
-                {/* Current & Weekly Weather Card */}
+                {/* Current & Weekly Weather Card (OpenSnow Style) */}
                 {markedLocationDetails.weather && (
-                  <div className="space-y-4 bg-[#0c120f]/40 p-4 rounded-xl border border-[#1b3d2b]/25 shadow-lg">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9px] text-emerald-400/60 uppercase font-bold tracking-wider flex items-center gap-1">
-                        ⛅ Clima Actual
+                  <div className="space-y-4 bg-[#0c120f]/60 p-4 rounded-xl border border-[#1b3d2b]/30 shadow-2xl backdrop-blur-md">
+                    
+                    {/* Header */}
+                    <div className="flex items-center justify-between pb-1.5 border-b border-[#1b3d2b]/15">
+                      <span className="text-[10px] text-emerald-400 font-extrabold uppercase tracking-wider flex items-center gap-1">
+                        ❄️ El Tiempo
                       </span>
-                      <span className="text-[9px] text-slate-400 font-mono">
-                        Open-Meteo
+                      <span className="text-[9px] text-slate-400 font-mono flex items-center gap-1 bg-[#131b17]/80 px-1.5 py-0.5 rounded border border-[#1b3d2b]/20">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        OpenSnow Predictor
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-[9px] text-slate-400">Temperatura</span>
-                        <span className="text-sm font-bold text-slate-200">
-                          {markedLocationDetails.weather.temp.toFixed(1)}°C
-                        </span>
-                      </div>
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-[9px] text-slate-400">Viento</span>
-                        <span className="text-sm font-bold text-slate-200">
-                          {markedLocationDetails.weather.windspeed} km/h
-                        </span>
-                      </div>
-                      <div className="col-span-2 border-t border-[#1b3d2b]/10 pt-2 mt-1 flex items-center gap-1.5 text-slate-300">
-                        <span className="text-base">
-                          {getWeatherEmoji(markedLocationDetails.weather.weathercode)}
-                        </span>
-                        <span className="text-[10px] font-bold">
-                          {getWeatherDescription(markedLocationDetails.weather.weathercode)}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Weekly Forecast Sub-Section */}
-                    {markedLocationDetails.weather.daily && (
-                      <div className="space-y-2 border-t border-[#1b3d2b]/15 pt-3.5 mt-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[9px] text-emerald-400/60 uppercase font-bold tracking-wider">
-                            📅 Previsión Semanal
+                    {/* Columns (Current vs Night) */}
+                    <div className="grid grid-cols-2 gap-4 pt-1">
+                      {/* Left: Current */}
+                      <div className="space-y-2">
+                        <span className="text-[10px] font-bold text-slate-400 block tracking-wide select-none">Actual</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-3xl filter drop-shadow select-none">
+                            {getWeatherEmoji(markedLocationDetails.weather.weathercode)}
                           </span>
-                          <span className="text-[8px] text-slate-500 font-mono">7 Días</span>
+                          <div className="flex items-baseline">
+                            <span className="text-2xl font-black text-slate-100 font-sans tracking-tight">
+                              {Math.round(markedLocationDetails.weather.temp)}
+                            </span>
+                            <span className="text-xs font-bold text-slate-400 ml-0.5">°C</span>
+                          </div>
                         </div>
+                        <div className="space-y-1 text-[10.5px] font-medium text-slate-300">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sky-400/90 w-3.5 text-center" title="Probabilidad de Lluvia">💧</span>
+                            <span>{markedLocationDetails.weather.rainProbability}%</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-slate-400/90 w-3.5 text-center" title="Viento y Ráfagas">💨</span>
+                            <span className="font-mono text-[9.5px]">
+                              {getWindDirectionCardinal(markedLocationDetails.weather.winddirection)}{" "}
+                              {Math.round(markedLocationDetails.weather.windspeed)} / {Math.round(markedLocationDetails.weather.windgusts)}
+                            </span>
+                            <span className="text-[8px] text-slate-500 uppercase font-mono">km/h</span>
+                          </div>
+                        </div>
+                      </div>
 
-                        <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                          {markedLocationDetails.weather.daily.time.map((timeStr, idx) => {
+                      {/* Divider line */}
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 border-l border-[#1b3d2b]/20"></div>
+                        
+                        {/* Right: Night */}
+                        <div className="pl-4 space-y-2">
+                          <span className="text-[10px] font-bold text-slate-400 block tracking-wide select-none">Noche</span>
+                          {markedLocationDetails.weather.night ? (
+                            <>
+                              <div className="flex items-center gap-2">
+                                <span className="text-3xl filter drop-shadow select-none">
+                                  {getWeatherEmoji(markedLocationDetails.weather.night.weathercode)}
+                                </span>
+                                <div className="flex items-baseline">
+                                  <span className="text-2xl font-black text-slate-100 font-sans tracking-tight">
+                                    {Math.round(markedLocationDetails.weather.night.temp)}
+                                  </span>
+                                  <span className="text-xs font-bold text-slate-400 ml-0.5">°C</span>
+                                </div>
+                              </div>
+                              <div className="space-y-1 text-[10.5px] font-medium text-slate-300">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-sky-400/90 w-3.5 text-center" title="Probabilidad de Lluvia">💧</span>
+                                  <span>{markedLocationDetails.weather.night.rainProbability}%</span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-slate-400/90 w-3.5 text-center" title="Viento y Ráfagas">💨</span>
+                                  <span className="font-mono text-[9.5px]">
+                                    {getWindDirectionCardinal(markedLocationDetails.weather.night.winddirection)}{" "}
+                                    {Math.round(markedLocationDetails.weather.night.windspeed)} / {Math.round(markedLocationDetails.weather.night.windgusts)}
+                                  </span>
+                                  <span className="text-[8px] text-slate-500 uppercase font-mono">km/h</span>
+                                </div>
+                              </div>
+                            </>
+                          ) : (
+                            <span className="text-[9px] text-slate-500 italic block pt-2">No disponible</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Solar Indicators (Sunset & Sunrise) */}
+                    <div className="bg-[#131b17]/80 border border-[#1b3d2b]/25 rounded-lg py-1.5 px-3 flex items-center justify-between text-[10px] text-slate-300 font-medium select-none">
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs">🌅</span>
+                        <span>Amanece:</span>
+                        <span className="font-mono font-bold text-emerald-400">{markedLocationDetails.weather.sunrise}</span>
+                      </div>
+                      <div className="h-3 w-px bg-[#1b3d2b]/30"></div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs">🌇</span>
+                        <span>Anochece:</span>
+                        <span className="font-mono font-bold text-amber-500">{markedLocationDetails.weather.sunset}</span>
+                      </div>
+                    </div>
+
+                    {/* Weekly Forecast Sub-Section (List Layout) */}
+                    {markedLocationDetails.weather.daily && (
+                      <div className="space-y-2 border-t border-[#1b3d2b]/15 pt-3 mt-1">
+                        <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider select-none">
+                          📅 Previsión Semanal
+                        </span>
+
+                        <div className="space-y-1 text-[11px]">
+                          {markedLocationDetails.weather.daily.time.slice(0, 5).map((timeStr, idx) => {
                             const wcode = markedLocationDetails.weather!.daily!.weathercode[idx];
                             const tMax = markedLocationDetails.weather!.daily!.tempMax[idx];
                             const tMin = markedLocationDetails.weather!.daily!.tempMin[idx];
-                            const dayLabel = getSpanishDayName(timeStr, idx);
+                            const rainProb = markedLocationDetails.weather!.daily!.rainProbabilityMax[idx];
+                            const wSpeed = markedLocationDetails.weather!.daily!.windspeedMax[idx];
+                            const wGusts = markedLocationDetails.weather!.daily!.windgustsMax[idx];
+                            const wDir = markedLocationDetails.weather!.daily!.winddirectionDominant[idx];
+
+                            // Day formatting (e.g. Lunes 25)
+                            const getFullSpanishDay = (dateStr: string, idxVal: number) => {
+                              if (idxVal === 0) return "Hoy";
+                              if (idxVal === 1) return "Mañana";
+                              try {
+                                const date = new Date(dateStr);
+                                const dayName = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"][date.getDay()];
+                                const dayNum = date.getDate();
+                                return `${dayName} ${dayNum}`;
+                              } catch {
+                                return dateStr;
+                              }
+                            };
 
                             return (
                               <div
                                 key={timeStr}
-                                className="flex items-center justify-between bg-[#131b17]/50 hover:bg-[#131b17]/80 border border-[#1b3d2b]/10 hover:border-[#1b3d2b]/30 rounded-lg p-2 transition-all duration-200 text-[10.5px] font-sans"
+                                className="flex items-center justify-between bg-[#131b17]/40 hover:bg-[#131b17]/85 border border-[#1b3d2b]/10 hover:border-[#1b3d2b]/25 rounded-lg px-2.5 py-1.5 transition-all duration-150"
                               >
-                                <span className="w-16 font-semibold text-slate-300 truncate">
-                                  {dayLabel}
+                                <span className="font-semibold text-slate-300 w-[72px] truncate select-none">
+                                  {getFullSpanishDay(timeStr, idx)}
                                 </span>
                                 
-                                <div className="flex items-center gap-1.5 w-10 justify-center">
-                                  <span className="text-base" title={getWeatherDescription(wcode)}>
+                                <div className="flex items-center gap-1 w-[80px] shrink-0">
+                                  <span className="text-sm filter drop-shadow" title={getWeatherDescription(wcode)}>
                                     {getWeatherEmoji(wcode)}
                                   </span>
+                                  <div className="flex items-center gap-1 font-mono text-[10px] font-bold select-none">
+                                    <span className="text-slate-200">{Math.round(tMax)}°</span>
+                                    <span className="text-slate-500/50">/</span>
+                                    <span className="text-slate-400">{Math.round(tMin)}°</span>
+                                  </div>
                                 </div>
 
-                                <div className="flex items-center gap-2 text-[10px] font-mono font-bold justify-end w-20">
-                                  <span className="text-red-400/90">{Math.round(tMax)}°</span>
-                                  <span className="text-slate-500">|</span>
-                                  <span className="text-blue-400/90">{Math.round(tMin)}°</span>
+                                <div className="flex items-center gap-1 w-[42px] justify-center text-sky-400/90 font-mono text-[10px] font-bold" title="Probabilidad de Precipitación">
+                                  <span>💧</span>
+                                  <span>{rainProb}%</span>
+                                </div>
+
+                                <div className="flex items-center gap-1 w-[80px] justify-end text-slate-300 font-mono text-[9px] font-bold truncate" title="Viento y Ráfagas">
+                                  <span>💨</span>
+                                  <span>
+                                    {getWindDirectionCardinal(wDir)} {Math.round(wSpeed)}/{Math.round(wGusts)}
+                                  </span>
                                 </div>
                               </div>
                             );
@@ -721,6 +881,35 @@ function AppContent() {
                         </div>
                       </div>
                     )}
+
+                    {/* View OpenSnow Button */}
+                    <div className="pt-2">
+                      <a
+                        href={`https://opensnow.com`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-center gap-2 w-full py-2 px-3 rounded-lg bg-[#1b3d2b]/30 hover:bg-[#1b3d2b]/60 border border-[#1b3d2b]/50 hover:border-emerald-500/50 text-[10.5px] font-extrabold text-slate-200 hover:text-emerald-400 tracking-wider uppercase transition-all shadow-md cursor-pointer"
+                      >
+                        <span>View 10 Day Forecast</span>
+                        <svg className="w-3.5 h-3.5 fill-none stroke-current" viewBox="0 0 24 24" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                          <polyline points="15 3 21 3 21 9" />
+                          <line x1="10" y1="14" x2="21" y2="3" />
+                        </svg>
+                      </a>
+                    </div>
+
+                    {/* OpenSnow Badge Footer */}
+                    <div className="flex items-center justify-center gap-1.5 pt-3.5 border-t border-[#1b3d2b]/15 text-[9.5px] text-slate-500 font-bold select-none">
+                      <span>Powered by OpenSnow</span>
+                      <div className="flex items-center gap-1 bg-gradient-to-r from-orange-500 to-amber-500 text-white font-extrabold px-1.5 py-0.5 rounded text-[8px] tracking-wider uppercase shadow-sm">
+                        <svg className="w-2.5 h-2.5 fill-current animate-spin" viewBox="0 0 24 24" style={{ animationDuration: '10s' }}>
+                          <path d="M12,2a1,1,0,0,0-1,1V7.59L8.41,5A1,1,0,0,0,7,6.41L9.59,9H5a1,1,0,0,0,0,2H9.59L7,13.59A1,1,0,1,0,8.41,15L11,12.41V17a1,1,0,0,0,2,0V12.41L15.59,15a1,1,0,0,0,1.41-1.41L14.41,11H19a1,1,0,0,0,0-2H14.41L17,6.41A1,1,0,1,0,15.59,5L13,7.59V3A1,1,0,0,0,12,2Z"/>
+                        </svg>
+                        <span>OpenSnow</span>
+                      </div>
+                    </div>
+
                   </div>
                 )}
 
@@ -1089,4 +1278,10 @@ function getSpanishDayName(dateStr: string, idx: number): string {
   } catch {
     return dateStr;
   }
+}
+
+function getWindDirectionCardinal(degrees: number): string {
+  const directions = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+  const index = Math.round(((degrees % 360) / 22.5)) % 16;
+  return directions[index];
 }

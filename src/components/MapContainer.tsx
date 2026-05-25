@@ -714,7 +714,7 @@ export function MapContainer({
 
             const labelIcon = L.divIcon({
               className: "grid-label",
-              html: `<div class="text-[9px] font-mono font-bold text-blue-400 bg-[#0c1218]/90 px-1.5 py-0.5 rounded border border-blue-500/30 shadow-lg backdrop-blur-sm whitespace-nowrap">${labelText}</div>`,
+              html: `<div class="text-[9px] font-sans font-bold text-blue-600/90 tracking-wider whitespace-nowrap select-none" style="text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff, 0 0 3px #fff;">${labelText}</div>`,
               iconSize: [60, 18],
               iconAnchor: [30, 9],
             });
@@ -748,7 +748,7 @@ export function MapContainer({
 
             const labelIcon = L.divIcon({
               className: "grid-label",
-              html: `<div class="text-[9px] font-mono font-bold text-blue-400 bg-[#0c1218]/90 px-1.5 py-0.5 rounded border border-blue-500/30 shadow-lg backdrop-blur-sm whitespace-nowrap">${labelText}</div>`,
+              html: `<div class="text-[9px] font-sans font-bold text-blue-600/90 tracking-wider whitespace-nowrap select-none" style="text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff, 0 0 3px #fff;">${labelText}</div>`,
               iconSize: [60, 18],
               iconAnchor: [30, 9],
             });
@@ -806,6 +806,28 @@ export function MapContainer({
           const startN = Math.floor(minNorthing / step) * step;
           const endN = Math.ceil(maxNorthing / step) * step;
 
+          // Helper to format clean MGRS cell quadrant designation
+          const formatMGRSCellLabel = (latVal: number, lngVal: number, stepVal: number): string => {
+            const fullMgrs = formatCoordinatesByFormat(latVal, lngVal, "mgrs"); // e.g. "30TXN 28510 79240"
+            const parts = fullMgrs.split(" ");
+            if (parts.length < 3) return fullMgrs;
+            
+            const block = parts[0]; // e.g. "30TXN"
+            const eastingPart = parts[1]; // e.g. "28510"
+            const northingPart = parts[2]; // e.g. "79240"
+            
+            let numDigits = 0;
+            if (stepVal <= 100) numDigits = 4;
+            else if (stepVal <= 1000) numDigits = 3;
+            else if (stepVal <= 10000) numDigits = 2;
+            else if (stepVal <= 50000) numDigits = 1;
+            
+            const eStr = eastingPart.substring(0, numDigits);
+            const nStr = northingPart.substring(0, numDigits);
+            
+            return `${block}${eStr}${nStr}`;
+          };
+
           // Vertical Lines (Constant Easting)
           for (let easting = startE; easting <= endE; easting += step) {
             const pathLatLngs: L.LatLng[] = [];
@@ -831,27 +853,6 @@ export function MapContainer({
                 interactive: false,
                 pane: "gridPane",
               }).addTo(gridGroup);
-
-              const midIdx = Math.floor(pathLatLngs.length / 2);
-              const midLatLng = pathLatLngs[midIdx];
-              if (bounds.contains(midLatLng)) {
-                let labelText = "";
-                if (gridOverlay === "utm") {
-                  labelText = `${Math.round(easting)}E`;
-                } else {
-                  labelText = formatCoordinatesByFormat(midLatLng.lat, midLatLng.lng, "mgrs").split(" ").slice(0, 2).join(" ");
-                }
-
-                if (showGridLabels) {
-                  const labelIcon = L.divIcon({
-                    className: "grid-label",
-                    html: `<div class="text-[9px] font-mono font-bold text-blue-400 bg-[#0c1218]/90 px-1.5 py-0.5 rounded border border-blue-500/30 shadow-lg backdrop-blur-sm whitespace-nowrap">${labelText}</div>`,
-                    iconSize: [80, 18],
-                    iconAnchor: [40, 9],
-                  });
-                  L.marker(midLatLng, { icon: labelIcon, interactive: false, pane: "gridPane" }).addTo(gridGroup);
-                }
-              }
             }
           }
 
@@ -880,25 +881,39 @@ export function MapContainer({
                 interactive: false,
                 pane: "gridPane",
               }).addTo(gridGroup);
+            }
+          }
 
-              const midIdx = Math.floor(pathLatLngs.length / 2);
-              const midLatLng = pathLatLngs[midIdx];
-              if (bounds.contains(midLatLng)) {
-                let labelText = "";
-                if (gridOverlay === "utm") {
-                  labelText = `${Math.round(northing)}N`;
-                } else {
-                  labelText = formatCoordinatesByFormat(midLatLng.lat, midLatLng.lng, "mgrs").split(" ").slice(0, 2).join(" ");
-                }
+          // Center Quadrant/Cell Labels (Inside each Grid Box)
+          if (showGridLabels) {
+            for (let easting = startE; easting < endE; easting += step) {
+              for (let northing = startN; northing < endN; northing += step) {
+                const cellCenterE = easting + step / 2;
+                const cellCenterN = northing + step / 2;
 
-                if (showGridLabels) {
-                  const labelIcon = L.divIcon({
-                    className: "grid-label",
-                    html: `<div class="text-[9px] font-mono font-bold text-blue-400 bg-[#0c1218]/90 px-1.5 py-0.5 rounded border border-blue-500/30 shadow-lg backdrop-blur-sm whitespace-nowrap">${labelText}</div>`,
-                    iconSize: [80, 18],
-                    iconAnchor: [40, 9],
-                  });
-                  L.marker(midLatLng, { icon: labelIcon, interactive: false, pane: "gridPane" }).addTo(gridGroup);
+                try {
+                  const [lat, lng] = convertUtmToLatLng(cellCenterE, cellCenterN, centerZone, southernHemisphere);
+                  if (!isNaN(lat) && !isNaN(lng) && lat >= -85 && lat <= 85 && lng >= -180 && lng <= 180) {
+                    const cellLatLng = L.latLng(lat, lng);
+                    if (bounds.contains(cellLatLng)) {
+                      let labelText = "";
+                      if (gridOverlay === "utm") {
+                        labelText = `${Math.round(easting)}E\n${Math.round(northing)}N`;
+                      } else {
+                        labelText = formatMGRSCellLabel(lat, lng, step);
+                      }
+
+                      const labelIcon = L.divIcon({
+                        className: "grid-label",
+                        html: `<div class="text-[9px] font-sans font-bold text-blue-600/90 tracking-wider whitespace-nowrap select-none text-center" style="text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff, 0 0 3px #fff; line-height: 1.1;">${labelText.replace('\n', '<br/>')}</div>`,
+                        iconSize: [80, 24],
+                        iconAnchor: [40, 12],
+                      });
+                      L.marker(cellLatLng, { icon: labelIcon, interactive: false, pane: "gridPane" }).addTo(gridGroup);
+                    }
+                  }
+                } catch (e) {
+                  // Ignore
                 }
               }
             }
