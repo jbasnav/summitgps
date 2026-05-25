@@ -1,0 +1,155 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+:root {
+  font-family: 'Outfit', sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: dark;
+  color: rgba(255, 255, 255, 0.87);
+  background-color: #070a08;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background-color: #070a08;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+/* Custom Scrollbar Styles */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0a0f0c;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1b3d2b;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #10b981;
+}
+
+/* Utility Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes bounceShort {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes spinSlow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-bounce-short {
+  animation: bounceShort 2s ease-in-out infinite;
+}
+
+.animate-spin-slow {
+  animation: spinSlow 8s linear infinite;
+}
+
+/* Leaflet Custom Overrides */
+.leaflet-container {
+  font-family: 'Outfit', sans-serif !important;
+  background: #0a0e0c !important;
+}
+
+/* Redesign Zoom Controls to look modern & glassmorphic */
+.leaflet-bar {
+  border: 1px solid #1b3d2b !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6) !important;
+  border-radius: 12px !important;
+  overflow: hidden;
+}
+
+.leaflet-bar a {
+  background-color: #131b17/95 !important;
+  background: rgba(19, 27, 23, 0.95) !important;
+  backdrop-filter: blur(8px) !important;
+  color: #10b981 !important; /* Emerald */
+  border-bottom: 1px solid #1b3d2b !important;
+  transition: all 0.2s ease !important;
+  width: 34px !important;
+  height: 34px !important;
+  line-height: 34px !important;
+  font-weight: bold !important;
+}
+
+.leaflet-bar a:hover {
+  background-color: rgba(27, 61, 43, 0.95) !important;
+  color: #ffffff !important;
+}
+
+.leaflet-bar a.leaflet-disabled {
+  background-color: rgba(10, 15, 12, 0.95) !important;
+  color: #334155 !important;
+  cursor: not-allowed;
+}
+
+.leaflet-control-zoom-out {
+  border-bottom: none !important;
+}
+
+/* Tooltip Custom styling */
+.leaflet-tooltip {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.leaflet-tooltip-top::before {
+  border-top-color: transparent !important;
+}
+
+/* Smooth Fade and Glow for Recharts */
+.recharts-tooltip-cursor {
+  stroke: #10b981;
+  stroke-dasharray: 4 4;
+}
+
+/* Input Styles and Range sliders overrides */
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #10b981;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+  transition: transform 0.1s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
