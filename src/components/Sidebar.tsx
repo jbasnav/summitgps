@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import {
   Compass,
   Search,
@@ -17,18 +17,30 @@ import {
   AlertTriangle,
   Info,
   Droplet,
+  Eye,
+  EyeOff,
+  Plus,
+  Scissors,
+  Link,
+  Edit2,
 } from "lucide-react";
 import { LayerSelector, type BaseLayerId } from "./LayerSelector";
 import { StatsPanel } from "./StatsPanel";
 import { parseGPX, exportToGPX } from "../utils/gpxExporter";
+import type { Track } from "../hooks/useRoutePlanner";
 
 interface SidebarProps {
   routeName: string;
   setRouteName: (name: string) => void;
   points: any[];
   waypoints: any[];
+  tracks: Track[];
+  activeTrackId: string | null;
+  setActiveTrackId: (id: string | null) => void;
   isDrawing: boolean;
   setIsDrawing: (drawing: boolean) => void;
+  isSplitting: boolean;
+  setIsSplitting: (splitting: boolean) => void;
   snapToTrail: boolean;
   setSnapToTrail: (snap: boolean) => void;
   distance: number;
@@ -41,6 +53,13 @@ interface SidebarProps {
   onFlyToCoords: (lat: number, lng: number) => void;
   onDeleteWaypoint: (id: string) => void;
   onEditWaypoint: (wpt: any) => void;
+  
+  // Multi-track additions
+  onCreateNewTrack: (name?: string) => string;
+  onDeleteTrack: (id: string) => void;
+  onToggleTrackVisibility: (id: string) => void;
+  onSetTrackColor: (id: string, color: string) => void;
+  onMergeTracks: (ids: string[], name?: string) => void;
   
   // Layer controls
   activeBaseLayer: BaseLayerId;
@@ -66,13 +85,20 @@ const WPT_ICONS: Record<string, any> = {
   water: Droplet,
 };
 
+const DEFAULT_TRACK_COLORS = ["#10b981", "#3b82f6", "#ef4444", "#f59e0b", "#8b5cf6", "#ec4899"];
+
 export function Sidebar({
   routeName,
   setRouteName,
   points,
   waypoints,
+  tracks,
+  activeTrackId,
+  setActiveTrackId,
   isDrawing,
   setIsDrawing,
+  isSplitting,
+  setIsSplitting,
   snapToTrail,
   setSnapToTrail,
   distance,
@@ -85,6 +111,11 @@ export function Sidebar({
   onFlyToCoords,
   onDeleteWaypoint,
   onEditWaypoint,
+  onCreateNewTrack,
+  onDeleteTrack,
+  onToggleTrackVisibility,
+  onSetTrackColor,
+  onMergeTracks,
   activeBaseLayer,
   onChangeBaseLayer,
   overlayOpacity,
@@ -96,6 +127,9 @@ export function Sidebar({
 }: SidebarProps) {
   const [activeTab, setActiveTab] = useState<TabId>("route");
   const [isCollapsed, setIsCollapsed] = useState(false);
+  
+  // Track Library selection state for merging
+  const [selectedMergeIds, setSelectedMergeIds] = useState<string[]>([]);
   
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
@@ -114,7 +148,6 @@ export function Sidebar({
         const parsed = parseGPX(text);
         onImportRoute(parsed.routeName, parsed.routePoints, parsed.waypoints);
         
-        // Auto zoom to first imported route point or waypoint
         if (parsed.routePoints.length > 0) {
           onFlyToCoords(parsed.routePoints[0].lat, parsed.routePoints[0].lng);
         } else if (parsed.waypoints.length > 0) {
@@ -125,26 +158,58 @@ export function Sidebar({
       }
     };
     reader.readAsText(file);
-    // Reset file input
     e.target.value = "";
   };
 
-  // GPX Export
+  // GPX Export (Exports the currently active track)
   const handleGpxExport = () => {
-    if (points.length === 0 && waypoints.length === 0) {
-      alert("No hay ruta ni waypoints para exportar.");
+    const activeTrack = tracks.find((t) => t.id === activeTrackId);
+    if (!activeTrack) {
+      alert("Por favor, selecciona un track activo de la biblioteca para exportar.");
       return;
     }
-    const gpxString = exportToGPX(routeName, points, waypoints);
+
+    if (activeTrack.points.length === 0 && activeTrack.waypoints.length === 0) {
+      alert("No hay ruta ni waypoints en el track activo para exportar.");
+      return;
+    }
+
+    const gpxString = exportToGPX(activeTrack.name, activeTrack.points, activeTrack.waypoints);
     const blob = new Blob([gpxString], { type: "application/gpx+xml" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${routeName.replace(/\s+/g, "_") || "ruta_summit"}.gpx`;
+    link.download = `${activeTrack.name.replace(/\s+/g, "_") || "ruta_summit"}.gpx`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  };
+
+  // Cycle track color
+  const handleCycleColor = (id: string, currentColor: string) => {
+    const idx = DEFAULT_TRACK_COLORS.indexOf(currentColor);
+    const nextColor = DEFAULT_TRACK_COLORS[(idx + 1) % DEFAULT_TRACK_COLORS.length];
+    onSetTrackColor(id, nextColor);
+  };
+
+  // Checkbox toggle for Merge selection
+  const handleToggleMergeSelect = (id: string) => {
+    setSelectedMergeIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  // Merge selected tracks
+  const handleMergeSelected = () => {
+    if (selectedMergeIds.length < 2) {
+      alert("Por favor, selecciona al menos 2 tracks de la biblioteca para unirlos.");
+      return;
+    }
+    const name = window.prompt("Introduce el nombre de la ruta fusionada:", "Ruta Combinada");
+    if (name === null) return; // cancelled
+    onMergeTracks(selectedMergeIds, name || undefined);
+    setSelectedMergeIds([]); // clear selection
   };
 
   // Geocoding Search
@@ -208,7 +273,6 @@ export function Sidebar({
             </div>
           </div>
 
-          {/* Unit Toggle */}
           <button
             onClick={onToggleUnits}
             className="text-[10px] font-bold px-2 py-1 rounded bg-[#1c2921] border border-[#1b3d2b] text-slate-300 hover:text-emerald-400 transition-colors"
@@ -220,7 +284,7 @@ export function Sidebar({
         {/* Tab Selector */}
         <div className="grid grid-cols-4 border-b border-[#1b3d2b] bg-[#0c120f]/50">
           {[
-            { id: "route" as TabId, label: "Ruta", icon: Route },
+            { id: "route" as TabId, label: "Rutas", icon: Route },
             { id: "layers" as TabId, label: "Capas", icon: LayersIcon },
             { id: "waypoints" as TabId, label: "Marcas", icon: MapPin },
             { id: "search" as TabId, label: "Buscar", icon: Search },
@@ -246,118 +310,311 @@ export function Sidebar({
 
         {/* Tab Content Panel */}
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
-          {/* TAB: ROUTE */}
+          {/* TAB: ROUTE (MULTIPLES RUTAS) */}
           {activeTab === "route" && (
             <div className="space-y-5 animate-fade-in">
-              {/* Route Name Input */}
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                  Nombre de la Ruta
-                </label>
-                <input
-                  type="text"
-                  value={routeName}
-                  onChange={(e) => setRouteName(e.target.value)}
-                  className="w-full bg-[#0a0f0d]/80 border border-[#1b3d2b] rounded-xl px-4 py-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 transition-colors"
-                />
-              </div>
-
-              {/* Drawing Controls */}
-              <div className="space-y-3">
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setIsDrawing(!isDrawing)}
-                    className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl text-xs font-bold transition-all shadow-lg ${
-                      isDrawing
-                        ? "bg-red-500/20 text-red-300 border border-red-500/40 shadow-red-500/5 hover:bg-red-500/25"
-                        : "bg-emerald-400 text-[#0c120f] hover:bg-emerald-300 shadow-emerald-400/10"
-                    }`}
-                  >
-                    {loading ? (
-                      <Loader className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Route className="w-4 h-4" />
-                    )}
-                    {isDrawing ? "Finalizar Dibujo" : "Dibujar Ruta"}
-                  </button>
-
-                  {points.length > 0 && isDrawing && (
+              
+              {/* SECTION 1: LIBRARY OF TRACKS */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    Biblioteca de Tracks ({tracks.length})
+                  </h4>
+                  {selectedMergeIds.length >= 2 && (
                     <button
-                      onClick={onUndoPoint}
-                      title="Deshacer último punto"
-                      className="px-3.5 bg-[#18231e] border border-[#1b3d2b] rounded-xl text-slate-300 hover:text-emerald-400 transition-colors flex items-center justify-center"
+                      onClick={handleMergeSelected}
+                      className="text-[9px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded-lg flex items-center gap-1 hover:bg-blue-500/30"
                     >
-                      <Undo2 className="w-4 h-4" />
+                      <Link className="w-3 h-3" />
+                      Unir Seleccionados
                     </button>
                   )}
                 </div>
 
-                {/* Drawing Helper text */}
-                {isDrawing && (
-                  <p className="text-[10px] text-emerald-400/80 bg-emerald-500/5 border border-emerald-500/10 rounded-lg p-2 text-center animate-pulse">
-                    🖱️ Haz clic en el mapa para ir agregando puntos de paso a tu ruta.
-                  </p>
-                )}
-
-                {/* Snap to trail option */}
-                <div className="flex items-center justify-between p-3 rounded-xl bg-[#0b100d] border border-white/5">
-                  <div className="space-y-0.5">
-                    <span className="text-xs font-semibold text-slate-200">
-                      Ajustar a Senderos
-                    </span>
-                    <p className="text-[10px] text-slate-500">
-                      Ruta inteligente guiada por caminos.
+                {tracks.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center p-6 border border-dashed border-[#1b3d2b]/40 rounded-xl text-center space-y-2 bg-[#0c120f]/50">
+                    <Route className="w-5 h-5 text-slate-600" />
+                    <span className="text-[11px] font-semibold text-slate-400">Biblioteca Vacía</span>
+                    <p className="text-[9px] text-slate-500">
+                      Importa un archivo GPX o inicia una nueva ruta para guardarla aquí.
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setSnapToTrail(!snapToTrail)}
-                    className={`w-10 h-6 flex items-center rounded-full p-0.5 transition-colors duration-200 focus:outline-none ${
-                      snapToTrail ? "bg-emerald-400 justify-end" : "bg-[#18231e] justify-start"
-                    }`}
-                  >
-                    <span
-                      className={`w-5 h-5 rounded-full shadow-md transform duration-200 ${
-                        snapToTrail ? "bg-black" : "bg-slate-400"
-                      }`}
-                    />
-                  </button>
-                </div>
+                ) : (
+                  <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
+                    {tracks.map((track) => {
+                      const isActive = track.id === activeTrackId;
+                      const isCheckedForMerge = selectedMergeIds.includes(track.id);
+                      return (
+                        <div
+                          key={track.id}
+                          className={`flex items-center justify-between p-2.5 rounded-xl border text-xs transition-all ${
+                            isActive
+                              ? "bg-emerald-500/[0.04] border-emerald-400/50"
+                              : "bg-[#0b100d] border-white/5 hover:border-white/10"
+                          }`}
+                        >
+                          {/* Left contents: checkbox for merge, color dot, visibility icon */}
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            {/* Merge checkbox */}
+                            <input
+                              type="checkbox"
+                              checked={isCheckedForMerge}
+                              onChange={() => handleToggleMergeSelect(track.id)}
+                              title="Seleccionar para unir tracks"
+                              className="w-3.5 h-3.5 accent-emerald-400 bg-black rounded border-[#1b3d2b] cursor-pointer"
+                            />
+
+                            {/* Color Selector (circular cycle color) */}
+                            <button
+                              onClick={() => handleCycleColor(track.id, track.color)}
+                              className="w-3.5 h-3.5 rounded-full shrink-0 border border-white/20 transition-transform active:scale-95"
+                              style={{ backgroundColor: track.color }}
+                              title="Hacer clic para cambiar color"
+                            />
+
+                            {/* Visibility Eye icon */}
+                            <button
+                              onClick={() => onToggleTrackVisibility(track.id)}
+                              className="text-slate-400 hover:text-slate-200 transition-colors"
+                              title={track.visible ? "Ocultar en mapa" : "Mostrar en mapa"}
+                            >
+                              {track.visible ? (
+                                <Eye className="w-3.5 h-3.5 text-emerald-400" />
+                              ) : (
+                                <EyeOff className="w-3.5 h-3.5 text-slate-600" />
+                              )}
+                            </button>
+
+                            {/* Track Name */}
+                            <span
+                              onClick={() => setActiveTrackId(track.id)}
+                              className={`truncate cursor-pointer hover:underline ${
+                                isActive ? "font-bold text-emerald-300" : "text-slate-300"
+                              }`}
+                            >
+                              {track.name}
+                            </span>
+                          </div>
+
+                          {/* Right actions: pencil (activate edit) and trash */}
+                          <div className="flex items-center gap-2 shrink-0">
+                            {/* Edit Pencil icon */}
+                            <button
+                              onClick={() => {
+                                setActiveTrackId(track.id);
+                                if (track.points.length > 0) {
+                                  // Auto focus map to the track
+                                  onFlyToCoords(track.points[0].lat, track.points[0].lng);
+                                }
+                              }}
+                              className={`p-1 rounded-lg transition-colors ${
+                                isActive
+                                  ? "bg-emerald-500/10 text-emerald-300"
+                                  : "text-slate-500 hover:text-slate-300 hover:bg-white/5"
+                              }`}
+                              title="Habilitar edición de esta ruta"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                            </button>
+
+                            {/* Delete icon */}
+                            <button
+                              onClick={() => {
+                                if (
+                                  window.confirm(`¿Seguro que deseas eliminar la ruta "${track.name}" de la biblioteca?`)
+                                ) {
+                                  onDeleteTrack(track.id);
+                                }
+                              }}
+                              className="text-slate-500 hover:text-red-400 p-1 rounded-lg hover:bg-white/5 transition-colors"
+                              title="Eliminar de la biblioteca"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
-              {/* Statistics Details */}
-              {points.length > 0 && (
-                <div className="border-t border-[#1b3d2b]/40 pt-4 space-y-4">
-                  <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                    Métricas de la Ruta
-                  </h4>
-                  <StatsPanel
-                    distance={distance}
-                    ascent={ascent}
-                    descent={descent}
-                    useImperial={useImperial}
-                  />
-                  
-                  {/* Clear button */}
+              {/* ACTION TOOLBAR */}
+              <div className="border-t border-[#1b3d2b]/40 pt-4 flex gap-2">
+                <button
+                  onClick={() => {
+                    const name = window.prompt("Introduce el nombre de la nueva ruta:", "Nueva Ruta");
+                    if (name) onCreateNewTrack(name);
+                  }}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-emerald-400/30 bg-emerald-500/[0.03] hover:bg-emerald-500/[0.08] text-emerald-300 hover:text-emerald-200 transition-colors text-xs font-semibold"
+                >
+                  <Plus className="w-4 h-4" />
+                  Nueva Ruta
+                </button>
+              </div>
+
+              {/* SECTION 2: EDITING CONTROLS FOR ACTIVE ROUTE */}
+              {activeTrackId ? (
+                <div className="border-t border-[#1b3d2b]/40 pt-4 space-y-4 animate-fade-in">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                      Ruta Activa Seleccionada
+                    </h4>
+                    <span className="text-[9px] bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-full font-bold">
+                      ACTIVA
+                    </span>
+                  </div>
+
+                  {/* Route Name Input */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                      Renombrar Ruta
+                    </label>
+                    <input
+                      type="text"
+                      value={routeName}
+                      onChange={(e) => setRouteName(e.target.value)}
+                      className="w-full bg-[#0a0f0d]/80 border border-[#1b3d2b] rounded-xl px-4 py-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 transition-colors"
+                    />
+                  </div>
+
+                  {/* Drawing Actions */}
+                  <div className="space-y-3">
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setIsDrawing(!isDrawing);
+                          if (isSplitting) setIsSplitting(false); // turn off split mode
+                        }}
+                        className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl text-xs font-bold transition-all shadow-lg ${
+                          isDrawing
+                            ? "bg-red-500/20 text-red-300 border border-red-500/40 shadow-red-500/5 hover:bg-red-500/25"
+                            : "bg-emerald-400 text-[#0c120f] hover:bg-emerald-300 shadow-emerald-400/10"
+                        }`}
+                      >
+                        {loading ? (
+                          <Loader className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Route className="w-4 h-4" />
+                        )}
+                        {isDrawing ? "Finalizar Dibujo" : "Dibujar en Ruta"}
+                      </button>
+
+                      {/* Split tool button */}
+                      {points.length > 3 && (
+                        <button
+                          onClick={() => {
+                            setIsSplitting(!isSplitting);
+                            if (isDrawing) setIsDrawing(false); // turn off draw mode
+                          }}
+                          title="Dividir Track (Split)"
+                          className={`px-3.5 border rounded-xl transition-colors flex items-center justify-center ${
+                            isSplitting
+                              ? "bg-orange-500/20 text-orange-300 border-orange-500/40 shadow-md"
+                              : "bg-[#18231e] border-[#1b3d2b] text-slate-300 hover:text-orange-400"
+                          }`}
+                        >
+                          <Scissors className="w-4 h-4" />
+                        </button>
+                      )}
+
+                      {points.length > 0 && isDrawing && (
+                        <button
+                          onClick={onUndoPoint}
+                          title="Deshacer último punto"
+                          className="px-3.5 bg-[#18231e] border border-[#1b3d2b] rounded-xl text-slate-300 hover:text-emerald-400 transition-colors flex items-center justify-center"
+                        >
+                          <Undo2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Helper alerts */}
+                    {isDrawing && (
+                      <p className="text-[10px] text-emerald-400/80 bg-emerald-500/5 border border-emerald-500/10 rounded-lg p-2 text-center animate-pulse">
+                        🖱️ Haz clic en el mapa para ir agregando puntos de paso a tu ruta.
+                      </p>
+                    )}
+
+                    {isSplitting && (
+                      <p className="text-[10px] text-orange-400/85 bg-orange-500/5 border border-orange-500/10 rounded-lg p-2 text-center animate-pulse">
+                        ✂️ Haz clic en cualquier vértice de la línea naranja en el mapa para cortar el track en ese punto.
+                      </p>
+                    )}
+
+                    {/* Snap to trail */}
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-[#0b100d] border border-white/5">
+                      <div className="space-y-0.5">
+                        <span className="text-xs font-semibold text-slate-200">
+                          Ajustar a Senderos
+                        </span>
+                        <p className="text-[10px] text-slate-500">
+                          Ruta inteligente guiada por caminos.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSnapToTrail(!snapToTrail)}
+                        className={`w-10 h-6 flex items-center rounded-full p-0.5 transition-colors duration-200 focus:outline-none ${
+                          snapToTrail ? "bg-emerald-400 justify-end" : "bg-[#18231e] justify-start"
+                        }`}
+                      >
+                        <span
+                          className={`w-5 h-5 rounded-full shadow-md transform duration-200 ${
+                            snapToTrail ? "bg-black" : "bg-slate-400"
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Route metrics display */}
+                  {points.length > 0 && (
+                    <div className="space-y-4">
+                      <StatsPanel
+                        distance={distance}
+                        ascent={ascent}
+                        descent={descent}
+                        useImperial={useImperial}
+                      />
+                      
+                      <button
+                        onClick={() => {
+                          if (window.confirm("¿Seguro que deseas borrar todos los puntos de la ruta activa?")) {
+                            onClearRoute();
+                          }
+                        }}
+                        className="w-full py-2 rounded-xl border border-red-500/20 text-red-400 bg-red-500/[0.03] hover:bg-red-500/[0.08] transition-colors text-xs font-semibold flex items-center justify-center gap-1.5"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Borrar Trazado Activo
+                      </button>
+                    </div>
+                  )}
+
+                  {/* GPX Export / Download active track */}
                   <button
-                    onClick={() => {
-                      if (window.confirm("¿Seguro que deseas borrar toda la ruta dibujada?")) {
-                        onClearRoute();
-                      }
-                    }}
-                    className="w-full py-2.5 rounded-xl border border-red-500/20 text-red-400 bg-red-500/[0.03] hover:bg-red-500/[0.08] transition-colors text-xs font-semibold flex items-center justify-center gap-1.5"
+                    onClick={handleGpxExport}
+                    disabled={points.length === 0 && waypoints.length === 0}
+                    className="w-full py-2.5 rounded-xl border border-[#1b3d2b] bg-[#0a0f0d] hover:bg-[#0f1612] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[#0a0f0d] disabled:hover:text-slate-400 text-slate-300 hover:text-emerald-400 transition-all text-xs font-semibold flex items-center justify-center gap-1.5"
                   >
-                    <Trash2 className="w-4 h-4" />
-                    Borrar Trazado
+                    <Download className="w-4 h-4" />
+                    Exportar GPX (Track Activo)
                   </button>
+                </div>
+              ) : (
+                <div className="border-t border-[#1b3d2b]/40 pt-5 text-center p-4 rounded-xl bg-[#0c120f]/50 border border-[#1b3d2b]/20">
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Selecciona una ruta en el lápiz 📝 o crea una "Nueva Ruta" para ver sus métricas, iniciar dibujo o exportarla a GPX.
+                  </p>
                 </div>
               )}
 
-              {/* GPX Import/Export Actions */}
-              <div className="border-t border-[#1b3d2b]/40 pt-5 flex gap-2">
-                <label className="flex-1 py-2.5 rounded-xl border border-[#1b3d2b] bg-[#0b100d] hover:bg-[#0f1612] text-slate-300 hover:text-emerald-400 cursor-pointer transition-all text-xs font-semibold flex items-center justify-center gap-1.5">
+              {/* Import GPX Upload Widget (Always Visible) */}
+              <div className="border-t border-[#1b3d2b]/40 pt-4">
+                <label className="w-full py-2.5 rounded-xl border border-[#1b3d2b] bg-[#0c120f] hover:bg-[#0f1612] text-slate-300 hover:text-emerald-400 cursor-pointer transition-all text-xs font-semibold flex items-center justify-center gap-1.5">
                   <Upload className="w-4 h-4" />
-                  Importar GPX
+                  Importar y Añadir GPX
                   <input
                     type="file"
                     accept=".gpx"
@@ -365,16 +622,8 @@ export function Sidebar({
                     className="hidden"
                   />
                 </label>
-
-                <button
-                  onClick={handleGpxExport}
-                  disabled={points.length === 0 && waypoints.length === 0}
-                  className="flex-1 py-2.5 rounded-xl border border-[#1b3d2b] bg-[#0b100d] hover:bg-[#0f1612] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[#0b100d] disabled:hover:text-slate-300 text-slate-300 hover:text-emerald-400 transition-all text-xs font-semibold flex items-center justify-center gap-1.5"
-                >
-                  <Download className="w-4 h-4" />
-                  Exportar GPX
-                </button>
               </div>
+
             </div>
           )}
 
@@ -392,14 +641,14 @@ export function Sidebar({
             </div>
           )}
 
-          {/* TAB: WAYPOINTS */}
+          {/* TAB: WAYPOINTS (ALL VISIBLE TRACKS) */}
           {activeTab === "waypoints" && (
             <div className="space-y-4 animate-fade-in">
               <div className="flex items-center justify-between">
                 <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                  Tus Puntos de Interés ({waypoints.length})
+                  Waypoints Visibles ({waypoints.length})
                 </h4>
-                <p className="text-[9px] text-slate-500">Haz clic derecho en el mapa para añadir</p>
+                <p className="text-[9px] text-slate-500">Clic derecho en mapa para añadir</p>
               </div>
 
               {waypoints.length === 0 ? (
@@ -407,7 +656,7 @@ export function Sidebar({
                   <MapPin className="w-6 h-6 text-slate-600" />
                   <span className="text-xs font-semibold text-slate-400">Sin Waypoints</span>
                   <p className="text-[10px] text-slate-500 max-w-xs">
-                    Coloca marcadores en el mapa haciendo clic derecho o usa el planificador de rutas.
+                    Activa la visibilidad de tus tracks o añade waypoints haciendo clic derecho en el mapa.
                   </p>
                 </div>
               ) : (
@@ -481,7 +730,7 @@ export function Sidebar({
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Ej. Aneto, Chamonix, Montserrat..."
+                    placeholder="Ej. Aneto, Picos de Europa..."
                     className="w-full bg-[#0a0f0d]/80 border border-[#1b3d2b] rounded-xl pl-9 pr-4 py-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 transition-colors"
                   />
                 </div>

@@ -2,29 +2,14 @@ import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { BaseLayerId } from "./LayerSelector";
-import { Plus } from "lucide-react";
-
-interface RoutePoint {
-  lat: number;
-  lng: number;
-  elevation: number;
-  distance: number;
-}
-
-interface Waypoint {
-  id: string;
-  name: string;
-  lat: number;
-  lng: number;
-  icon: string;
-  note: string;
-  color: string;
-}
+import type { Track, RoutePoint, Waypoint } from "../hooks/useRoutePlanner";
+import { Plus, Scissors } from "lucide-react";
 
 interface MapContainerProps {
-  points: RoutePoint[];
-  waypoints: Waypoint[];
+  tracks: Track[];
+  activeTrackId: string | null;
   isDrawing: boolean;
+  isSplitting: boolean;
   activeBaseLayer: BaseLayerId;
   overlayOpacity: number;
   showContours: boolean;
@@ -33,6 +18,7 @@ interface MapContainerProps {
   onAddPoint: (lat: number, lng: number) => void;
   onRightClickMap: (lat: number, lng: number) => void;
   onEditWaypoint: (wpt: Waypoint) => void;
+  onSplitTrackAt: (trackId: string, index: number) => void;
 }
 
 // Map Tile Providers
@@ -43,10 +29,8 @@ const TILE_LAYERS = {
   terrain: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
 };
 
-// Overlay: Esri World Hillshade (highly detailed shading of slopes)
 const HILLSHADE_URL = "https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}";
 
-// Icons SVGs for Waypoints (renders inside divIcon)
 const WPT_SVG_PATHS: Record<string, string> = {
   mountain: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-white"><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/><circle cx="12" cy="10" r="3"/></svg>`,
   camp: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-white"><path d="M19 22H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2z"/><path d="m12 7-6 6h12l-6-6z"/></svg>`,
@@ -57,9 +41,10 @@ const WPT_SVG_PATHS: Record<string, string> = {
 };
 
 export function MapContainer({
-  points,
-  waypoints,
+  tracks,
+  activeTrackId,
   isDrawing,
+  isSplitting,
   activeBaseLayer,
   overlayOpacity,
   showContours,
@@ -68,14 +53,15 @@ export function MapContainer({
   onAddPoint,
   onRightClickMap,
   onEditWaypoint,
+  onSplitTrackAt,
 }: MapContainerProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   
-  // Ref maps to handle updating overlays, route line, markers
+  // Ref maps to manage layers dynamically
   const tileLayerRef = useRef<L.TileLayer | null>(null);
   const hillshadeLayerRef = useRef<L.TileLayer | null>(null);
-  const routeLineRef = useRef<L.Polyline | null>(null);
+  const polylinesRef = useRef<Record<string, L.Polyline>>({});
   const controlMarkersRef = useRef<L.CircleMarker[]>([]);
   const waypointMarkersRef = useRef<Record<string, L.Marker>>({});
   const hoverIndicatorRef = useRef<L.CircleMarker | null>(null);
@@ -84,24 +70,20 @@ export function MapContainer({
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
-    // Create Leaflet Map Instance (Centered on Picos de Europa, Spain as default mountain view)
     const map = L.map(mapContainerRef.current, {
       center: [43.1906, -4.8322],
       zoom: 13,
-      zoomControl: false, // Will add custom positioned zoom control
+      zoomControl: false,
       attributionControl: false,
     });
     
-    // Add Zoom Control at bottom right
     L.control.zoom({ position: "bottomright" }).addTo(map);
 
-    // Set OSM as initial tile layer
-    const baseLayer = L.tileLayer(TILE_LAYERS[activeBaseLayer], {
-      maxZoom: 19,
-    }).addTo(map);
+    // Initial base layer
+    const baseLayer = L.tileLayer(TILE_LAYERS[activeBaseLayer], { maxZoom: 19 }).addTo(map);
     tileLayerRef.current = baseLayer;
 
-    // Add Hillshading overlay layer (hidden initially)
+    // Hillshading overlay layer (hidden initially)
     const hillshadeLayer = L.tileLayer(HILLSHADE_URL, {
       maxZoom: 19,
       opacity: showContours ? overlayOpacity : 0,
@@ -110,7 +92,6 @@ export function MapContainer({
 
     mapRef.current = map;
 
-    // Clean up
     return () => {
       map.remove();
     };
@@ -121,11 +102,8 @@ export function MapContainer({
     const map = mapRef.current;
     if (!map || !tileLayerRef.current) return;
 
-    // Smoothly transition base layers
     map.removeLayer(tileLayerRef.current);
-    const newBaseLayer = L.tileLayer(TILE_LAYERS[activeBaseLayer], {
-      maxZoom: 19,
-    }).addTo(map);
+    const newBaseLayer = L.tileLayer(TILE_LAYERS[activeBaseLayer], { maxZoom: 19 }).addTo(map);
     tileLayerRef.current = newBaseLayer;
   }, [activeBaseLayer]);
 
@@ -147,7 +125,7 @@ export function MapContainer({
     }
   }, [showContours, overlayOpacity]);
 
-  // Handle drawing clicks & right clicks on Map
+  // Handle map drawing clicks & right clicks
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -171,63 +149,123 @@ export function MapContainer({
     };
   }, [isDrawing, onAddPoint, onRightClickMap]);
 
-  // Redraw Route Polyline and Control Points
+  // Render Polylines for ALL visible tracks
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    // Clear old route line
-    if (routeLineRef.current) {
-      map.removeLayer(routeLineRef.current);
-      routeLineRef.current = null;
-    }
+    const currentTrackIds = new Set(tracks.filter((t) => t.visible).map((t) => t.id));
 
-    // Clear old control point circle markers
+    // 1. Clean up polylines for tracks that are no longer visible or deleted
+    Object.keys(polylinesRef.current).forEach((id) => {
+      if (!currentTrackIds.has(id)) {
+        map.removeLayer(polylinesRef.current[id]);
+        delete polylinesRef.current[id];
+      }
+    });
+
+    // 2. Draw or update polylines for visible tracks
+    tracks.forEach((track) => {
+      if (!track.visible || track.points.length === 0) return;
+
+      const latlngs = track.points.map((p) => L.latLng(p.lat, p.lng));
+      const isActive = track.id === activeTrackId;
+      const polylineOpts = {
+        color: track.color,
+        weight: isActive ? 5 : 3.5,
+        opacity: isActive ? 0.9 : 0.65,
+        lineCap: "round" as const,
+        lineJoin: "round" as const,
+        dashArray: isActive && isDrawing ? "6, 6" : undefined, // Dashed line while drawing!
+      };
+
+      const existingPoly = polylinesRef.current[track.id];
+      if (existingPoly) {
+        existingPoly.setLatLngs(latlngs);
+        existingPoly.setStyle(polylineOpts);
+      } else {
+        const polyline = L.polyline(latlngs, polylineOpts).addTo(map);
+        polylinesRef.current[track.id] = polyline;
+      }
+    });
+  }, [tracks, activeTrackId, isDrawing]);
+
+  // Render Active Track Control Points & Splitting Vertices
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    // Clear old control markers
     controlMarkersRef.current.forEach((marker) => map.removeLayer(marker));
     controlMarkersRef.current = [];
 
-    if (points.length === 0) return;
+    const activeTrack = tracks.find((t) => t.id === activeTrackId);
+    if (!activeTrack || activeTrack.points.length === 0 || !activeTrack.visible) return;
 
-    const latlngs = points.map((p) => L.latLng(p.lat, p.lng));
+    const points = activeTrack.points;
 
-    // Draw main route line
-    const polyline = L.polyline(latlngs, {
-      color: "#10b981", // Emerald
-      weight: 4,
-      opacity: 0.85,
-      lineCap: "round",
-      lineJoin: "round",
-    }).addTo(map);
-    routeLineRef.current = polyline;
-
-    // Draw control markers at click vertices (first and last points are special)
     points.forEach((pt, idx) => {
       const isFirst = idx === 0;
       const isLast = idx === points.length - 1;
 
-      // Draw markers on vertices to make it look premium
-      if (isFirst || isLast || points.length < 15 || idx % 3 === 0) {
-        const circleMarker = L.circleMarker([pt.lat, pt.lng], {
-          radius: isFirst || isLast ? 6 : 4,
-          fillColor: isFirst ? "#3b82f6" : isLast ? "#ef4444" : "#10b981",
-          fillOpacity: 1,
-          color: "#ffffff",
-          weight: 1.5,
-        }).addTo(map);
+      // Draw markers on vertices to enable interactive manipulation
+      if (isFirst || isLast || points.length < 15 || idx % 2 === 0 || isSplitting) {
+        // Splitting markers are bigger and highlighted
+        const isSplitMode = isSplitting && idx > 0 && idx < points.length - 1;
+        const colorVal = isFirst ? "#3b82f6" : isLast ? "#ef4444" : isSplitMode ? "#f97316" : activeTrack.color;
         
-        controlMarkersRef.current.push(circleMarker);
+        const marker = L.circleMarker([pt.lat, pt.lng], {
+          radius: isSplitMode ? 7 : isFirst || isLast ? 6 : 4,
+          fillColor: colorVal,
+          fillOpacity: 1,
+          color: isSplitMode ? "#ffffff" : "#ffffff",
+          weight: isSplitMode ? 2.5 : 1.5,
+          className: isSplitMode ? "animate-pulse cursor-scissors" : "cursor-pointer",
+        }).addTo(map);
+
+        // Tooltip for split vertices
+        if (isSplitMode) {
+          marker.bindTooltip(`
+            <div class="px-2 py-1 text-slate-100 text-[10px] bg-orange-600 border border-white/20 rounded-md font-bold shadow-md">
+              ✂️ Hacer clic para Dividir aquí
+            </div>
+          `, { direction: "top", offset: [0, -6] });
+
+          marker.on("click", (e) => {
+            L.DomEvent.stopPropagation(e);
+            if (window.confirm(`¿Seguro que deseas dividir la ruta "${activeTrack.name}" en este punto?`)) {
+              onSplitTrackAt(activeTrack.id, idx);
+            }
+          });
+        }
+
+        controlMarkersRef.current.push(marker);
       }
     });
 
-  }, [points]);
+  }, [tracks, activeTrackId, isSplitting, onSplitTrackAt]);
 
-  // Sync Waypoint Markers
+  // Sync Waypoints for ALL visible tracks
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    // Remove deleted markers
-    const currentWptIds = new Set(waypoints.map((w) => w.id));
+    // Gather all visible waypoints
+    const visibleWaypoints: Waypoint[] = [];
+    const waypointToTrackMap: Record<string, string> = {}; // maps wptId to trackColor for fallback
+
+    tracks.forEach((t) => {
+      if (t.visible) {
+        t.waypoints.forEach((w) => {
+          visibleWaypoints.push(w);
+          waypointToTrackMap[w.id] = t.color;
+        });
+      }
+    });
+
+    const currentWptIds = new Set(visibleWaypoints.map((w) => w.id));
+
+    // 1. Remove hidden/deleted waypoint markers
     Object.keys(waypointMarkersRef.current).forEach((id) => {
       if (!currentWptIds.has(id)) {
         map.removeLayer(waypointMarkersRef.current[id]);
@@ -235,15 +273,16 @@ export function MapContainer({
       }
     });
 
-    // Add or Update markers
-    waypoints.forEach((wpt) => {
+    // 2. Render visible waypoint markers
+    visibleWaypoints.forEach((wpt) => {
       const svg = WPT_SVG_PATHS[wpt.icon] || WPT_SVG_PATHS.mountain;
+      const markerColor = wpt.color || waypointToTrackMap[wpt.id] || "#10b981";
       const customHtml = `
         <div class="relative w-8 h-8 flex items-center justify-center animate-bounce-short">
-          <div class="absolute w-8 h-8 rounded-full border-2 border-white shadow-lg flex items-center justify-center" style="background-color: ${wpt.color}">
+          <div class="absolute w-8 h-8 rounded-full border-2 border-white shadow-lg flex items-center justify-center" style="background-color: ${markerColor}">
             ${svg}
           </div>
-          <div class="absolute -bottom-1 w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[4px]" style="border-t-color: ${wpt.color}"></div>
+          <div class="absolute -bottom-1 w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[4px]" style="border-t-color: ${markerColor}"></div>
         </div>
       `;
 
@@ -251,22 +290,19 @@ export function MapContainer({
         html: customHtml,
         className: "custom-div-icon",
         iconSize: [32, 32],
-        iconAnchor: [16, 32], // Anchor point is at the bottom-center of the icon
+        iconAnchor: [16, 32],
       });
 
       const existingMarker = waypointMarkersRef.current[wpt.id];
       if (existingMarker) {
-        // Update position and icon
         existingMarker.setLatLng([wpt.lat, wpt.lng]);
         existingMarker.setIcon(customIcon);
-        // Update tooltip
         existingMarker.setTooltipContent(`
-          <div class="px-2 py-1 text-slate-200 text-xs font-semibold bg-[#131b17] border border-[#1b3d2b] rounded-lg">
+          <div class="px-2 py-1 text-slate-200 text-xs font-semibold bg-[#131b17] border border-[#1b3d2b] rounded-lg shadow-md">
             ${wpt.name}
           </div>
         `);
       } else {
-        // Create new marker
         const marker = L.marker([wpt.lat, wpt.lng], { icon: customIcon })
           .addTo(map)
           .bindTooltip(`
@@ -282,7 +318,7 @@ export function MapContainer({
       }
     });
 
-  }, [waypoints, onEditWaypoint]);
+  }, [tracks, onEditWaypoint]);
 
   // Sync Hover Marker (Synchronized Elevation Chart Hover Indicator)
   useEffect(() => {
@@ -295,17 +331,15 @@ export function MapContainer({
     }
 
     if (hoverPoint) {
-      // Draw an awesome glowing indicator circle
       const indicator = L.circleMarker([hoverPoint.lat, hoverPoint.lng], {
         radius: 8,
-        fillColor: "#f97316", // Amber / Orange glow
+        fillColor: "#f97316",
         fillOpacity: 0.8,
         color: "#ffffff",
         weight: 2,
         className: "animate-ping-slow",
       }).addTo(map);
 
-      // Add a tooltip showing elevation and distance dynamically
       indicator.bindTooltip(`
         <div class="px-2 py-1 text-slate-100 text-[10px] font-bold bg-[#131b17] border border-orange-500/30 rounded-lg shadow-md">
           Alt: ${Math.round(hoverPoint.elevation)}m | Dist: ${hoverPoint.distance.toFixed(2)}km
@@ -316,7 +350,7 @@ export function MapContainer({
     }
   }, [hoverPoint]);
 
-  // Handle flying/panning to specific coordinates
+  // Handle flying to specific coordinates
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !flyToCoords) return;
@@ -329,18 +363,24 @@ export function MapContainer({
 
   return (
     <div className="relative w-full h-full bg-[#0a0e0c] overflow-hidden">
-      {/* Map Element */}
       <div ref={mapContainerRef} className="w-full h-full z-10" />
 
       {/* Map Drawing overlay badge */}
       {isDrawing && (
         <div className="absolute top-5 left-1/2 transform -translate-x-1/2 z-[2000] bg-emerald-500/90 border border-emerald-400/30 text-[#0c120f] font-bold text-[11px] uppercase tracking-wider px-4 py-2 rounded-full flex items-center gap-1.5 shadow-2xl backdrop-blur-sm animate-pulse pointer-events-none">
           <Plus className="w-4 h-4 animate-spin-slow" />
-          Modo Edición Activo: Haz Clic en el Mapa
+          Modo Dibujo Activo: Haz clic en el mapa
+        </div>
+      )}
+
+      {/* Map Splitting overlay badge */}
+      {isSplitting && (
+        <div className="absolute top-5 left-1/2 transform -translate-x-1/2 z-[2000] bg-orange-500/90 border border-orange-400/30 text-white font-bold text-[11px] uppercase tracking-wider px-4 py-2 rounded-full flex items-center gap-1.5 shadow-2xl backdrop-blur-sm animate-pulse pointer-events-none">
+          <Scissors className="w-4 h-4" />
+          Modo División Activo: Haz clic en un vértice naranja para cortar
         </div>
       )}
       
-      {/* Compass rose or watermarked label (adds premium aesthetic) */}
       <div className="absolute bottom-5 left-5 z-[2000] pointer-events-none opacity-30 select-none hidden sm:block">
         <h2 className="text-xl font-black text-emerald-400 tracking-widest font-mono">SUMMIT MAPS</h2>
         <p className="text-[9px] text-slate-500 tracking-wider">TOPOGRAPHIC PLANNING SUITE</p>
