@@ -51,11 +51,28 @@ export function useRoutePlanner() {
     }
   });
 
+  const [clickSegments, setClickSegments] = useState<Record<string, number[]>>(() => {
+    try {
+      const saved = localStorage.getItem("summit_click_segments");
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      return {};
+    }
+  });
+
   const [isDrawing, setIsDrawing] = useState(false);
   const [snapToTrail, setSnapToTrail] = useState(true);
   const [loading, setLoading] = useState(false);
 
   // 2. Persist to LocalStorage on change
+  useEffect(() => {
+    try {
+      localStorage.setItem("summit_click_segments", JSON.stringify(clickSegments));
+    } catch (e) {
+      console.error("Failed to save click segments to localStorage:", e);
+    }
+  }, [clickSegments]);
+
   useEffect(() => {
     try {
       localStorage.setItem("summit_tracks", JSON.stringify(tracks));
@@ -126,13 +143,10 @@ export function useRoutePlanner() {
         const data = await response.json();
 
         if (data.code === "Ok" && data.routes && data.routes.length > 0) {
-          const routeDist = data.routes[0].distance / 1000; // route distance in km
+          const routeDist = data.routes[0].distance / 1000;
           const straightDist = calculateHaversineDistance(start, end);
 
-          // If the router forces a massive detour (more than 2.5x the straight line),
-          // it means minor trails are unroutable in their system. Fall back to straight line!
           if (routeDist > straightDist * 2.5) {
-            console.warn("OSRM route is a massive detour. Falling back to straight line for minor trails.");
             return [start, end];
           }
 
@@ -141,11 +155,46 @@ export function useRoutePlanner() {
         }
         return [start, end];
       } catch (error) {
-        console.error("OSRM routing failed, falling back to straight line:", error);
         return [start, end];
       }
     },
     []
+  );
+
+  const fetchHikingRoute = useCallback(
+    async (start: [number, number], end: [number, number]): Promise<[number, number][]> => {
+      try {
+        // 1. Try Brouter Hiking service (routes over every forest path, secondary track, and hiking trail!)
+        const url = `https://brouter.de/brouter?lonlats=${start[1]},${start[0]}|${end[1]},${end[0]}&profile=hiking&alternativeidx=0&format=geojson`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error("Brouter network error");
+        const data = await response.json();
+
+        if (data.features && data.features.length > 0) {
+          const coords = data.features[0].geometry.coordinates;
+          const routeCoords: [number, number][] = coords.map((c: number[]) => [c[1], c[0]]);
+          
+          // Detour check for Brouter
+          let routeDist = 0;
+          for (let i = 1; i < routeCoords.length; i++) {
+            routeDist += calculateHaversineDistance(routeCoords[i - 1], routeCoords[i]);
+          }
+          const straightDist = calculateHaversineDistance(start, end);
+          
+          if (routeDist > straightDist * 2.5) {
+            console.warn("Brouter route is a massive detour, trying OSRM.");
+            return fetchOSRMRoute(start, end);
+          }
+          
+          return routeCoords;
+        }
+        return fetchOSRMRoute(start, end);
+      } catch (error) {
+        console.warn("Brouter routing failed, trying OSRM fallback:", error);
+        return fetchOSRMRoute(start, end);
+      }
+    },
+    [fetchOSRMRoute]
   );
 
   // 5. Track Management Core operations
@@ -218,11 +267,15 @@ export function useRoutePlanner() {
           setTracks((prev) =>
             prev.map((t) => (t.id === currentActiveId ? { ...t, points: [newPoint] } : t))
           );
+          setClickSegments((prev) => ({
+            ...prev,
+            [currentActiveId!]: [...(prev[currentActiveId!] || []), 1],
+          }));
         } else {
           let segmentCoords: [number, number][] = [];
 
           if (snapToTrail) {
-            segmentCoords = await fetchOSRMRoute([lastPoint.lat, lastPoint.lng], [lat, lng]);
+            segmentCoords = await fetchHikingRoute([lastPoint.lat, lastPoint.lng], [lat, lng]);
             if (segmentCoords.length > 0) {
               segmentCoords[0] = [lastPoint.lat, lastPoint.lng];
               segmentCoords[segmentCoords.length - 1] = [lat, lng];
@@ -261,6 +314,10 @@ export function useRoutePlanner() {
               t.id === currentActiveId ? { ...t, points: [...t.points, ...newRoutePoints] } : t
             )
           );
+          setClickSegments((prev) => ({
+            ...prev,
+            [currentActiveId!]: [...(prev[currentActiveId!] || []), newRoutePoints.length],
+          }));
         }
       } catch (err) {
         console.error("Failed to add route point:", err);
@@ -268,17 +325,33 @@ export function useRoutePlanner() {
         setLoading(false);
       }
     },
-    [isDrawing, activeTrackId, createNewTrack, tracks, snapToTrail, fetchElevations, fetchOSRMRoute]
+    [isDrawing, activeTrackId, createNewTrack, tracks, snapToTrail, fetchElevations, fetchHikingRoute]
   );
 
   const removeLastPoint = useCallback(() => {
     if (!activeTrackId) return;
+    const segments = clickSegments[activeTrackId] || [];
+    if (segments.length === 0) {
+      setTracks((prev) =>
+        prev.map((t) =>
+          t.id === activeTrackId ? { ...t, points: t.points.slice(0, -1) } : t
+        )
+      );
+      return;
+    }
+
+    const lastSegmentSize = segments[segments.length - 1];
     setTracks((prev) =>
       prev.map((t) =>
-        t.id === activeTrackId ? { ...t, points: t.points.slice(0, -1) } : t
+        t.id === activeTrackId ? { ...t, points: t.points.slice(0, -lastSegmentSize) } : t
       )
     );
-  }, [activeTrackId]);
+
+    setClickSegments((prev) => ({
+      ...prev,
+      [activeTrackId]: segments.slice(0, -1),
+    }));
+  }, [activeTrackId, clickSegments]);
 
   const clearRoute = useCallback(() => {
     if (!activeTrackId) return;
