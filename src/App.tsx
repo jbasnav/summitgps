@@ -5,7 +5,7 @@ import { ElevationProfile } from "./components/ElevationProfile";
 import { WaypointModal } from "./components/WaypointModal";
 import { useRoutePlanner, type Waypoint, type RoutePoint } from "./hooks/useRoutePlanner";
 import type { BaseLayerId } from "./components/LayerSelector";
-import { ChevronDown, ChevronUp, Search, X, Compass, Loader, MapPin, Route, Square, Upload, Download, Printer } from "lucide-react";
+import { ChevronDown, ChevronUp, Search, X, Compass, Loader, MapPin, Route, Square, Upload, Download, Printer, Scissors, ArrowLeftRight, RefreshCw, Edit2, Redo2, Undo2 } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "./utils/supabaseClient";
 import { AuthScreen } from "./components/AuthScreen";
 import PrintMapModal from "./components/PrintMapModal";
@@ -1415,6 +1415,143 @@ function AppContent() {
               <Printer className="w-[18px] h-[18px]" />
             </button>
           </div>
+
+          {/* Floating Route Edit Toolbar (on the right side, like the printer) */}
+          {activeTrackId && (
+            <div className="absolute top-16 right-4 z-[4000] pointer-events-auto flex flex-col gap-2 select-none animate-fade-in">
+              {/* Undo Button */}
+              <button
+                onClick={undo}
+                disabled={!canUndo}
+                title="Deshacer última acción (Ctrl+Z)"
+                className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center transition-all border ${
+                  canUndo
+                    ? "bg-[#131b17]/95 border-[#1b3d2b] hover:border-emerald-500/50 text-slate-300 hover:text-emerald-400 cursor-pointer"
+                    : "bg-[#0c120f]/60 border-white/5 text-slate-600 opacity-40 cursor-not-allowed"
+                }`}
+              >
+                <Undo2 className="w-[18px] h-[18px]" />
+              </button>
+
+              {/* Redo Button */}
+              <button
+                onClick={redo}
+                disabled={!canRedo}
+                title="Rehacer última acción deshecha (Ctrl+Y)"
+                className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center transition-all border ${
+                  canRedo
+                    ? "bg-[#131b17]/95 border-[#1b3d2b] hover:border-emerald-500/50 text-slate-300 hover:text-emerald-400 cursor-pointer"
+                    : "bg-[#0c120f]/60 border-white/5 text-slate-600 opacity-40 cursor-not-allowed"
+                }`}
+              >
+                <Redo2 className="w-[18px] h-[18px]" />
+              </button>
+
+              {/* Separador sutil */}
+              <div className="w-6 h-[1px] bg-[#1b3d2b]/40 self-center my-0.5" />
+
+              {/* Draw Route Toggle */}
+              <button
+                onClick={() => {
+                  setIsDrawing(!isDrawing);
+                  if (isSplitting) setIsSplitting(false);
+                  if (isEditingRoute) setIsEditingRoute(false);
+                  if (isCleaningArea) setIsCleaningArea(false);
+                }}
+                title={isDrawing ? "Finalizar Dibujo de Ruta" : "Dibujar en Ruta (K o D)"}
+                className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer transition-all border ${
+                  isDrawing
+                    ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.3)] animate-pulse"
+                    : "bg-[#131b17]/95 border-[#1b3d2b] hover:border-emerald-500/50 text-slate-300 hover:text-emerald-400"
+                }`}
+              >
+                {loading ? <Loader className="w-4 h-4 animate-spin" /> : <Route className="w-[18px] h-[18px]" />}
+              </button>
+
+              {/* Split Track (only if points.length > 3) */}
+              {points.length > 3 && (
+                <button
+                  onClick={() => {
+                    setIsSplitting(!isSplitting);
+                    if (isDrawing) setIsDrawing(false);
+                    if (isEditingRoute) setIsEditingRoute(false);
+                  }}
+                  title={isSplitting ? "Cancelar División" : "Dividir Ruta (Split)"}
+                  className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer transition-all border ${
+                    isSplitting
+                      ? "bg-orange-500/20 border-orange-500/40 text-orange-400 shadow-[0_0_12px_rgba(249,115,22,0.3)]"
+                      : "bg-[#131b17]/95 border-[#1b3d2b] hover:border-orange-500/30 text-slate-300 hover:text-orange-400"
+                  }`}
+                >
+                  <Scissors className="w-[18px] h-[18px]" />
+                </button>
+              )}
+
+              {/* Reverse Track (only if points.length > 1) */}
+              {points.length > 1 && (
+                <button
+                  onClick={() => reverseTrack(activeTrackId)}
+                  title="Invertir Dirección de Ruta"
+                  className="w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer bg-[#131b17]/95 border border-[#1b3d2b] hover:border-cyan-500/30 text-slate-300 hover:text-cyan-400 transition-all"
+                >
+                  <ArrowLeftRight className="w-[18px] h-[18px]" />
+                </button>
+              )}
+
+              {/* Round Trip / Bucle (only if points.length > 1) */}
+              {points.length > 1 && !isDrawing && (
+                <button
+                  onClick={() => roundTripTrack(activeTrackId)}
+                  title="Ida y Vuelta (Cerrar Bucle)"
+                  className="w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer bg-[#131b17]/95 border border-[#1b3d2b] hover:border-emerald-500/30 text-slate-300 hover:text-emerald-400 transition-all"
+                >
+                  <RefreshCw className="w-[18px] h-[18px]" />
+                </button>
+              )}
+
+              {/* Edit Route Vertices */}
+              {points.length > 0 && !isDrawing && (
+                <button
+                  onClick={() => {
+                    setIsEditingRoute(!isEditingRoute);
+                    if (isSplitting) setIsSplitting(false);
+                  }}
+                  title={isEditingRoute ? "Finalizar Edición Geométrica" : "Edición Geométrica (Arrastrar Vértices) (E)"}
+                  className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer transition-all border ${
+                    isEditingRoute
+                      ? "bg-violet-500/20 border-violet-500/40 text-violet-400 shadow-[0_0_12px_rgba(139,92,246,0.3)]"
+                      : "bg-[#131b17]/95 border-[#1b3d2b] hover:border-violet-500/30 text-slate-300 hover:text-violet-400"
+                  }`}
+                >
+                  <Edit2 className="w-[18px] h-[18px]" />
+                </button>
+              )}
+
+              {/* Clean Area / Borrar por rectangulo */}
+              {points.length > 2 && !isDrawing && (
+                <button
+                  onClick={() => setIsCleaningArea(!isCleaningArea)}
+                  title={isCleaningArea ? "Cancelar Limpieza" : "Limpiar Track por Rectángulo"}
+                  className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer transition-all border ${
+                    isCleaningArea
+                      ? "bg-red-500/20 border-red-500/40 text-red-400 shadow-[0_0_12px_rgba(239,68,68,0.3)] animate-pulse"
+                      : "bg-[#131b17]/95 border-[#1b3d2b] hover:border-red-500/30 text-slate-300 hover:text-red-400"
+                  }`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+                </button>
+              )}
+
+              {/* Help Keyboard Shortcuts button */}
+              <button
+                onClick={() => setIsShortcutsModalOpen(true)}
+                title="Ayuda y Atajos de Teclado (?)"
+                className="w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer bg-[#131b17]/95 border border-[#1b3d2b] hover:border-emerald-500/30 text-slate-400 hover:text-emerald-400 transition-all"
+              >
+                <Compass className="w-[18px] h-[18px]" />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Collapsible Elevation Chart */}

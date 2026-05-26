@@ -1822,7 +1822,7 @@ export function Sidebar({
 
                   {/* Drawing Actions */}
                   <div className="space-y-3">
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                       <button
                         onClick={() => {
                           setIsDrawing(!isDrawing);
