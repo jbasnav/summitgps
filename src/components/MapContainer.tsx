@@ -49,6 +49,9 @@ interface MapContainerProps {
   onAreaComplete: (points: { lat: number; lng: number }[], color: string) => void;
   useImperial: boolean;
   onMapReady?: (map: L.Map) => void;
+  isEditingRoute: boolean;
+  onUpdateRoutePoint: (trackId: string, index: number, lat: number, lng: number) => void;
+  onInsertIntermediatePoint: (trackId: string, lat: number, lng: number) => void;
 }
 
 // Map Tile Providers
@@ -114,6 +117,9 @@ export function MapContainer({
   useImperial,
   onMapReady,
   onUpdateWaypoint,
+  isEditingRoute,
+  onUpdateRoutePoint,
+  onInsertIntermediatePoint,
 }: MapContainerProps) {
   const { customConfirm } = useCustomDialog();
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -225,7 +231,7 @@ export function MapContainer({
     const onMapClick = (e: L.LeafletMouseEvent) => {
       if (isDrawing) {
         onAddPoint(e.latlng.lat, e.latlng.lng);
-      } else if (!isSplitting && !isSelectingArea && !isBulkMode && !isDrawingArea) {
+      } else if (!isSplitting && !isSelectingArea && !isBulkMode && !isDrawingArea && !isEditingRoute) {
         onSetMarkedLocation({ lat: e.latlng.lat, lng: e.latlng.lng });
       }
     };
@@ -243,7 +249,7 @@ export function MapContainer({
       mapInstance.off("click", onMapClick);
       mapInstance.off("contextmenu", onMapRightClick);
     };
-  }, [mapInstance, isDrawing, isSplitting, isSelectingArea, isBulkMode, isDrawingArea, onAddPoint, onSetMarkedLocation, onRightClickMap]);
+  }, [mapInstance, isDrawing, isSplitting, isSelectingArea, isBulkMode, isDrawingArea, isEditingRoute, onAddPoint, onSetMarkedLocation, onRightClickMap]);
 
   // Render Polylines for ALL visible tracks
   useEffect(() => {
@@ -275,15 +281,26 @@ export function MapContainer({
       };
 
       const existingPoly = polylinesRef.current[track.id];
+      const handlePolylineClick = (e: L.LeafletMouseEvent) => {
+        if (isEditingRoute && isActive) {
+          L.DomEvent.stopPropagation(e);
+          onInsertIntermediatePoint(track.id, e.latlng.lat, e.latlng.lng);
+        }
+      };
+
       if (existingPoly) {
         existingPoly.setLatLngs(latlngs);
         existingPoly.setStyle(polylineOpts);
+        existingPoly.off("click");
+        existingPoly.on("click", handlePolylineClick);
       } else {
-        const polyline = L.polyline(latlngs, polylineOpts).addTo(mapInstance);
+        const polyline = L.polyline(latlngs, polylineOpts)
+          .addTo(mapInstance)
+          .on("click", handlePolylineClick);
         polylinesRef.current[track.id] = polyline;
       }
     });
-  }, [mapInstance, tracks, activeTrackId, isDrawing]);
+  }, [mapInstance, tracks, activeTrackId, isDrawing, isEditingRoute, onInsertIntermediatePoint]);
 
   // Render Active Track Control Points & Splitting Vertices
   useEffect(() => {
@@ -308,36 +325,67 @@ export function MapContainer({
         const isSplitMode = isSplitting && idx > 0 && idx < points.length - 1;
         const colorVal = isFirst ? "#3b82f6" : isLast ? "#ef4444" : isSplitMode ? "#f97316" : activeTrack.color;
         
-        const marker = L.circleMarker([pt.lat, pt.lng], {
-          radius: isSplitMode ? 7 : isFirst || isLast ? 6 : 4,
-          fillColor: colorVal,
-          fillOpacity: 1,
-          color: isSplitMode ? "#ffffff" : "#ffffff",
-          weight: isSplitMode ? 2.5 : 1.5,
-          className: isSplitMode ? "animate-pulse cursor-scissors" : "cursor-pointer",
-        }).addTo(mapInstance);
+        let marker: L.Layer;
+        const isDraggable = isEditingRoute && !isDrawing && !isSplitting;
 
-        // Tooltip for split vertices
-        if (isSplitMode) {
-          marker.bindTooltip(`
-            <div class="px-2 py-1 text-slate-100 text-[10px] bg-orange-600 border border-white/20 rounded-md font-bold shadow-md">
-              ✂️ Hacer clic para Dividir aquí
+        if (isDraggable) {
+          const customDotIcon = L.divIcon({
+            html: `<div style="width: ${isFirst || isLast ? '12px' : '10px'}; height: ${isFirst || isLast ? '12px' : '10px'}; border-radius: 50%; background-color: ${colorVal}; border: 1.8px solid #ffffff; box-shadow: 0 0 6px rgba(0,0,0,0.6);"></div>`,
+            className: "custom-control-dot cursor-move",
+            iconSize: isFirst || isLast ? [12, 12] : [10, 10],
+            iconAnchor: isFirst || isLast ? [6, 6] : [5, 5],
+          });
+          
+          const dragMarker = L.marker([pt.lat, pt.lng], {
+            icon: customDotIcon,
+            draggable: true,
+          }).addTo(mapInstance);
+
+          dragMarker.on("dragend", (e: any) => {
+            const newLatLng = e.target.getLatLng();
+            onUpdateRoutePoint(activeTrack.id, idx, newLatLng.lat, newLatLng.lng);
+          });
+
+          dragMarker.bindTooltip(`
+            <div class="px-1.5 py-0.5 text-slate-200 text-[9px] bg-[#0c120f] border border-[#1b3d2b] rounded shadow-md">
+              📍 Vértice ${idx + 1} (Arrastra para mover)
             </div>
           `, { direction: "top", offset: [0, -6] });
 
-          marker.on("click", async (e) => {
-            L.DomEvent.stopPropagation(e);
-            if (await customConfirm(`¿Seguro que deseas dividir la ruta "${activeTrack.name}" en este punto?`)) {
-              onSplitTrackAt(activeTrack.id, idx);
-            }
-          });
+          marker = dragMarker;
+        } else {
+          const circle = L.circleMarker([pt.lat, pt.lng], {
+            radius: isSplitMode ? 7 : isFirst || isLast ? 6 : 4,
+            fillColor: colorVal,
+            fillOpacity: 1,
+            color: isSplitMode ? "#ffffff" : "#ffffff",
+            weight: isSplitMode ? 2.5 : 1.5,
+            className: isSplitMode ? "animate-pulse cursor-scissors" : "cursor-pointer",
+          }).addTo(mapInstance);
+
+          // Tooltip for split vertices
+          if (isSplitMode) {
+            circle.bindTooltip(`
+              <div class="px-2 py-1 text-slate-100 text-[10px] bg-orange-600 border border-white/20 rounded-md font-bold shadow-md">
+                ✂️ Hacer clic para Dividir aquí
+              </div>
+            `, { direction: "top", offset: [0, -6] });
+
+            circle.on("click", async (e) => {
+              L.DomEvent.stopPropagation(e);
+              if (await customConfirm(`¿Seguro que deseas dividir la ruta "${activeTrack.name}" en este punto?`)) {
+                onSplitTrackAt(activeTrack.id, idx);
+              }
+            });
+          }
+          marker = circle;
         }
 
-        controlMarkersRef.current.push(marker);
+        controlMarkersRef.current.push(marker as any);
       }
     });
 
-  }, [tracks, activeTrackId, isSplitting, onSplitTrackAt]);
+  }, [tracks, activeTrackId, isSplitting, onSplitTrackAt, isEditingRoute, isDrawing, onUpdateRoutePoint, mapInstance]);
 
   // Sync Waypoints with selection indicators and customized click behavior
   useEffect(() => {
@@ -1203,6 +1251,24 @@ export function MapContainer({
       duration: 1.5,
     });
   }, [mapInstance, flyToCoords]);
+
+  // Centrar y encuadrar el mapa en la ruta activa seleccionada
+  useEffect(() => {
+    if (!mapInstance || !activeTrackId) return;
+
+    const activeTrack = tracks.find((t) => t.id === activeTrackId);
+    if (!activeTrack || activeTrack.points.length === 0 || !activeTrack.visible) return;
+
+    const latlngs = activeTrack.points.map((p) => L.latLng(p.lat, p.lng));
+    const bounds = L.latLngBounds(latlngs);
+    mapInstance.fitBounds(bounds, {
+      padding: [50, 50],
+      maxZoom: 16,
+      animate: true,
+      duration: 1.2,
+    });
+  }, [mapInstance, activeTrackId]);
+
 
   return (
     <div className={`relative w-full h-full bg-[#0a0e0c] overflow-hidden ${isDrawing || isSelectingArea || isDrawingArea ? "leaflet-crosshair" : isSplitting ? "leaflet-scissors" : ""}`}>

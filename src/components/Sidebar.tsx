@@ -32,6 +32,7 @@ import {
   Settings,
   Folder,
   ArrowLeftRight,
+  RefreshCw,
   Hexagon,
   Palette,
   Trees,
@@ -154,6 +155,10 @@ interface SidebarProps {
   onDeleteArea: (id: string) => void;
   onToggleAreaVisibility: (id: string) => void;
   onReverseTrack: (trackId: string) => void;
+  isEditingRoute: boolean;
+  setIsEditingRoute: (editing: boolean) => void;
+  onTrimTrack: (trackId: string, startIndex: number, endIndex: number) => void;
+  onRoundTripTrack: (trackId: string) => void;
 }
 
 type TabId = "search" | "layers" | "route" | "waypoints" | "settings";
@@ -258,9 +263,26 @@ export function Sidebar({
   onDeleteArea,
   onToggleAreaVisibility,
   onReverseTrack,
+  isEditingRoute,
+  setIsEditingRoute,
+  onTrimTrack,
+  onRoundTripTrack,
 }: SidebarProps) {
   const { customAlert, customConfirm, customPrompt } = useCustomDialog();
   const [activeTab, setActiveTab] = useState<TabId>("route");
+  
+  // Local states for Trim/Crop Track
+  const [showTrimPanel, setShowTrimPanel] = useState(false);
+  const [trimStart, setTrimStart] = useState(0);
+  const [trimEnd, setTrimEnd] = useState(0);
+
+  // Sync trim sliders with active track points length
+  React.useEffect(() => {
+    if (points && points.length > 0) {
+      setTrimStart(0);
+      setTrimEnd(points.length - 1);
+    }
+  }, [points]);
   
   const displayTracks = tracks.filter((t) => t.id !== "waypoints-global-track");
   
@@ -1659,6 +1681,7 @@ export function Sidebar({
                         onClick={() => {
                           setIsDrawing(!isDrawing);
                           if (isSplitting) setIsSplitting(false); // turn off split mode
+                          if (isEditingRoute) setIsEditingRoute(false); // turn off edit mode
                         }}
                         className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl text-xs font-bold transition-all shadow-lg ${
                           isDrawing
@@ -1680,6 +1703,7 @@ export function Sidebar({
                           onClick={() => {
                             setIsSplitting(!isSplitting);
                             if (isDrawing) setIsDrawing(false); // turn off draw mode
+                            if (isEditingRoute) setIsEditingRoute(false); // turn off edit mode
                           }}
                           title="Dividir Track (Split)"
                           className={`px-3.5 border rounded-xl transition-colors flex items-center justify-center ${
@@ -1707,6 +1731,54 @@ export function Sidebar({
                         </button>
                       )}
 
+                      {/* Ida y Vuelta / Round Trip */}
+                      {points.length > 1 && !isDrawing && (
+                        <button
+                          onClick={() => {
+                            if (activeTrackId) {
+                              onRoundTripTrack(activeTrackId);
+                            }
+                          }}
+                          title="Ida y Vuelta / Cerrar Bucle (Round Trip)"
+                          className="px-3.5 border rounded-xl transition-colors flex items-center justify-center bg-[#18231e] border-[#1b3d2b] text-slate-300 hover:text-emerald-400 hover:border-emerald-500/30 cursor-pointer"
+                        >
+                          <RefreshCw className="w-4 h-4" />
+                        </button>
+                      )}
+
+                      {/* Edit Route mode */}
+                      {points.length > 0 && !isDrawing && (
+                        <button
+                          onClick={() => {
+                            setIsEditingRoute(!isEditingRoute);
+                            if (isSplitting) setIsSplitting(false);
+                          }}
+                          title={isEditingRoute ? "Finalizar Edición de Ruta" : "Edición Geométrica (Arrastrar/Insertar)"}
+                          className={`px-3.5 border rounded-xl transition-colors flex items-center justify-center ${
+                            isEditingRoute
+                              ? "bg-violet-500/20 text-violet-300 border-violet-500/40 shadow-md"
+                              : "bg-[#18231e] border-[#1b3d2b] text-slate-300 hover:text-violet-400"
+                          }`}
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                      )}
+
+                      {/* Trim Track Button */}
+                      {points.length > 2 && !isDrawing && (
+                        <button
+                          onClick={() => setShowTrimPanel(!showTrimPanel)}
+                          title="Recortar Inicio/Fin (Trim/Crop)"
+                          className={`px-3.5 border rounded-xl transition-colors flex items-center justify-center ${
+                            showTrimPanel
+                              ? "bg-rose-500/20 text-rose-300 border-rose-500/40 shadow-md animate-pulse"
+                              : "bg-[#18231e] border-[#1b3d2b] text-slate-300 hover:text-rose-400"
+                          }`}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22V12h10"/><path d="M12 12L3 3"/><path d="M16 12l6 6"/></svg>
+                        </button>
+                      )}
+
                       {points.length > 0 && isDrawing && (
                         <button
                           onClick={onUndoPoint}
@@ -1729,6 +1801,94 @@ export function Sidebar({
                       <p className="text-[10px] text-orange-400/85 bg-orange-500/5 border border-orange-500/10 rounded-lg p-2 text-center animate-pulse">
                         ✂️ Haz clic en cualquier vértice de la línea naranja en el mapa para cortar el track en ese punto.
                       </p>
+                    )}
+
+                    {isEditingRoute && (
+                      <p className="text-[10px] text-violet-400 bg-violet-500/5 border border-violet-500/10 rounded-lg p-2 text-center animate-pulse">
+                        📍 Modo Edición Activo: Arrastra los círculos en el mapa para mover vértices. Haz clic en la polilínea para insertar nuevos puntos intermedios.
+                      </p>
+                    )}
+
+                    {/* Trim/Crop Panel */}
+                    {showTrimPanel && points.length > 2 && points[trimStart] && points[trimEnd] && (
+                      <div className="bg-[#0b100d] border border-[#1b3d2b]/40 rounded-xl p-3.5 space-y-4 animate-fade-in select-none">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
+                            ✂️ Recortar Inicio/Fin de Ruta
+                          </span>
+                          <button
+                            onClick={() => setShowTrimPanel(false)}
+                            className="text-slate-500 hover:text-slate-300 transition-colors cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        
+                        <div className="space-y-3.5">
+                          {/* Slider Trim Start */}
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-[9px] font-mono text-slate-400">
+                              <span>Recortar Inicio:</span>
+                              <span className="font-bold text-emerald-400">Punto {trimStart + 1}</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="0"
+                              max={Math.max(0, trimEnd - 1)}
+                              value={trimStart}
+                              onChange={(e) => setTrimStart(parseInt(e.target.value))}
+                              className="w-full h-1 bg-[#131b17] border border-white/5 rounded-lg appearance-none cursor-pointer accent-rose-500"
+                            />
+                          </div>
+
+                          {/* Slider Trim End */}
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-[9px] font-mono text-slate-400">
+                              <span>Recortar Fin:</span>
+                              <span className="font-bold text-rose-400">Punto {trimEnd + 1}</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={Math.min(points.length - 1, trimStart + 1)}
+                              max={points.length - 1}
+                              value={trimEnd}
+                              onChange={(e) => setTrimEnd(parseInt(e.target.value))}
+                              className="w-full h-1 bg-[#131b17] border border-white/5 rounded-lg appearance-none cursor-pointer accent-rose-500"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Trim metrics preview */}
+                        <div className="bg-[#131b17]/50 border border-white/5 rounded-lg p-2.5 flex justify-between gap-2 text-[9px] font-mono text-slate-400">
+                          <div>
+                            <p className="text-[8px] text-slate-500 uppercase tracking-wide">Puntos Finales</p>
+                            <p className="text-slate-200 font-bold">{trimEnd - trimStart + 1} / {points.length}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[8px] text-slate-500 uppercase tracking-wide">Distancia Recortada</p>
+                            <p className="text-rose-400 font-bold">
+                              {useImperial 
+                                ? `${((points[trimEnd].distance - points[trimStart].distance) * 0.621371).toFixed(2)} mi` 
+                                : `${(points[trimEnd].distance - points[trimStart].distance).toFixed(2)} km`}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Apply Trim Button */}
+                        <button
+                          onClick={async () => {
+                            if (activeTrackId) {
+                              if (await customConfirm(`¿Seguro que deseas recortar la ruta y descartar ${points.length - (trimEnd - trimStart + 1)} puntos?`)) {
+                                onTrimTrack(activeTrackId, trimStart, trimEnd);
+                                setShowTrimPanel(false);
+                              }
+                            }
+                          }}
+                          className="w-full py-2 bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 hover:border-rose-500/60 rounded-xl text-rose-300 text-xs font-bold uppercase tracking-wider transition-all shadow-md shadow-rose-500/5 cursor-pointer text-center"
+                        >
+                          Aplicar Recorte
+                        </button>
+                      </div>
                     )}
 
                     {/* Modo de Enrutamiento */}

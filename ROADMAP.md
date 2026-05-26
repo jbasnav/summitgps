@@ -225,12 +225,14 @@ Marcar con `[x]` cuando la característica esté completamente implementada.
 3. **✅ Fase 2:** ~~Inversión de Ruta y Dibujo de Áreas (Polígonos)~~ — COMPLETADA
 4. **✅ Fase 3:** ~~Herramienta de Impresión Cartográfica~~ — COMPLETADA
 5. **✅ Fase 4:** ~~Carpetas Unificadas y Buscador de Biblioteca~~ — COMPLETADA
-6. **📍 Fase 5 (Actual):** Waypoints Interactivos y Marcadores Avanzados
-   * Drag-and-drop de marcas en el mapa con persistencia
-   * Altitud automática desde API Open-Meteo al crear waypoint
-   * Catálogo extendido de iconos de outdoor
-7. **📥 Fase 6:** Soporte KML/GeoJSON/FIT
-8. **✂️ Fase 7:** Herramientas de Limpieza (Trim, Simplify, Clean Rectangle)
-9. **📊 Fase 8:** Estadísticas Avanzadas (Splits, coloreado por variable, superficie)
-10. **🗺️ Fase 9:** Street View (Mapillary/Google) e Imágenes a Pie de Calle
-11. **⌨️ Fase 10:** Atajos de Teclado y Undo/Redo Global
+6. **✅ Fase 5:** ~~Waypoints Interactivos y Marcadores Avanzados~~ — COMPLETADA
+7. **📍 Fase 6 (Actual):** Edición y Geometría de Rutas Avanzada
+   * Recortar inicio/fin de ruta (Trim/Crop Track)
+   * Volver al inicio / Ida y Vuelta (Back to Start / Round Trip)
+   * Arrastrar puntos de anclaje para reajustar segmentos
+   * Insertar puntos intermedios entre puntos existentes
+8. **📥 Fase 7:** Soporte KML/GeoJSON/FIT
+9. **✂️ Fase 8:** Herramientas de Limpieza (Simplify, Clean Rectangle)
+10. **📊 Fase 9:** Estadísticas Avanzadas (Splits, coloreado por variable, superficie)
+11. **🗺️ Fase 10:** Street View (Mapillary/Google) e Imágenes a Pie de Calle
+12. **⌨️ Fase 11:** Atajos de Teclado y Undo/Redo Global

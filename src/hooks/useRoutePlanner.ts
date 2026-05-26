@@ -1745,6 +1745,218 @@ export function useRoutePlanner(user: any | null = null) {
     );
   }, [clickSegments, user]);
 
+  // 14. ADVANCED GEOMETRY: Trim, Round-Trip, Drag Anchor and Insert Points
+  const trimTrack = useCallback((trackId: string, startIndex: number, endIndex: number) => {
+    setTracks((prev) =>
+      prev.map((t) => {
+        if (t.id === trackId) {
+          const slicedPoints = t.points.slice(startIndex, endIndex + 1);
+          let cumulativeDist = 0;
+          const updatedPoints = slicedPoints.map((pt, idx) => {
+            if (idx > 0) {
+              const prevPt = slicedPoints[idx - 1];
+              cumulativeDist += calculateHaversineDistance([prevPt.lat, prevPt.lng], [pt.lat, pt.lng]);
+            }
+            return {
+              ...pt,
+              distance: cumulativeDist,
+            };
+          });
+
+          // Clear clickSegments to keep consistency after cropping/trimming
+          setClickSegments((prevSegments) => {
+            const nextSegs = { ...prevSegments };
+            delete nextSegs[trackId];
+            return nextSegs;
+          });
+
+          if (user && isSupabaseConfigured) {
+            supabase.from("tracks")
+              .update({ points: updatedPoints })
+              .eq("id", trackId)
+              .then(({ error }) => {
+                if (error) console.error("Failed to sync trimmed track to Supabase:", error);
+              });
+          }
+
+          return { ...t, points: updatedPoints };
+        }
+        return t;
+      })
+    );
+  }, [user]);
+
+  const roundTripTrack = useCallback((trackId: string) => {
+    setTracks((prev) =>
+      prev.map((t) => {
+        if (t.id === trackId && t.points.length > 1) {
+          const originalPoints = t.points;
+          const returnPoints = [...originalPoints].slice(0, -1).reverse();
+          
+          let cumulativeDist = originalPoints[originalPoints.length - 1].distance;
+          const appendedPoints = returnPoints.map((pt, idx) => {
+            const prevPt = idx === 0 ? originalPoints[originalPoints.length - 1] : returnPoints[idx - 1];
+            cumulativeDist += calculateHaversineDistance([prevPt.lat, prevPt.lng], [pt.lat, pt.lng]);
+            return {
+              ...pt,
+              distance: cumulativeDist,
+            };
+          });
+
+          const finalPoints = [...originalPoints, ...appendedPoints];
+
+          // Clear clickSegments
+          setClickSegments((prevSegments) => {
+            const nextSegs = { ...prevSegments };
+            delete nextSegs[trackId];
+            return nextSegs;
+          });
+
+          if (user && isSupabaseConfigured) {
+            supabase.from("tracks")
+              .update({ points: finalPoints })
+              .eq("id", trackId)
+              .then(({ error }) => {
+                if (error) console.error("Failed to sync round-trip track to Supabase:", error);
+              });
+          }
+
+          return { ...t, points: finalPoints };
+        }
+        return t;
+      })
+    );
+  }, [user]);
+
+  const updateRoutePoint = useCallback(async (trackId: string, index: number, lat: number, lng: number) => {
+    setLoading(true);
+    try {
+      const [elev] = await fetchElevations([[lat, lng]]);
+      setTracks((prev) =>
+        prev.map((t) => {
+          if (t.id === trackId && index >= 0 && index < t.points.length) {
+            const updatedPoints = [...t.points];
+            updatedPoints[index] = {
+              ...updatedPoints[index],
+              lat,
+              lng,
+              elevation: elev ?? updatedPoints[index].elevation,
+            };
+
+            // Recalculate cumulative distances in cascada
+            let cumulativeDist = 0;
+            const finalPoints = updatedPoints.map((pt, idx) => {
+              if (idx > 0) {
+                const prevPt = updatedPoints[idx - 1];
+                cumulativeDist += calculateHaversineDistance([prevPt.lat, prevPt.lng], [pt.lat, pt.lng]);
+              }
+              return {
+                ...pt,
+                distance: cumulativeDist,
+              };
+            });
+
+            if (user && isSupabaseConfigured) {
+              supabase.from("tracks")
+                .update({ points: finalPoints })
+                .eq("id", trackId)
+                .then(({ error }) => {
+                  if (error) console.error("Failed to sync updated point to Supabase:", error);
+                });
+            }
+
+            return { ...t, points: finalPoints };
+          }
+          return t;
+        })
+      );
+    } catch (error) {
+      console.error("Failed to update route point coordinate:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchElevations, user]);
+
+  const insertIntermediatePoint = useCallback(async (trackId: string, lat: number, lng: number) => {
+    setLoading(true);
+    try {
+      const [elev] = await fetchElevations([[lat, lng]]);
+      setTracks((prev) =>
+        prev.map((t) => {
+          if (t.id === trackId && t.points.length >= 2) {
+            // Find closest segment index by projecting coordinate onto segment lines
+            let minDistance = Infinity;
+            let insertIdx = 0;
+            
+            for (let i = 0; i < t.points.length - 1; i++) {
+              const p1 = t.points[i];
+              const p2 = t.points[i + 1];
+              
+              const dx = p2.lat - p1.lat;
+              const dy = p2.lng - p1.lng;
+              let segmentDist = 0;
+              
+              if (dx === 0 && dy === 0) {
+                segmentDist = Math.sqrt((lat - p1.lat)**2 + (lng - p1.lng)**2);
+              } else {
+                let projectionFactor = ((lat - p1.lat) * dx + (lng - p1.lng) * dy) / (dx*dx + dy*dy);
+                projectionFactor = Math.max(0, Math.min(1, projectionFactor));
+                const projLat = p1.lat + projectionFactor * dx;
+                const projLng = p1.lng + projectionFactor * dy;
+                segmentDist = Math.sqrt((lat - projLat)**2 + (lng - projLng)**2);
+              }
+              
+              if (segmentDist < minDistance) {
+                minDistance = segmentDist;
+                insertIdx = i;
+              }
+            }
+            
+            const updatedPoints = [...t.points];
+            const newPoint: RoutePoint = {
+              lat,
+              lng,
+              elevation: elev ?? 0,
+              distance: 0,
+            };
+            
+            // Insert at index insertIdx + 1
+            updatedPoints.splice(insertIdx + 1, 0, newPoint);
+            
+            // Recalculate cumulative distances in cascada
+            let cumulativeDist = 0;
+            const finalPoints = updatedPoints.map((pt, idx) => {
+              if (idx > 0) {
+                const prevPt = updatedPoints[idx - 1];
+                cumulativeDist += calculateHaversineDistance([prevPt.lat, prevPt.lng], [pt.lat, pt.lng]);
+              }
+              return {
+                ...pt,
+                distance: cumulativeDist,
+              };
+            });
+            
+            if (user && isSupabaseConfigured) {
+              supabase.from("tracks")
+                .update({ points: finalPoints })
+                .eq("id", trackId)
+                .then(({ error }) => {
+                  if (error) console.error("Failed to sync inserted point to Supabase:", error);
+                });
+            }
+            
+            return { ...t, points: finalPoints };
+          }
+          return t;
+        })
+      );
+    } catch (error) {
+      console.error("Failed to insert intermediate point:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchElevations, user]);
+
   // Area CRUD
   const addArea = useCallback((area: Omit<Area, "id">) => {
     const newArea: Area = {
@@ -1862,6 +2074,10 @@ export function useRoutePlanner(user: any | null = null) {
     mergeTracks,
     splitTrack,
     reverseTrack,
+    trimTrack,
+    roundTripTrack,
+    updateRoutePoint,
+    insertIntermediatePoint,
 
     // Waypoint Group additions
     waypointGroups,

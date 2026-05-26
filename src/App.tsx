@@ -57,6 +57,10 @@ function AppContent() {
     mergeTracks,
     splitTrack,
     reverseTrack,
+    trimTrack,
+    roundTripTrack,
+    updateRoutePoint,
+    insertIntermediatePoint,
 
     // Waypoint Groups / Challenges
     waypointGroups,
@@ -307,6 +311,7 @@ function AppContent() {
   const [isChartCollapsed, setIsChartCollapsed] = useState<boolean>(false);
   const [isSplitting, setIsSplitting] = useState<boolean>(false); // Split route mode
   const [isDrawingArea, setIsDrawingArea] = useState<boolean>(false); // Area drawing mode
+  const [isEditingRoute, setIsEditingRoute] = useState<boolean>(false); // Advanced Route Edit mode
   const [mapCenter, setMapCenter] = useState<[number, number] | null>([43.1906, -4.8322]);
   const [osmPois, setOsmPois] = useState<any[]>([]);
 
@@ -726,6 +731,10 @@ function AppContent() {
         onToggleGridLabels={handleToggleGridLabels}
         isCollapsed={isSidebarCollapsed}
         setIsCollapsed={setIsSidebarCollapsed}
+        isEditingRoute={isEditingRoute}
+        setIsEditingRoute={setIsEditingRoute}
+        onTrimTrack={trimTrack}
+        onRoundTripTrack={roundTripTrack}
       />
 
       {/* Point Info Drawer expanding the Sidebar */}
@@ -1085,6 +1094,9 @@ function AppContent() {
             useImperial={useImperial}
             onMapReady={setMapInstance}
             onUpdateWaypoint={updateWaypoint}
+            isEditingRoute={isEditingRoute}
+            onUpdateRoutePoint={updateRoutePoint}
+            onInsertIntermediatePoint={insertIntermediatePoint}
           />
 
           {/* Floating vertical Tools toolbar overlaying the map on the left */}
