@@ -46,6 +46,9 @@ import {
 import { LayerSelector, type BaseLayerId } from "./LayerSelector";
 import { StatsPanel } from "./StatsPanel";
 import { parseGPX, exportToGPX } from "../utils/gpxExporter";
+import { parseGeoJSON, exportToGeoJSON } from "../utils/geojsonParser";
+import { parseKML, exportToKML } from "../utils/kmlParser";
+import { parseFIT } from "../utils/fitParser";
 import { LANDSCAPE_IMAGES, type Track, type RouteCollection, type RoutingProfile, type Area } from "../hooks/useRoutePlanner";
 import { formatArea, calculatePolygonPerimeter } from "../utils/geoUtils";
 import { useCustomDialog } from "./CustomDialog";
@@ -658,28 +661,63 @@ export function Sidebar({
   
 
 
-  // GPX Import
+  // Unified Import handler supporting GPX, KML, GeoJSON, and FIT!
   const handleGpxUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const text = event.target?.result as string;
-        const parsed = parseGPX(text);
-        onImportRoute(parsed.routeName, parsed.routePoints, parsed.waypoints);
-        
-        if (parsed.routePoints.length > 0) {
-          onFlyToCoords(parsed.routePoints[0].lat, parsed.routePoints[0].lng);
-        } else if (parsed.waypoints.length > 0) {
-          onFlyToCoords(parsed.waypoints[0].lat, parsed.waypoints[0].lng);
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    
+    if (extension === 'fit') {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        try {
+          const buffer = event.target?.result as ArrayBuffer;
+          const parsed = parseFIT(buffer);
+          onImportRoute(file.name.replace(/\.[^/.]+$/, ""), parsed.points, parsed.waypoints);
+          if (parsed.points.length > 0) {
+            onFlyToCoords(parsed.points[0].lat, parsed.points[0].lng);
+          }
+        } catch (err) {
+          await customAlert("Error al importar archivo Garmin FIT: " + (err as Error).message);
         }
-      } catch (err) {
-        await customAlert("Error al parsear el archivo GPX: " + (err as Error).message);
-      }
-    };
-    reader.readAsText(file);
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        try {
+          const text = event.target?.result as string;
+          let parsedRoute = { routeName: file.name.replace(/\.[^/.]+$/, ""), routePoints: [] as any[], waypoints: [] as any[] };
+
+          if (extension === 'kml') {
+            const parsed = parseKML(text);
+            parsedRoute = { routeName: parsed.trackName, routePoints: parsed.points, waypoints: parsed.waypoints };
+          } else if (extension === 'geojson' || extension === 'json') {
+            try {
+              const parsed = parseGeoJSON(text);
+              parsedRoute = { routeName: parsed.trackName, routePoints: parsed.points, waypoints: parsed.waypoints };
+            } catch (err) {
+              throw new Error("El archivo JSON no cumple con el estándar GeoJSON.");
+            }
+          } else {
+            const parsed = parseGPX(text);
+            parsedRoute = parsed;
+          }
+
+          onImportRoute(parsedRoute.routeName, parsedRoute.routePoints, parsedRoute.waypoints);
+          
+          if (parsedRoute.routePoints.length > 0) {
+            onFlyToCoords(parsedRoute.routePoints[0].lat, parsedRoute.routePoints[0].lng);
+          } else if (parsedRoute.waypoints.length > 0) {
+            onFlyToCoords(parsedRoute.waypoints[0].lat, parsedRoute.waypoints[0].lng);
+          }
+        } catch (err) {
+          await customAlert("Error al importar el archivo: " + (err as Error).message);
+        }
+      };
+      reader.readAsText(file);
+    }
     e.target.value = "";
   };
 
@@ -702,6 +740,54 @@ export function Sidebar({
     const link = document.createElement("a");
     link.href = url;
     link.download = `${activeTrack.name.replace(/\s+/g, "_") || "ruta_summit"}.gpx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleKmlExport = async () => {
+    const activeTrack = tracks.find((t) => t.id === activeTrackId);
+    if (!activeTrack) {
+      await customAlert("Por favor, selecciona un track activo de la biblioteca para exportar.");
+      return;
+    }
+
+    if (activeTrack.points.length === 0 && activeTrack.waypoints.length === 0) {
+      await customAlert("No hay ruta ni waypoints en el track activo para exportar.");
+      return;
+    }
+
+    const kmlString = exportToKML(activeTrack);
+    const blob = new Blob([kmlString], { type: "application/vnd.google-earth.kml+xml" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${activeTrack.name.replace(/\s+/g, "_") || "ruta_summit"}.kml`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleGeoJsonExport = async () => {
+    const activeTrack = tracks.find((t) => t.id === activeTrackId);
+    if (!activeTrack) {
+      await customAlert("Por favor, selecciona un track activo de la biblioteca para exportar.");
+      return;
+    }
+
+    if (activeTrack.points.length === 0 && activeTrack.waypoints.length === 0) {
+      await customAlert("No hay ruta ni waypoints en el track activo para exportar.");
+      return;
+    }
+
+    const geojsonString = exportToGeoJSON(activeTrack);
+    const blob = new Blob([geojsonString], { type: "application/geo+json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${activeTrack.name.replace(/\s+/g, "_") || "ruta_summit"}.geojson`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1945,15 +2031,38 @@ export function Sidebar({
                     </div>
                   )}
 
-                  {/* GPX Export / Download active track */}
-                  <button
-                    onClick={handleGpxExport}
-                    disabled={points.length === 0 && waypoints.length === 0}
-                    className="w-full py-2.5 rounded-xl border border-[#1b3d2b] bg-[#0a0f0d] hover:bg-[#0f1612] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[#0a0f0d] disabled:hover:text-slate-400 text-slate-300 hover:text-emerald-400 transition-all text-xs font-semibold flex items-center justify-center gap-1.5"
-                  >
-                    <Download className="w-4 h-4" />
-                    Exportar GPX (Track Activo)
-                  </button>
+                  {/* Multi-Format Export Options */}
+                  <div className="pt-3 border-t border-[#1b3d2b]/20 space-y-2 select-none">
+                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block text-center">
+                      📤 Exportar Ruta Activa
+                    </span>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <button
+                        onClick={handleGpxExport}
+                        disabled={points.length === 0 && waypoints.length === 0}
+                        title="Exportar a GPX (Universal)"
+                        className="py-2.5 rounded-xl border border-[#1b3d2b] bg-[#0c120f]/60 hover:bg-[#0a0f0d] text-[10px] font-bold text-emerald-400 hover:text-emerald-300 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-[#0c120f]/60 transition-colors cursor-pointer text-center"
+                      >
+                        GPX
+                      </button>
+                      <button
+                        onClick={handleKmlExport}
+                        disabled={points.length === 0 && waypoints.length === 0}
+                        title="Exportar a KML (Google Earth)"
+                        className="py-2.5 rounded-xl border border-[#1b3d2b] bg-[#0c120f]/60 hover:bg-[#0a0f0d] text-[10px] font-bold text-cyan-400 hover:text-cyan-300 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-[#0c120f]/60 transition-colors cursor-pointer text-center"
+                      >
+                        KML
+                      </button>
+                      <button
+                        onClick={handleGeoJsonExport}
+                        disabled={points.length === 0 && waypoints.length === 0}
+                        title="Exportar a GeoJSON (GIS/Web)"
+                        className="py-2.5 rounded-xl border border-[#1b3d2b] bg-[#0c120f]/60 hover:bg-[#0a0f0d] text-[10px] font-bold text-violet-400 hover:text-violet-300 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-[#0c120f]/60 transition-colors cursor-pointer text-center"
+                      >
+                        GeoJSON
+                      </button>
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <div className="border-t border-[#1b3d2b]/40 pt-5 text-center p-4 rounded-xl bg-[#0c120f]/50 border border-[#1b3d2b]/20">
@@ -1963,15 +2072,15 @@ export function Sidebar({
                 </div>
               )}
 
-              {/* Import GPX Upload Widget (Always Visible) */}
+              {/* Import Upload Widget (Always Visible) */}
               <div className="border-t border-[#1b3d2b]/40 pt-4">
                 <label className="w-full py-2.5 rounded-xl border border-[#1b3d2b] bg-[#0c120f] hover:bg-[#0f1612] text-slate-300 hover:text-emerald-400 cursor-pointer transition-all text-xs font-semibold flex items-center justify-center gap-1.5">
                   <Upload className="w-4 h-4" />
-                  Importar y Añadir GPX
+                  Importar GPX / KML / GeoJSON / FIT
                   <input
                     id="gpx-upload-input"
                     type="file"
-                    accept=".gpx"
+                    accept=".gpx,.kml,.geojson,.json,.fit"
                     onChange={handleGpxUpload}
                     className="hidden"
                   />
