@@ -84,6 +84,8 @@ function AppContent() {
     updateArea,
     deleteArea,
     toggleAreaVisibility,
+    applySimplifyTrack,
+    cleanTrackArea,
   } = useRoutePlanner(user);
 
   // App settings states
@@ -330,14 +332,27 @@ function AppContent() {
   const [selectedWptIds, setSelectedWptIds] = useState<string[]>([]);
   const [selectedPoiIds, setSelectedPoiIds] = useState<string[]>([]);
   const [isSelectingArea, setIsSelectingArea] = useState<boolean>(false);
+  
+  // Track Cleaning Area States
+  const [isCleaningArea, setIsCleaningArea] = useState<boolean>(false);
+  const [cleanBounds, setCleanBounds] = useState<{ north: number; south: number; east: number; west: number } | null>(null);
 
   // Cartographic Printing States
   const [mapInstance, setMapInstance] = useState<any>(null);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
 
+  // Dynamic statistics & selection states
+  const [trackColorMode, setTrackColorMode] = useState<"solid" | "slope" | "elevation">("solid");
+  const [selectedRange, setSelectedRange] = useState<[number, number] | null>(null);
+
   const activeTrackForPrint = useMemo(() => {
     return tracks.find((t) => t.id === activeTrackId);
   }, [tracks, activeTrackId]);
+
+  // Automatically reset brushing selection when switching active tracks
+  useEffect(() => {
+    setSelectedRange(null);
+  }, [activeTrackId]);
 
   // Automatically clear POI selection when new search results load
   useEffect(() => {
@@ -681,6 +696,15 @@ function AppContent() {
         onToggleTrackVisibility={toggleTrackVisibility}
         onSetTrackColor={setTrackColor}
         onMergeTracks={mergeTracks}
+        onReverseTrack={reverseTrack}
+        onTrimTrack={trimTrack}
+        onRoundTripTrack={roundTripTrack}
+        applySimplifyTrack={applySimplifyTrack}
+        cleanTrackArea={cleanTrackArea}
+        isCleaningArea={isCleaningArea}
+        setIsCleaningArea={setIsCleaningArea}
+        cleanBounds={cleanBounds}
+        setCleanBounds={setCleanBounds}
         activeBaseLayer={activeBaseLayer}
         onChangeBaseLayer={setActiveBaseLayer}
         overlayOpacity={overlayOpacity}
@@ -707,7 +731,6 @@ function AppContent() {
         onUpdateArea={updateArea}
         onDeleteArea={deleteArea}
         onToggleAreaVisibility={toggleAreaVisibility}
-        onReverseTrack={reverseTrack}
         mapCenter={mapCenter}
         osmPois={osmPois}
         onSetOsmPois={setOsmPois}
@@ -733,8 +756,8 @@ function AppContent() {
         setIsCollapsed={setIsSidebarCollapsed}
         isEditingRoute={isEditingRoute}
         setIsEditingRoute={setIsEditingRoute}
-        onTrimTrack={trimTrack}
-        onRoundTripTrack={roundTripTrack}
+        trackColorMode={trackColorMode}
+        setTrackColorMode={setTrackColorMode}
       />
 
       {/* Point Info Drawer expanding the Sidebar */}
@@ -1088,6 +1111,8 @@ function AppContent() {
             onSetMarkedLocation={setMarkedLocation}
             isSelectingArea={isSelectingArea}
             setIsSelectingArea={setIsSelectingArea}
+            isCleaningArea={isCleaningArea}
+            onSetCleanBounds={setCleanBounds}
             isDrawingArea={isDrawingArea}
             areas={areas}
             onAreaComplete={handleAreaComplete}
@@ -1097,6 +1122,8 @@ function AppContent() {
             isEditingRoute={isEditingRoute}
             onUpdateRoutePoint={updateRoutePoint}
             onInsertIntermediatePoint={insertIntermediatePoint}
+            trackColorMode={trackColorMode}
+            selectedRange={selectedRange}
           />
 
           {/* Floating vertical Tools toolbar overlaying the map on the left */}
@@ -1303,6 +1330,8 @@ function AppContent() {
                 points={points}
                 useImperial={useImperial}
                 onHoverPoint={setHoverPoint}
+                selectedRange={selectedRange}
+                onSelectRange={setSelectedRange}
               />
             </div>
           </div>

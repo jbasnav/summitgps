@@ -5,7 +5,16 @@ import type { BaseLayerId } from "./LayerSelector";
 import type { Track, RoutePoint, Waypoint, WaypointGroup, Area } from "../hooks/useRoutePlanner";
 import { Plus, Scissors } from "lucide-react";
 import { useCustomDialog } from "./CustomDialog";
-import { formatCoordinatesByFormat, convertLatLngToUtm, convertUtmToLatLng, formatArea, calculatePolygonPerimeter } from "../utils/geoUtils";
+import { 
+  formatCoordinatesByFormat, 
+  convertLatLngToUtm, 
+  convertUtmToLatLng, 
+  formatArea, 
+  calculatePolygonPerimeter,
+  calculateSlope,
+  getColorForSlope,
+  getColorForElevation
+} from "../utils/geoUtils";
 
 interface MapContainerProps {
   tracks: Track[];
@@ -36,6 +45,8 @@ interface MapContainerProps {
   onSetSelectedPoiIds: React.Dispatch<React.SetStateAction<string[]>>;
   isSelectingArea: boolean;
   setIsSelectingArea: React.Dispatch<React.SetStateAction<boolean>>;
+  isCleaningArea: boolean;
+  onSetCleanBounds: (bounds: { north: number; south: number; east: number; west: number } | null) => void;
 
   // Grid and Location Click settings
   gridOverlay: "none" | "dd" | "dms" | "utm" | "mgrs";
@@ -52,6 +63,10 @@ interface MapContainerProps {
   isEditingRoute: boolean;
   onUpdateRoutePoint: (trackId: string, index: number, lat: number, lng: number) => void;
   onInsertIntermediatePoint: (trackId: string, lat: number, lng: number) => void;
+
+  // Dynamic statistics & selection props
+  trackColorMode: "solid" | "slope" | "elevation";
+  selectedRange: [number, number] | null;
 }
 
 // Map Tile Providers
@@ -111,6 +126,8 @@ export function MapContainer({
   onSetMarkedLocation,
   isSelectingArea,
   setIsSelectingArea,
+  isCleaningArea,
+  onSetCleanBounds,
   isDrawingArea,
   areas,
   onAreaComplete,
@@ -120,6 +137,8 @@ export function MapContainer({
   isEditingRoute,
   onUpdateRoutePoint,
   onInsertIntermediatePoint,
+  trackColorMode,
+  selectedRange,
 }: MapContainerProps) {
   const { customConfirm } = useCustomDialog();
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -129,7 +148,8 @@ export function MapContainer({
   // Ref maps to manage layers dynamically
   const tileLayerRef = useRef<L.TileLayer | null>(null);
   const hillshadeLayerRef = useRef<L.TileLayer | null>(null);
-  const polylinesRef = useRef<Record<string, L.Polyline>>({});
+  const polylinesRef = useRef<Record<string, L.Layer>>({});
+  const highlightPolyRef = useRef<L.Polyline | null>(null);
   const controlMarkersRef = useRef<L.CircleMarker[]>([]);
   const waypointMarkersRef = useRef<Record<string, L.Marker>>({});
   const osmPoiMarkersRef = useRef<Record<string, L.Marker>>({});
@@ -140,6 +160,10 @@ export function MapContainer({
   // Box Area Selection refs (isSelectingArea state is now a prop)
   const activeRectRef = useRef<L.Rectangle | null>(null);
   const startLatLngRef = useRef<L.LatLng | null>(null);
+
+  // Box Cleaning Area refs
+  const cleanRectRef = useRef<L.Rectangle | null>(null);
+  const cleanStartLatLngRef = useRef<L.LatLng | null>(null);
 
   // Area drawing refs
   const areaPolygonRef = useRef<L.Polygon | null>(null);
@@ -230,8 +254,10 @@ export function MapContainer({
 
     const onMapClick = (e: L.LeafletMouseEvent) => {
       if (isDrawing) {
+        mapInstance.getContainer().style.cursor = "crosshair";
         onAddPoint(e.latlng.lat, e.latlng.lng);
-      } else if (!isSplitting && !isSelectingArea && !isBulkMode && !isDrawingArea && !isEditingRoute) {
+      } else if (!isSplitting && !isSelectingArea && !isCleaningArea && !isBulkMode && !isDrawingArea && !isEditingRoute) {
+        mapInstance.getContainer().style.cursor = "crosshair";
         onSetMarkedLocation({ lat: e.latlng.lat, lng: e.latlng.lng });
       }
     };
@@ -249,7 +275,7 @@ export function MapContainer({
       mapInstance.off("click", onMapClick);
       mapInstance.off("contextmenu", onMapRightClick);
     };
-  }, [mapInstance, isDrawing, isSplitting, isSelectingArea, isBulkMode, isDrawingArea, isEditingRoute, onAddPoint, onSetMarkedLocation, onRightClickMap]);
+  }, [mapInstance, isDrawing, isSplitting, isSelectingArea, isCleaningArea, isBulkMode, isDrawingArea, isEditingRoute, onAddPoint, onSetMarkedLocation, onRightClickMap]);
 
   // Render Polylines for ALL visible tracks
   useEffect(() => {
@@ -280,7 +306,6 @@ export function MapContainer({
         dashArray: isActive && isDrawing ? "6, 6" : undefined, // Dashed line while drawing!
       };
 
-      const existingPoly = polylinesRef.current[track.id];
       const handlePolylineClick = (e: L.LeafletMouseEvent) => {
         if (isEditingRoute && isActive) {
           L.DomEvent.stopPropagation(e);
@@ -288,11 +313,56 @@ export function MapContainer({
         }
       };
 
+      const existingPoly = polylinesRef.current[track.id];
+
+      // Always clean up existing polyline/group before recreating to prevent overlaps and mode mixing
       if (existingPoly) {
-        existingPoly.setLatLngs(latlngs);
-        existingPoly.setStyle(polylineOpts);
-        existingPoly.off("click");
-        existingPoly.on("click", handlePolylineClick);
+        mapInstance.removeLayer(existingPoly);
+        delete polylinesRef.current[track.id];
+      }
+
+      const isDynamicMode = isActive && (trackColorMode === "slope" || trackColorMode === "elevation") && track.points.length > 1;
+
+      if (isDynamicMode) {
+        let minElev = Infinity;
+        let maxElev = -Infinity;
+        if (trackColorMode === "elevation") {
+          track.points.forEach((p) => {
+            if (p.elevation < minElev) minElev = p.elevation;
+            if (p.elevation > maxElev) maxElev = p.elevation;
+          });
+          if (minElev === Infinity) { minElev = 0; maxElev = 1; }
+        }
+
+        const group = L.featureGroup().addTo(mapInstance);
+        
+        for (let i = 1; i < track.points.length; i++) {
+          const p1 = track.points[i - 1];
+          const p2 = track.points[i];
+          
+          let segmentColor = track.color;
+          if (trackColorMode === "slope") {
+            const slope = calculateSlope(p1, p2);
+            segmentColor = getColorForSlope(slope);
+          } else if (trackColorMode === "elevation") {
+            const avgElev = (p1.elevation + p2.elevation) / 2;
+            segmentColor = getColorForElevation(avgElev, minElev, maxElev);
+          }
+
+          const segmentOpts = {
+            color: segmentColor,
+            weight: isActive ? 5 : 3.5,
+            opacity: isActive ? 0.95 : 0.7,
+            lineCap: "round" as const,
+            lineJoin: "round" as const,
+            dashArray: isActive && isDrawing ? "6, 6" : undefined,
+          };
+
+          L.polyline([L.latLng(p1.lat, p1.lng), L.latLng(p2.lat, p2.lng)], segmentOpts).addTo(group);
+        }
+
+        group.on("click", handlePolylineClick);
+        polylinesRef.current[track.id] = group;
       } else {
         const polyline = L.polyline(latlngs, polylineOpts)
           .addTo(mapInstance)
@@ -300,7 +370,54 @@ export function MapContainer({
         polylinesRef.current[track.id] = polyline;
       }
     });
-  }, [mapInstance, tracks, activeTrackId, isDrawing, isEditingRoute, onInsertIntermediatePoint]);
+  }, [mapInstance, tracks, activeTrackId, isDrawing, isEditingRoute, onInsertIntermediatePoint, trackColorMode]);
+
+  // Render Brushing Selection Highlight and handle auto-zoom
+  useEffect(() => {
+    if (!mapInstance) return;
+
+    if (highlightPolyRef.current) {
+      mapInstance.removeLayer(highlightPolyRef.current);
+      highlightPolyRef.current = null;
+    }
+
+    if (selectedRange === null || !activeTrackId) return;
+
+    const activeTrack = tracks.find((t) => t.id === activeTrackId);
+    if (!activeTrack || activeTrack.points.length === 0 || !activeTrack.visible) return;
+
+    const [startIdx, endIdx] = selectedRange;
+    const selectedPoints = activeTrack.points.slice(startIdx, endIdx + 1);
+    if (selectedPoints.length < 2) return;
+
+    const latlngs = selectedPoints.map((p) => L.latLng(p.lat, p.lng));
+
+    const highlightPoly = L.polyline(latlngs, {
+      color: "#06b6d4", // Beautiful glowing cyan
+      weight: 8,
+      opacity: 0.85,
+      lineCap: "round" as const,
+      lineJoin: "round" as const,
+      className: "animate-pulse",
+    }).addTo(mapInstance);
+
+    highlightPolyRef.current = highlightPoly;
+
+    // Auto-zoom to selected segment
+    try {
+      const bounds = L.latLngBounds(latlngs);
+      mapInstance.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+    } catch (e) {
+      console.error("Failed to fit bounds for selected range:", e);
+    }
+
+    return () => {
+      if (highlightPolyRef.current && mapInstance) {
+        mapInstance.removeLayer(highlightPolyRef.current);
+        highlightPolyRef.current = null;
+      }
+    };
+  }, [mapInstance, selectedRange, activeTrackId, tracks]);
 
   // Render Active Track Control Points & Splitting Vertices
   useEffect(() => {
@@ -607,6 +724,69 @@ export function MapContainer({
       }
     };
   }, [mapInstance, isSelectingArea, waypoints, onSetSelectedWptIds, osmPois, onSetSelectedPoiIds]);
+
+  // Box Cleaning Area selection
+  useEffect(() => {
+    if (!mapInstance) return;
+
+    if (!isCleaningArea) {
+      if (cleanRectRef.current) {
+        mapInstance.removeLayer(cleanRectRef.current);
+        cleanRectRef.current = null;
+      }
+      cleanStartLatLngRef.current = null;
+      return;
+    }
+
+    mapInstance.dragging.disable();
+
+    const onMouseDown = (e: L.LeafletMouseEvent) => {
+      if (e.originalEvent.button !== 0) return; // Only left click
+      cleanStartLatLngRef.current = e.latlng;
+      if (cleanRectRef.current) {
+        mapInstance.removeLayer(cleanRectRef.current);
+      }
+      cleanRectRef.current = L.rectangle([[e.latlng.lat, e.latlng.lng], [e.latlng.lat, e.latlng.lng]], {
+        color: "#ef4444",
+        weight: 1.5,
+        fillColor: "#ef4444",
+        fillOpacity: 0.15,
+        dashArray: "4, 4",
+      }).addTo(mapInstance);
+      L.DomEvent.stopPropagation(e.originalEvent);
+    };
+
+    const onMouseMove = (e: L.LeafletMouseEvent) => {
+      if (!cleanStartLatLngRef.current || !cleanRectRef.current) return;
+      cleanRectRef.current.setBounds(L.latLngBounds(cleanStartLatLngRef.current, e.latlng));
+    };
+
+    const onMouseUp = () => {
+      if (!cleanStartLatLngRef.current || !cleanRectRef.current) return;
+
+      const bounds = cleanRectRef.current.getBounds();
+      onSetCleanBounds({
+        north: bounds.getNorth(),
+        south: bounds.getSouth(),
+        east: bounds.getEast(),
+        west: bounds.getWest()
+      });
+      
+      // Leave the rectangle on map until user chooses action
+      cleanStartLatLngRef.current = null;
+    };
+
+    mapInstance.on("mousedown", onMouseDown);
+    mapInstance.on("mousemove", onMouseMove);
+    mapInstance.on("mouseup", onMouseUp);
+
+    return () => {
+      mapInstance.off("mousedown", onMouseDown);
+      mapInstance.off("mousemove", onMouseMove);
+      mapInstance.off("mouseup", onMouseUp);
+      mapInstance.dragging.enable();
+    };
+  }, [mapInstance, isCleaningArea, onSetCleanBounds]);
 
   // Area Drawing Mode: click to add vertices, double-click to close
   useEffect(() => {
@@ -1271,7 +1451,7 @@ export function MapContainer({
 
 
   return (
-    <div className={`relative w-full h-full bg-[#0a0e0c] overflow-hidden ${isDrawing || isSelectingArea || isDrawingArea ? "leaflet-crosshair" : isSplitting ? "leaflet-scissors" : ""}`}>
+    <div className={`relative w-full h-full bg-[#0a0e0c] overflow-hidden ${isDrawing || isSelectingArea || isCleaningArea || isDrawingArea ? "leaflet-crosshair" : isSplitting ? "leaflet-scissors" : ""}`}>
       <div ref={mapContainerRef} className="w-full h-full z-10" />
 
       {/* Map Drawing overlay badge */}

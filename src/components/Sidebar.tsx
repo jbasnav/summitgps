@@ -162,6 +162,14 @@ interface SidebarProps {
   setIsEditingRoute: (editing: boolean) => void;
   onTrimTrack: (trackId: string, startIndex: number, endIndex: number) => void;
   onRoundTripTrack: (trackId: string) => void;
+  applySimplifyTrack?: (id: string, tolerance: number) => void;
+  cleanTrackArea?: (id: string, bounds: { north: number; south: number; east: number; west: number }, keepInside: boolean) => void;
+  isCleaningArea?: boolean;
+  setIsCleaningArea?: (cleaning: boolean) => void;
+  cleanBounds?: { north: number; south: number; east: number; west: number } | null;
+  setCleanBounds?: (bounds: { north: number; south: number; east: number; west: number } | null) => void;
+  trackColorMode: "solid" | "slope" | "elevation";
+  setTrackColorMode: (mode: "solid" | "slope" | "elevation") => void;
 }
 
 type TabId = "search" | "layers" | "route" | "waypoints" | "settings";
@@ -270,12 +278,22 @@ export function Sidebar({
   setIsEditingRoute,
   onTrimTrack,
   onRoundTripTrack,
+  applySimplifyTrack,
+  cleanTrackArea,
+  isCleaningArea,
+  setIsCleaningArea,
+  cleanBounds,
+  setCleanBounds,
+  trackColorMode,
+  setTrackColorMode,
 }: SidebarProps) {
   const { customAlert, customConfirm, customPrompt } = useCustomDialog();
   const [activeTab, setActiveTab] = useState<TabId>("route");
   
   // Local states for Trim/Crop Track
   const [showTrimPanel, setShowTrimPanel] = useState(false);
+  const [showSimplifyPanel, setShowSimplifyPanel] = useState(false);
+  const [simplifyTolerance, setSimplifyTolerance] = useState(5);
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(0);
 
@@ -1865,6 +1883,36 @@ export function Sidebar({
                         </button>
                       )}
 
+                      {/* Simplify Track Button */}
+                      {points.length > 2 && !isDrawing && applySimplifyTrack && (
+                        <button
+                          onClick={() => setShowSimplifyPanel(!showSimplifyPanel)}
+                          title="Simplificar Puntos (Reducir tamaño GPS)"
+                          className={`px-3.5 border rounded-xl transition-colors flex items-center justify-center ${
+                            showSimplifyPanel
+                              ? "bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-md animate-pulse"
+                              : "bg-[#18231e] border-[#1b3d2b] text-slate-300 hover:text-amber-400"
+                          }`}
+                        >
+                          <Trees className="w-4 h-4" />
+                        </button>
+                      )}
+
+                      {/* Clean Area Button */}
+                      {points.length > 2 && !isDrawing && setIsCleaningArea && (
+                        <button
+                          onClick={() => setIsCleaningArea(!isCleaningArea)}
+                          title="Limpiar Track por Área (Rectangle Clean)"
+                          className={`px-3.5 border rounded-xl transition-colors flex items-center justify-center ${
+                            isCleaningArea
+                              ? "bg-red-500/20 text-red-300 border-red-500/40 shadow-md animate-pulse"
+                              : "bg-[#18231e] border-[#1b3d2b] text-slate-300 hover:text-red-400"
+                          }`}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+                        </button>
+                      )}
+
                       {points.length > 0 && isDrawing && (
                         <button
                           onClick={onUndoPoint}
@@ -1977,6 +2025,113 @@ export function Sidebar({
                       </div>
                     )}
 
+                    {/* Simplify Track Panel */}
+                    {showSimplifyPanel && points.length > 2 && (
+                      <div className="bg-[#0b100d] border border-[#1b3d2b]/40 rounded-xl p-3.5 space-y-4 animate-fade-in select-none">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <Trees className="w-3.5 h-3.5" /> Simplificar Ruta
+                          </span>
+                          <button
+                            onClick={() => setShowSimplifyPanel(false)}
+                            className="text-slate-500 hover:text-slate-300 transition-colors cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        
+                        <div className="space-y-3.5">
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-[9px] font-mono text-slate-400">
+                              <span>Tolerancia (m):</span>
+                              <span className="font-bold text-amber-400">{simplifyTolerance}m</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="1"
+                              max="100"
+                              value={simplifyTolerance}
+                              onChange={(e) => setSimplifyTolerance(parseInt(e.target.value))}
+                              className="w-full h-1 bg-[#131b17] border border-white/5 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                            />
+                            <p className="text-[9px] text-slate-500 pt-1 leading-tight">
+                              A mayor valor, más puntos se eliminarán. Usa un valor bajo (1-10m) para mantener la precisión o alto para limpiar rutas erráticas.
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={async () => {
+                            if (activeTrackId && applySimplifyTrack) {
+                              if (await customConfirm(`¿Aplicar simplificación con una tolerancia de ${simplifyTolerance}m? Esta acción sobrescribirá los puntos del track.`, "Simplificar Ruta")) {
+                                applySimplifyTrack(activeTrackId, simplifyTolerance);
+                                setShowSimplifyPanel(false);
+                              }
+                            }
+                          }}
+                          className="w-full py-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 hover:border-amber-500/60 rounded-xl text-amber-300 text-xs font-bold uppercase tracking-wider transition-all shadow-md shadow-amber-500/5 cursor-pointer text-center"
+                        >
+                          Aplicar Simplificación
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Area Cleaning Panel (shown when user selects an area) */}
+                    {isCleaningArea && cleanBounds && (
+                      <div className="bg-[#0b100d] border border-red-500/40 rounded-xl p-3.5 space-y-4 animate-fade-in select-none">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-red-400 uppercase tracking-wider flex items-center gap-1.5">
+                            🧽 Limpieza de Área
+                          </span>
+                        </div>
+                        
+                        <p className="text-[10px] text-slate-400">
+                          Selecciona si deseas eliminar los puntos que caen <strong>dentro</strong> o <strong>fuera</strong> del área roja dibujada en el mapa.
+                        </p>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            onClick={async () => {
+                              if (activeTrackId && cleanTrackArea) {
+                                if (await customConfirm("¿Estás seguro de eliminar los puntos INTERIORES?", "Limpiar Área")) {
+                                  cleanTrackArea(activeTrackId, cleanBounds, false);
+                                  if (setCleanBounds) setCleanBounds(null);
+                                  if (setIsCleaningArea) setIsCleaningArea(false);
+                                }
+                              }
+                            }}
+                            className="w-full py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 rounded-xl text-red-300 text-xs font-bold transition-all cursor-pointer text-center"
+                          >
+                            Borrar Interior
+                          </button>
+                          
+                          <button
+                            onClick={async () => {
+                              if (activeTrackId && cleanTrackArea) {
+                                if (await customConfirm("¿Estás seguro de eliminar los puntos EXTERIORES?", "Limpiar Área")) {
+                                  cleanTrackArea(activeTrackId, cleanBounds, true);
+                                  if (setCleanBounds) setCleanBounds(null);
+                                  if (setIsCleaningArea) setIsCleaningArea(false);
+                                }
+                              }
+                            }}
+                            className="w-full py-2 bg-[#1c2921] hover:bg-[#25372c] border border-[#1b3d2b] rounded-xl text-slate-300 text-xs font-bold transition-all cursor-pointer text-center"
+                          >
+                            Borrar Exterior
+                          </button>
+                        </div>
+                        
+                        <button
+                          onClick={() => {
+                            if (setCleanBounds) setCleanBounds(null);
+                          }}
+                          className="w-full py-1.5 bg-transparent hover:bg-white/5 border border-transparent rounded-lg text-slate-500 text-xs font-bold transition-all cursor-pointer text-center"
+                        >
+                          Cancelar Selección
+                        </button>
+                      </div>
+                    )}
+
                     {/* Modo de Enrutamiento */}
                     <div className="space-y-2">
                       <span className="text-xs font-semibold text-slate-200">Modo de Ruta</span>
@@ -2010,11 +2165,39 @@ export function Sidebar({
                   {/* Route metrics display */}
                   {points.length > 0 && (
                     <div className="space-y-4">
+                      {/* Modo de Color del Track */}
+                      <div className="space-y-2 p-3 rounded-xl bg-[#0b100d] border border-white/5">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                          🎨 Modo de Color del Mapa
+                        </span>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {[
+                            { id: 'solid', label: 'Sólido', emoji: '🟢' },
+                            { id: 'slope', label: 'Pendiente', emoji: '📈' },
+                            { id: 'elevation', label: 'Altitud', emoji: '🏔️' },
+                          ].map((mode) => (
+                            <button
+                              key={mode.id}
+                              onClick={() => setTrackColorMode(mode.id as any)}
+                              className={`flex flex-col items-center gap-1 py-1.5 px-1 rounded-lg text-center transition-all border ${
+                                trackColorMode === mode.id
+                                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.15)]'
+                                  : 'bg-[#0b100d] border-white/5 text-slate-500 hover:text-slate-200 hover:border-white/10'
+                              }`}
+                            >
+                              <span className="text-xs">{mode.emoji}</span>
+                              <span className="text-[7.5px] font-bold uppercase tracking-wider leading-none">{mode.label}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
                       <StatsPanel
                         distance={distance}
                         ascent={ascent}
                         descent={descent}
                         useImperial={useImperial}
+                        points={points}
                       />
                       
                       <button

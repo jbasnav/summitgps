@@ -1,6 +1,7 @@
 // Hook for managing Track Library, Multi-Route Drawing, Waypoints, LocalStorage, and Merge/Split Operations
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { calculateHaversineDistance, calculateElevationGainLoss } from "../utils/geoUtils";
+import { simplifyTrack } from "../utils/simplify";
 import { supabase, isSupabaseConfigured } from "../utils/supabaseClient";
 
 export type RoutingProfile = 'hike' | 'cycle' | 'drive' | 'straight';
@@ -10,6 +11,31 @@ export interface RoutePoint {
   lng: number;
   elevation: number;
   distance: number; // Cumulative distance in km
+  surface?: string; // Optional surface type (asfalto, grava, tierra, desconocido)
+}
+
+function extractSurfaceFromTags(tagsStr: string): string {
+  if (!tagsStr) return "desconocido";
+  
+  // Search for surface=value
+  const surfaceMatch = tagsStr.match(/surface=(\w+)/);
+  if (surfaceMatch) {
+    const val = surfaceMatch[1].toLowerCase();
+    if (["asphalt", "paved", "concrete", "tarmac"].includes(val)) return "asfalto";
+    if (["gravel", "fine_gravel", "pebbles", "compacted"].includes(val)) return "grava";
+    if (["dirt", "ground", "earth", "mud", "grass", "unpaved", "sand"].includes(val)) return "tierra";
+    return val;
+  }
+
+  // Fallbacks based on highway
+  if (tagsStr.includes("highway=track") || tagsStr.includes("highway=path") || tagsStr.includes("highway=footway")) {
+    return "tierra";
+  }
+  if (tagsStr.includes("highway=primary") || tagsStr.includes("highway=secondary") || tagsStr.includes("highway=tertiary") || tagsStr.includes("highway=residential")) {
+    return "asfalto";
+  }
+
+  return "desconocido";
 }
 
 export interface Waypoint {
@@ -655,7 +681,7 @@ export function useRoutePlanner(user: any | null = null) {
   );
 
   const fetchHikingRoute = useCallback(
-    async (start: [number, number], end: [number, number]): Promise<[number, number][]> => {
+    async (start: [number, number], end: [number, number]): Promise<[number, number, number?, string?][]> => {
       try {
         const brouterProfileMap: Record<string, string> = { hike: 'Hiking-Alpine-SAC6', cycle: 'trekking', drive: 'car-fast' };
         const brouterProfile = brouterProfileMap[routingProfile] || 'Hiking-Alpine-SAC6';
@@ -666,7 +692,14 @@ export function useRoutePlanner(user: any | null = null) {
 
         if (data.features && data.features.length > 0) {
           const coords = data.features[0].geometry.coordinates;
-          const routeCoords: [number, number][] = coords.map((c: number[]) => [c[1], c[0]]);
+          const messages = data.features[0].properties?.messages || [];
+          
+          const routeCoords: [number, number, number?, string?][] = coords.map((c: number[], idx: number) => {
+            // Skips header, gets corresponding line
+            const msgLine = messages[idx + 1] || "";
+            const surface = extractSurfaceFromTags(msgLine);
+            return [c[1], c[0], c[2] || 0, surface];
+          });
           return routeCoords;
         }
         return fetchOSRMRoute(start, end);
@@ -818,12 +851,12 @@ export function useRoutePlanner(user: any | null = null) {
             });
           }
         } else {
-          let segmentCoords: [number, number][] = [];
+          let segmentCoords: [number, number, number?, string?][] = [];
 
           if (routingProfile !== 'straight') {
             segmentCoords = await fetchHikingRoute([lastPoint.lat, lastPoint.lng], [lat, lng]);
             if (segmentCoords.length > 0) {
-              segmentCoords[0] = [lastPoint.lat, lastPoint.lng];
+              segmentCoords[0] = [lastPoint.lat, lastPoint.lng, lastPoint.elevation, lastPoint.surface];
               segmentCoords[segmentCoords.length - 1] = [lat, lng];
             } else {
               segmentCoords = [[lastPoint.lat, lastPoint.lng], [lat, lng]];
@@ -833,7 +866,7 @@ export function useRoutePlanner(user: any | null = null) {
           }
 
           const newCoordsToQuery = segmentCoords.slice(1);
-          const elevations = await fetchElevations(newCoordsToQuery);
+          const elevations = await fetchElevations(newCoordsToQuery.map(c => [c[0], c[1]]));
 
           let cumulativeDist = lastPoint.distance;
           const newRoutePoints: RoutePoint[] = [];
@@ -847,11 +880,20 @@ export function useRoutePlanner(user: any | null = null) {
             );
             cumulativeDist += distDiff;
 
+            let surface = currCoord[3];
+            if (!surface) {
+              if (routingProfile === 'hike') surface = 'tierra';
+              else if (routingProfile === 'cycle') surface = 'grava';
+              else if (routingProfile === 'drive') surface = 'asfalto';
+              else surface = 'desconocido';
+            }
+
             newRoutePoints.push({
               lat: currCoord[0],
               lng: currCoord[1],
-              elevation: elevations[i] ?? 0,
+              elevation: elevations[i] ?? currCoord[2] ?? 0,
               distance: cumulativeDist,
+              surface,
             });
           }
 
@@ -1957,6 +1999,73 @@ export function useRoutePlanner(user: any | null = null) {
     }
   }, [fetchElevations, user]);
 
+  const applySimplifyTrack = useCallback((trackId: string, tolerance: number) => {
+    setTracks((prev) =>
+      prev.map((t) => {
+        if (t.id === trackId) {
+          if (t.points.length <= 2) return t;
+          const simplifiedPoints = simplifyTrack(t.points, tolerance);
+          // Recalculate distances for the new points
+          let newDist = 0;
+          const updatedPoints = simplifiedPoints.map((p, index) => {
+            if (index === 0) return { ...p, distance: 0 };
+            newDist += calculateHaversineDistance(
+              [simplifiedPoints[index - 1].lat, simplifiedPoints[index - 1].lng],
+              [p.lat, p.lng]
+            );
+            return { ...p, distance: newDist };
+          });
+          
+          if (user && isSupabaseConfigured) {
+            supabase.from("tracks").update({ points: updatedPoints }).eq("id", trackId).then(({ error }) => {
+              if (error) console.error("Failed to simplify track in Supabase:", error);
+            });
+          }
+          return { ...t, points: updatedPoints };
+        }
+        return t;
+      })
+    );
+  }, [user]);
+
+  const cleanTrackArea = useCallback((trackId: string, bounds: { north: number, south: number, east: number, west: number }, keepInside: boolean) => {
+    setTracks((prev) =>
+      prev.map((t) => {
+        if (t.id === trackId) {
+          const isPointInBounds = (lat: number, lng: number) => {
+            return lat <= bounds.north && lat >= bounds.south && lng <= bounds.east && lng >= bounds.west;
+          };
+
+          const newPoints = t.points.filter((p) => {
+            const inBounds = isPointInBounds(p.lat, p.lng);
+            return keepInside ? inBounds : !inBounds;
+          });
+          
+          if (newPoints.length === 0) return t; // Prevent deleting the whole track
+
+          // Recalculate distances
+          let newDist = 0;
+          const updatedPoints = newPoints.map((p, index) => {
+            if (index === 0) return { ...p, distance: 0 };
+            newDist += calculateHaversineDistance(
+              [newPoints[index - 1].lat, newPoints[index - 1].lng],
+              [p.lat, p.lng]
+            );
+            return { ...p, distance: newDist };
+          });
+
+          if (user && isSupabaseConfigured) {
+            supabase.from("tracks").update({ points: updatedPoints }).eq("id", trackId).then(({ error }) => {
+              if (error) console.error("Failed to clean track in Supabase:", error);
+            });
+          }
+          return { ...t, points: updatedPoints };
+        }
+        return t;
+      })
+    );
+  }, [user]);
+
   // Area CRUD
   const addArea = useCallback((area: Omit<Area, "id">) => {
     const newArea: Area = {
@@ -2078,6 +2187,8 @@ export function useRoutePlanner(user: any | null = null) {
     roundTripTrack,
     updateRoutePoint,
     insertIntermediatePoint,
+    applySimplifyTrack,
+    cleanTrackArea,
 
     // Waypoint Group additions
     waypointGroups,

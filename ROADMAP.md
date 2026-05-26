@@ -40,8 +40,8 @@ Marcar con `[x]` cuando la característica esté completamente implementada.
 *(Herramientas de edición fina típicamente asociadas a gpx.studio)*
 
 #### 💻 Inspiradas en gpx.studio (Edición y Limpieza)
-- [ ] Reducción de puntos GPS (Minify/Simplify) manteniendo la forma del track
-- [ ] Selección por rectángulo para eliminar puntos dentro/fuera de un área (Clean tool)
+- [x] Reducción de puntos GPS (Minify/Simplify) manteniendo la forma del track
+- [x] Selección por rectángulo para eliminar puntos dentro/fuera de un área (Clean tool)
 - [ ] Eliminar puntos duplicados / outliers (picos GPS erráticos)
 - [ ] Suavizado de trazado GPS (smooth track)
 
@@ -116,10 +116,10 @@ Marcar con `[x]` cuando la característica esté completamente implementada.
 - [ ] Tiempo estimado de recorrido según perfil de actividad (fórmula de Naismith/tobler)
 
 #### 💻 Inspiradas en gpx.studio (Análisis Geométrico)
-- [ ] Tabla de Splits detallada (ritmo, velocidad y desnivel por kilómetro)
-- [ ] Colorear track en el mapa según variables (velocidad, pendiente, elevación, etc.)
-- [ ] Selección de un segmento específico arrastrando sobre el perfil de elevación
-- [ ] Estadísticas detalladas de tipo de superficie (asfalto, tierra, grava, etc.)
+- [x] Tabla de Splits detallada (ritmo, velocidad y desnivel por kilómetro)
+- [x] Colorear track en el mapa según variables (velocidad, pendiente, elevación, etc.)
+- [x] Selección de un segmento específico arrastrando sobre el perfil de elevación
+- [x] Estadísticas detalladas de tipo de superficie (asfalto, tierra, grava, etc.)
 
 ---
 
@@ -144,13 +144,13 @@ Marcar con `[x]` cuando la característica esté completamente implementada.
 #### 📌 Propiedades Comunes (Core)
 - [x] Importar archivos GPX locales
 - [x] Exportar tracks y rutas a GPX estándar
-- [ ] Importar archivos KML / KMZ (Google Earth)
+- [x] Importar archivos KML / KMZ (Google Earth)
 - [ ] Exportar tracks y puntos a KML
 
 #### 💻 Inspiradas en gpx.studio (Compatibilidad de Formatos)
 - [x] Importar archivos JSON de SummitGPS
-- [ ] Importar GeoJSON
-- [ ] Importar FIT (Garmin) para análisis de entrenamiento
+- [x] Importar GeoJSON
+- [x] Importar FIT (Garmin) para análisis de entrenamiento
 - [ ] Exportar a GeoJSON
 - [ ] Exportar seleccionando campos específicos (conservar/eliminar tiempo, HR, cadencia, etc.)
 - [ ] Exportar y guardar directamente a la nube (Google Drive, Dropbox)
@@ -226,13 +226,9 @@ Marcar con `[x]` cuando la característica esté completamente implementada.
 4. **✅ Fase 3:** ~~Herramienta de Impresión Cartográfica~~ — COMPLETADA
 5. **✅ Fase 4:** ~~Carpetas Unificadas y Buscador de Biblioteca~~ — COMPLETADA
 6. **✅ Fase 5:** ~~Waypoints Interactivos y Marcadores Avanzados~~ — COMPLETADA
-7. **📍 Fase 6 (Actual):** Edición y Geometría de Rutas Avanzada
-   * Recortar inicio/fin de ruta (Trim/Crop Track)
-   * Volver al inicio / Ida y Vuelta (Back to Start / Round Trip)
-   * Arrastrar puntos de anclaje para reajustar segmentos
-   * Insertar puntos intermedios entre puntos existentes
-8. **📥 Fase 7:** Soporte KML/GeoJSON/FIT
-9. **✂️ Fase 8:** Herramientas de Limpieza (Simplify, Clean Rectangle)
-10. **📊 Fase 9:** Estadísticas Avanzadas (Splits, coloreado por variable, superficie)
-11. **🗺️ Fase 10:** Street View (Mapillary/Google) e Imágenes a Pie de Calle
-12. **⌨️ Fase 11:** Atajos de Teclado y Undo/Redo Global
+7. **✅ Fase 6:** ~~Edición y Geometría de Rutas Avanzada~~ — COMPLETADA
+8. **✅ Fase 7:** ~~Soporte KML/GeoJSON/FIT~~ — COMPLETADA
+9. **✅ Fase 8:** ~~Herramientas de Limpieza (Simplify, Clean Rectangle)~~ — COMPLETADA
+10. **✅ Fase 9:** ~~Estadísticas Avanzadas (Splits, coloreado por variable, superficie)~~ — COMPLETADA
+11. **📍 Fase 10 (Actual):** Street View (Mapillary/Google) e Imágenes a Pie de Calle
+12. **🗺️ Fase 11:** Atajos de Teclado y Undo/Redo Global

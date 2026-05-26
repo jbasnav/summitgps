@@ -620,3 +620,201 @@ export function formatArea(m2: number, useImperial: boolean = false): string {
   if (ha < 100) return `${ha.toFixed(2)} ha`;
   return `${(m2 / 1000000).toFixed(3)} km²`;
 }
+
+export interface SplitSegment {
+  number: number;
+  distance: number;       // in miles or km
+  ascent: number;         // in meters
+  descent: number;        // in meters
+  avgElevation: number;   // in meters
+  timeSeconds: number;    // estimated time in seconds
+}
+
+/**
+ * Calculates splits (per km or per mile) for a route.
+ */
+export function calculateSplits(
+  points: { lat: number; lng: number; elevation: number; distance: number }[],
+  useImperial: boolean
+): SplitSegment[] {
+  if (points.length < 2) return [];
+
+  const unitFactor = useImperial ? 0.621371 : 1.0;
+  const interval = 1.0; // 1 unit (1 km or 1 mile)
+
+  const splits: SplitSegment[] = [];
+  let currentSplitPoints: typeof points = [points[0]];
+  let splitNumber = 1;
+  let accumulatedDistInKm = 0;
+
+  for (let i = 1; i < points.length; i++) {
+    const prev = points[i - 1];
+    const curr = points[i];
+    const distChange = curr.distance - prev.distance;
+    
+    currentSplitPoints.push(curr);
+    accumulatedDistInKm += distChange;
+
+    const accumulatedInUnits = accumulatedDistInKm * unitFactor;
+
+    if (accumulatedInUnits >= interval || i === points.length - 1) {
+      const segmentDistance = accumulatedDistInKm;
+      
+      let ascent = 0;
+      let descent = 0;
+      let elevSum = 0;
+      for (let j = 1; j < currentSplitPoints.length; j++) {
+        const diff = currentSplitPoints[j].elevation - currentSplitPoints[j - 1].elevation;
+        if (diff > 0) ascent += diff;
+        else descent += Math.abs(diff);
+        elevSum += currentSplitPoints[j].elevation;
+      }
+      elevSum += currentSplitPoints[0].elevation;
+      const avgElevation = elevSum / currentSplitPoints.length;
+
+      // Estimate time using Naismith's rule (4 km/h flat + 1h per 600m ascent)
+      const baseTimeSec = (segmentDistance / 4.0) * 3600;
+      const climbTimeSec = ascent * 6.0;
+      const timeSeconds = Math.round(baseTimeSec + climbTimeSec);
+
+      splits.push({
+        number: splitNumber,
+        distance: segmentDistance * unitFactor,
+        ascent,
+        descent,
+        avgElevation,
+        timeSeconds
+      });
+
+      splitNumber++;
+      currentSplitPoints = [curr];
+      accumulatedDistInKm = 0;
+    }
+  }
+
+  return splits;
+}
+
+/**
+ * Calculates the slope/gradient percentage between two points.
+ */
+export function calculateSlope(
+  p1: { lat: number; lng: number; elevation: number },
+  p2: { lat: number; lng: number; elevation: number }
+): number {
+  const distKm = calculateHaversineDistance([p1.lat, p1.lng], [p2.lat, p2.lng]);
+  if (distKm === 0) return 0;
+  const elevDiffM = p2.elevation - p1.elevation;
+  return (elevDiffM / (distKm * 1000)) * 100;
+}
+
+/**
+ * Maps a slope percentage to a color.
+ */
+export function getColorForSlope(slope: number): string {
+  const absSlope = Math.abs(slope);
+  if (absSlope <= 1) return "#10b981"; // Plano: Esmeralda
+  if (slope > 0) {
+    // Subida
+    if (slope <= 4) return "#84cc16"; // Verde claro
+    if (slope <= 8) return "#eab308"; // Amarillo
+    if (slope <= 12) return "#f97316"; // Naranja
+    if (slope <= 18) return "#ef4444"; // Rojo
+    return "#d946ef"; // Fucsia (muy empinado)
+  } else {
+    // Bajada (pendiente negativa)
+    const negSlope = Math.abs(slope);
+    if (negSlope <= 4) return "#06b6d4"; // Cyan
+    if (negSlope <= 8) return "#3b82f6"; // Azul claro
+    if (negSlope <= 12) return "#6366f1"; // Indigo
+    return "#4f46e5"; // Indigo oscuro
+  }
+}
+
+/**
+ * Maps an elevation value (relative to min and max of track) to an HSL color string.
+ */
+export function getColorForElevation(elev: number, minElev: number, maxElev: number): string {
+  if (maxElev === minElev) return "#10b981";
+  const ratio = Math.max(0, Math.min(1, (elev - minElev) / (maxElev - minElev)));
+  // Interpolate from blue (220deg) for low elevations to red (0deg) for high elevations.
+  const hue = 220 - ratio * 220;
+  return `hsl(${hue}, 85%, 45%)`;
+}
+
+export interface SurfaceStat {
+  surface: string;
+  distance: number;
+  percentage: number;
+  color: string;
+}
+
+/**
+ * Calculates surface type distance statistics along a track.
+ */
+export function calculateSurfaceStats(
+  points: { lat: number; lng: number; distance: number; surface?: string }[]
+): SurfaceStat[] {
+  if (points.length < 2) return [];
+
+  const surfaceDistances: Record<string, number> = {
+    asfalto: 0,
+    grava: 0,
+    tierra: 0,
+    desconocido: 0
+  };
+
+  let totalDist = 0;
+
+  for (let i = 1; i < points.length; i++) {
+    const prev = points[i - 1];
+    const curr = points[i];
+    const dist = curr.distance - prev.distance;
+    
+    // Fallback to prev point surface if current doesn't have it, default to desconocido
+    const surf = curr.surface || prev.surface || "desconocido";
+    
+    // Normalize key
+    let key = "desconocido";
+    if (["asfalto", "grava", "tierra"].includes(surf)) {
+      key = surf;
+    } else if (["asphalt", "paved", "concrete", "tarmac"].includes(surf)) {
+      key = "asfalto";
+    } else if (["gravel", "fine_gravel", "pebbles", "compacted"].includes(surf)) {
+      key = "grava";
+    } else if (["dirt", "ground", "earth", "mud", "grass", "unpaved", "sand"].includes(surf)) {
+      key = "tierra";
+    }
+
+    surfaceDistances[key] = (surfaceDistances[key] || 0) + dist;
+    totalDist += dist;
+  }
+
+  const colors: Record<string, string> = {
+    asfalto: "#3b82f6", // Blue
+    grava: "#f59e0b",   // Amber/Orange
+    tierra: "#10b981",  // Emerald
+    desconocido: "#64748b" // Slate
+  };
+
+  const labels: Record<string, string> = {
+    asfalto: "Asfalto",
+    grava: "Grava / Pistas",
+    tierra: "Tierra / Senderos",
+    desconocido: "Mixto / Otro"
+  };
+
+  if (totalDist === 0) return [];
+
+  return Object.keys(surfaceDistances)
+    .map(surf => {
+      const dist = surfaceDistances[surf];
+      return {
+        surface: labels[surf],
+        distance: dist,
+        percentage: (dist / totalDist) * 100,
+        color: colors[surf]
+      };
+    })
+    .filter(stat => stat.distance > 0);
+}
