@@ -232,3 +232,8 @@ Marcar con `[x]` cuando la característica esté completamente implementada.
 10. **✅ Fase 9:** ~~Estadísticas Avanzadas (Splits, coloreado por variable, superficie)~~ — COMPLETADA
 11. **✅ Fase 11:** ~~Atajos de Teclado y Undo/Redo Global~~ — COMPLETADA
 12. **✅ Fase 10:** ~~Street View (Mapillary/Google) e Imágenes a Pie de Calle~~ — COMPLETADA
+13. **📍 Fase 12 (Actual):** Waypoints Avanzados con Altitud Automática y Biblioteca de +100 Iconos
+14. **⏳ Fase 13:** Capas Personalizadas (XYZ/WMS) y Capa de Sombreado de Pendientes (Slope Angle Shading)
+15. **⏳ Fase 14:** Herramientas de Edición Fina (Trim, Round-Trip, Arrastre de Vértices y Waypoints)
+16. **⏳ Fase 15:** Limpieza Avanzada (Outliers, Suavizado y Elevación Online de GPX)
+17. **⏳ Fase 16:** Exportaciones Avanzadas (KML/GeoJSON, Exportación en Lote, Cloud Storage y Drag & Drop)
