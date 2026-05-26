@@ -199,12 +199,12 @@ Marcar con `[x]` cuando la característica esté completamente implementada.
 - [x] Tema oscuro profesional outdoor-focused
 - [x] Animaciones fluidas y micro-interacciones en UI
 - [x] Diseño responsivo (adaptado a tablets y móviles)
-- [ ] Atajos de teclado rápidos (K para dibujar, Escape para cancelar, etc.)
+- [x] Atajos de teclado rápidos (K para dibujar, Escape para cancelar, etc.)
 - [ ] Tutorial interactivo guiado / onboarding de inicio rápido para nuevos usuarios
 
 #### 💻 Inspiradas en gpx.studio (Edición Avanzada)
 - [ ] Soporte para múltiples archivos/rutas abiertas simultáneamente, diferenciadas por colores
-- [ ] Sistema global de Deshacer / Rehacer (Ctrl+Z / Ctrl+Y) para todas las operaciones en mapa
+- [x] Sistema global de Deshacer / Rehacer (Ctrl+Z / Ctrl+Y) para todas las operaciones en mapa
 
 ---
 
@@ -230,5 +230,5 @@ Marcar con `[x]` cuando la característica esté completamente implementada.
 8. **✅ Fase 7:** ~~Soporte KML/GeoJSON/FIT~~ — COMPLETADA
 9. **✅ Fase 8:** ~~Herramientas de Limpieza (Simplify, Clean Rectangle)~~ — COMPLETADA
 10. **✅ Fase 9:** ~~Estadísticas Avanzadas (Splits, coloreado por variable, superficie)~~ — COMPLETADA
-11. **📍 Fase 10 (Actual):** Street View (Mapillary/Google) e Imágenes a Pie de Calle
-12. **🗺️ Fase 11:** Atajos de Teclado y Undo/Redo Global
+11. **✅ Fase 11:** ~~Atajos de Teclado y Undo/Redo Global~~ — COMPLETADA
+12. **📍 Fase 10 (Actual):** Street View (Mapillary/Google) e Imágenes a Pie de Calle
