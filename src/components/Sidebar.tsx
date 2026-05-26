@@ -34,6 +34,13 @@ import {
   ArrowLeftRight,
   Hexagon,
   Palette,
+  Trees,
+  Waves,
+  Flame,
+  Binoculars,
+  Home,
+  Car,
+  Heart,
 } from "lucide-react";
 import { LayerSelector, type BaseLayerId } from "./LayerSelector";
 import { StatsPanel } from "./StatsPanel";
@@ -158,6 +165,14 @@ const WPT_ICONS: Record<string, any> = {
   danger: AlertTriangle,
   info: Info,
   water: Droplet,
+  trophy: Trophy,
+  forest: Trees,
+  lake: Waves,
+  fire: Flame,
+  binoculars: Binoculars,
+  home: Home,
+  car: Car,
+  favorite: Heart,
 };
 
 const DEFAULT_TRACK_COLORS = ["#10b981", "#3b82f6", "#ef4444", "#f59e0b", "#8b5cf6", "#ec4899"];

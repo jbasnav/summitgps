@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { X, MapPin, Tent, Camera, AlertTriangle, Info, Droplet, Upload, Trash2 } from "lucide-react";
+import { X, MapPin, Tent, Camera, AlertTriangle, Info, Droplet, Upload, Trash2, Trophy, Trees, Waves, Flame, Binoculars, Home, Car, Heart } from "lucide-react";
 import { useCustomDialog } from "./CustomDialog";
 
 // Coordinate converter helpers
@@ -91,12 +91,20 @@ interface WaypointModalProps {
 }
 
 const ICONS = [
-  { value: "mountain", label: "Pico / Montaña", icon: MapPin },
+  { value: "mountain", label: "Pico / Cima", icon: MapPin },
   { value: "camp", label: "Campamento", icon: Tent },
-  { value: "camera", label: "Fotografía / Vistas", icon: Camera },
-  { value: "danger", label: "Alerta / Peligro", icon: AlertTriangle },
+  { value: "camera", label: "Fotografía", icon: Camera },
+  { value: "danger", label: "Peligro", icon: AlertTriangle },
   { value: "info", label: "Información", icon: Info },
   { value: "water", label: "Agua / Fuente", icon: Droplet },
+  { value: "trophy", label: "Reto / Meta", icon: Trophy },
+  { value: "forest", label: "Bosque", icon: Trees },
+  { value: "lake", label: "Lago / Río", icon: Waves },
+  { value: "fire", label: "Fogata / Vivac", icon: Flame },
+  { value: "binoculars", label: "Avistamiento", icon: Binoculars },
+  { value: "home", label: "Refugio", icon: Home },
+  { value: "car", label: "Parking", icon: Car },
+  { value: "favorite", label: "Favorito", icon: Heart },
 ];
 
 const COLORS = [
@@ -130,6 +138,10 @@ export function WaypointModal({
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(initialData?.image || null);
 
+  // Elevation states
+  const [elevation, setElevation] = useState<number | null>(null);
+  const [fetchingElevation, setFetchingElevation] = useState(false);
+
   React.useEffect(() => {
     if (isOpen) {
       setName(initialData?.name || "");
@@ -142,8 +154,40 @@ export function WaypointModal({
       setLink(initialData?.link || "");
       setImageFile(null);
       setImagePreview(initialData?.image || null);
+      setElevation(null);
+
+      // Fetch elevation from Open-Meteo if coordinates are present
+      if (initialData?.lat !== undefined && initialData?.lng !== undefined) {
+        setFetchingElevation(true);
+        fetch(`https://api.open-meteo.com/v1/elevation?latitude=${initialData.lat}&longitude=${initialData.lng}`)
+          .then((res) => res.json())
+          .then((data) => {
+            if (data && typeof data.elevation?.[0] === "number") {
+              const elevVal = Math.round(data.elevation[0]);
+              setElevation(elevVal);
+
+              // Auto-inject to notes if it's a NEW waypoint (no name and no note yet)
+              if (!initialData.name && !initialData.note) {
+                setNote((prev) => {
+                  const altStr = `Altitud: ${elevVal} m (${Math.round(elevVal * 3.28084)} ft)`;
+                  if (prev.includes("Altitud:")) return prev;
+                  return prev ? `${prev}\n${altStr}` : altStr;
+                });
+              }
+            }
+          })
+          .catch((err) => console.error("Error fetching elevation:", err))
+          .finally(() => setFetchingElevation(false));
+      }
     }
   }, [isOpen, initialData]);
+
+  const handleAppendElevationToNotes = () => {
+    if (elevation === null) return;
+    const altStr = `Altitud: ${elevation} m (${Math.round(elevation * 3.28084)} ft)`;
+    if (note.includes("Altitud:")) return;
+    setNote((prev) => (prev ? `${prev}\n${altStr}` : altStr));
+  };
 
   if (!isOpen) return null;
 
@@ -218,7 +262,7 @@ export function WaypointModal({
             <label className="text-xs font-semibold text-emerald-400/80 tracking-wider uppercase">
               Categoría e Icono
             </label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-4 gap-2">
               {ICONS.map((item) => {
                 const IconComponent = item.icon;
                 const isSelected = icon === item.value;
@@ -227,7 +271,7 @@ export function WaypointModal({
                     key={item.value}
                     type="button"
                     onClick={() => setIcon(item.value)}
-                    className={`flex flex-col items-center justify-center p-3 rounded-xl border text-center transition-all ${
+                    className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
                       isSelected
                         ? "bg-emerald-500/10 border-emerald-400 text-emerald-300 font-medium"
                         : "bg-[#0a0f0d]/50 border-white/5 text-slate-400 hover:text-slate-200 hover:bg-[#0c120f]/80"
@@ -412,6 +456,44 @@ export function WaypointModal({
                   </div>
                 </div>
               </div>
+
+              {/* Altitud Estimada (API Open-Meteo) */}
+              <div className="bg-[#050807]/60 border border-[#1b3d2b]/30 rounded-lg p-2.5 flex items-center justify-between mt-2 select-none">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">🏔️</span>
+                  <div>
+                    <p className="text-[9px] font-sans font-bold text-slate-500 uppercase tracking-wide">Altitud Estimada</p>
+                    {fetchingElevation ? (
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <div className="w-3.5 h-3.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+                        <span className="text-[10px] text-emerald-400/80 font-medium">Consultando API...</span>
+                      </div>
+                    ) : elevation !== null ? (
+                      <p className="text-emerald-400 font-mono text-[11px] font-bold">
+                        {elevation} m <span className="text-slate-400 font-normal">({Math.round(elevation * 3.28084)} ft)</span>
+                      </p>
+                    ) : (
+                      <p className="text-rose-400 text-[10px] font-bold">No disponible</p>
+                    )}
+                  </div>
+                </div>
+
+                {elevation !== null && (
+                  <button
+                    type="button"
+                    onClick={handleAppendElevationToNotes}
+                    disabled={note.includes("Altitud:")}
+                    className={`px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all border shrink-0 ${
+                      note.includes("Altitud:")
+                        ? "bg-[#18231e] border-[#1b3d2b] text-emerald-500/50 cursor-not-allowed"
+                        : "bg-emerald-500/10 border-emerald-500/20 text-emerald-300 hover:bg-emerald-500/20 hover:border-emerald-500/40 cursor-pointer"
+                    }`}
+                  >
+                    {note.includes("Altitud:") ? "En Notas" : "✍️ Añadir a Notas"}
+                  </button>
+                )}
+              </div>
+
               <p className="text-[8px] text-slate-500 leading-normal italic select-none pt-0.5">
                 💡 Nota: Las coordenadas en ED50 aplican la transformación oficial del IGN para la península ibérica (mismatch habitual de ~120m).
               </p>

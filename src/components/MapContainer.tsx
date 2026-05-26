@@ -20,6 +20,7 @@ interface MapContainerProps {
   onAddPoint: (lat: number, lng: number) => void;
   onRightClickMap: (lat: number, lng: number) => void;
   onEditWaypoint: (wpt: Waypoint) => void;
+  onUpdateWaypoint: (id: string, fields: Partial<Waypoint>) => void;
   onSplitTrackAt: (trackId: string, index: number) => void;
   waypointGroups: WaypointGroup[];
   onMapMove?: (lat: number, lng: number) => void;
@@ -67,6 +68,14 @@ const WPT_SVG_PATHS: Record<string, string> = {
   danger: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-white"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
   info: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-white"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`,
   water: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-white"><path d="M12 22a7 7 0 0 0 7-7c0-4.3-7-11-7-11S5 10.7 5 15a7 7 0 0 0 7 7z"/></svg>`,
+  trophy: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-white"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"/><path d="M12 2a6 6 0 0 1 6 6c0 3.31-2.69 6-6 6S6 11.31 6 8a6 6 0 0 1 6-6z"/></svg>`,
+  forest: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-white"><path d="M12 22v-3"/><path d="M5 19h14a2 2 0 0 0 1.66-3.11l-3.32-5.4A2 2 0 0 0 15.66 9.6H14.4c.5-1.2.2-2.7-.8-3.7l-1-1-1 1c-1 1-1.3 2.5-.8 3.7h-1.26a2 2 0 0 0-1.68.89l-3.32 5.4A2 2 0 0 0 5 19z"/></svg>`,
+  lake: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-white"><path d="M2 6c.6.5 1.2 1 2.5 1C6 7 7 6 9 6s3 1 4.5 1c1.5 0 2.5-1 4.5-1s3 1 4 1"/><path d="M2 12c.6.5 1.2 1 2.5 1C6 13 7 12 9 12s3 1 4.5 1c1.5 0 2.5-1 4.5-1s3 1 4 1"/><path d="M2 18c.6.5 1.2 1 2.5 1C6 19 7 18 9 18s3 1 4.5 1c1.5 0 2.5-1 4.5-1s3 1 4 1"/></svg>`,
+  fire: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-white"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>`,
+  binoculars: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-white"><path d="M8 22a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/><path d="M16 22a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/><path d="M8 8V6a4 4 0 0 1 8 0v2"/><path d="M9 12h6"/><path d="M12 12V8"/><path d="M5 8h14"/></svg>`,
+  home: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-white"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`,
+  car: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-white"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4 1L1 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><circle cx="15" cy="17" r="2"/><path d="M13 17H9"/><path d="M5 17H4"/><path d="M17 17h2"/></svg>`,
+  favorite: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-white"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>`,
 };
 
 export function MapContainer({
@@ -104,6 +113,7 @@ export function MapContainer({
   onAreaComplete,
   useImperial,
   onMapReady,
+  onUpdateWaypoint,
 }: MapContainerProps) {
   const { customConfirm } = useCustomDialog();
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -399,13 +409,36 @@ export function MapContainer({
         existingMarker.setIcon(customIcon);
         existingMarker.off("click");
         existingMarker.on("click", handleClick);
+
+        // Update draggable status dynamically
+        if (!isBulkMode) {
+          existingMarker.dragging?.enable();
+        } else {
+          existingMarker.dragging?.disable();
+        }
+
+        // Re-attach dragend listener to prevent duplication
+        existingMarker.off("dragend");
+        if (!isBulkMode) {
+          existingMarker.on("dragend", (e: any) => {
+            const newLatLng = e.target.getLatLng();
+            onUpdateWaypoint(wpt.id, {
+              lat: newLatLng.lat,
+              lng: newLatLng.lng,
+            });
+          });
+        }
+
         existingMarker.setTooltipContent(`
           <div class="px-2 py-1 text-slate-200 text-xs font-semibold bg-[#131b17] border border-[#1b3d2b] rounded-lg shadow-md">
             ${wpt.name} ${isBulkMode && isSelected ? "☑️" : ""}
           </div>
         `);
       } else {
-        const marker = L.marker([wpt.lat, wpt.lng], { icon: customIcon })
+        const marker = L.marker([wpt.lat, wpt.lng], { 
+          icon: customIcon,
+          draggable: !isBulkMode
+        })
           .addTo(mapInstance)
           .bindTooltip(`
             <div class="px-2 py-1 text-slate-200 text-xs font-semibold bg-[#131b17]/95 border border-[#1b3d2b] rounded-lg shadow-xl">
@@ -413,12 +446,22 @@ export function MapContainer({
             </div>
           `, { direction: "top", offset: [0, -32], opacity: 0.9 })
           .on("click", handleClick);
+
+        if (!isBulkMode) {
+          marker.on("dragend", (e: any) => {
+            const newLatLng = e.target.getLatLng();
+            onUpdateWaypoint(wpt.id, {
+              lat: newLatLng.lat,
+              lng: newLatLng.lng,
+            });
+          });
+        }
         
         waypointMarkersRef.current[wpt.id] = marker;
       }
     });
 
-  }, [mapInstance, waypoints, onEditWaypoint, isBulkMode, selectedWptIds, onSetSelectedWptIds]);
+  }, [mapInstance, waypoints, onEditWaypoint, isBulkMode, selectedWptIds, onSetSelectedWptIds, onUpdateWaypoint]);
 
   // Leaflet mouse event-based click-and-drag Box Selection
   useEffect(() => {

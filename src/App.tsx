@@ -1084,6 +1084,7 @@ function AppContent() {
             onAreaComplete={handleAreaComplete}
             useImperial={useImperial}
             onMapReady={setMapInstance}
+            onUpdateWaypoint={updateWaypoint}
           />
 
           {/* Floating vertical Tools toolbar overlaying the map on the left */}
@@ -1313,6 +1314,17 @@ function AppContent() {
                 completed: editingWaypoint.completed,
                 lat: editingWaypoint.lat,
                 lng: editingWaypoint.lng,
+              }
+            : newWptCoords
+            ? {
+                name: "",
+                icon: "mountain",
+                note: "",
+                color: "#10b981",
+                groupId: "default",
+                completed: false,
+                lat: newWptCoords[0],
+                lng: newWptCoords[1],
               }
             : undefined
         }
