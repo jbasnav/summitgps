@@ -321,6 +321,10 @@ function AppContent() {
   const [isDrawingArea, setIsDrawingArea] = useState<boolean>(false); // Area drawing mode
   const [isEditingRoute, setIsEditingRoute] = useState<boolean>(false); // Advanced Route Edit mode
   const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState<boolean>(false); // Keyboard shortcuts modal
+  const [isStreetViewActive, setIsStreetViewActive] = useState<boolean>(false); // Street View active mode
+  const [streetViewCoords, setStreetViewCoords] = useState<{ lat: number; lng: number } | null>(null); // Coordinates for Pegman
+  const [streetViewAddress, setStreetViewAddress] = useState<string>(""); // Geocoded address for Street View
+  const [isStreetViewFullscreen, setIsStreetViewFullscreen] = useState<boolean>(false); // Fullscreen Street View panel
   const [mapCenter, setMapCenter] = useState<[number, number] | null>([43.1906, -4.8322]);
   const [osmPois, setOsmPois] = useState<any[]>([]);
 
@@ -450,6 +454,7 @@ function AppContent() {
         setIsEditingRoute(false);
         setIsCleaningArea(false);
         setIsShortcutsModalOpen(false);
+        setIsStreetViewActive(false);
       }
 
       // Toggle help cheatsheet modal (either "?" or "Shift + /")
@@ -463,12 +468,48 @@ function AppContent() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [undo, redo, setIsDrawing, setIsDrawingArea, setIsSplitting, setIsEditingRoute, setIsCleaningArea, setIsShortcutsModalOpen]);
+  }, [undo, redo, setIsDrawing, setIsDrawingArea, setIsSplitting, setIsEditingRoute, setIsCleaningArea, setIsShortcutsModalOpen, setIsStreetViewActive]);
 
   // Automatically clear POI selection when new search results load
   useEffect(() => {
     setSelectedPoiIds([]);
   }, [osmPois]);
+
+  // Reverse geocode Street View coordinates
+  useEffect(() => {
+    if (!isStreetViewActive || !streetViewCoords) {
+      setStreetViewAddress("");
+      return;
+    }
+
+    let isMounted = true;
+    setStreetViewAddress("Cargando dirección...");
+
+    const delayDebounceFn = setTimeout(() => {
+      fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${streetViewCoords.lat}&lon=${streetViewCoords.lng}&zoom=14`,
+        { headers: { "Accept-Language": "es" } }
+      )
+        .then((res) => res.json())
+        .then((data) => {
+          if (isMounted) {
+            setStreetViewAddress(data.display_name || "Dirección de montaña");
+          }
+        })
+        .catch(() => {
+          if (isMounted) {
+            setStreetViewAddress(
+              `Coordenadas: ${streetViewCoords.lat.toFixed(5)}, ${streetViewCoords.lng.toFixed(5)}`
+            );
+          }
+        });
+    }, 400); // 400ms debounce while dragging
+
+    return () => {
+      isMounted = false;
+      clearTimeout(delayDebounceFn);
+    };
+  }, [streetViewCoords, isStreetViewActive]);
 
   // Derive all visible waypoints across all visible tracks in the library
   const visibleWaypoints = useMemo(() => {
@@ -874,6 +915,26 @@ function AppContent() {
         setIsEditingRoute={setIsEditingRoute}
         trackColorMode={trackColorMode}
         setTrackColorMode={setTrackColorMode}
+        isStreetViewActive={isStreetViewActive}
+        onToggleStreetView={useCallback(() => {
+          setIsStreetViewActive((prev) => {
+            const next = !prev;
+            if (next) {
+              // Deactivate drawing/edit modes
+              setIsDrawing(false);
+              setIsDrawingArea(false);
+              setIsSplitting(false);
+              setIsEditingRoute(false);
+              setIsCleaningArea(false);
+              // Set initial coordinates if not set yet (use map center)
+              if (!streetViewCoords && mapInstance) {
+                const center = mapInstance.getCenter();
+                setStreetViewCoords({ lat: center.lat, lng: center.lng });
+              }
+            }
+            return next;
+          });
+        }, [streetViewCoords, mapInstance])}
       />
 
       {/* Point Info Drawer expanding the Sidebar */}
@@ -1196,7 +1257,9 @@ function AppContent() {
 
       {/* Main Map Viewport & Collapsible Elevation Chart */}
       <div className="flex-1 h-full flex flex-col overflow-hidden relative">
-        <div className="flex-1 min-h-0 relative">
+        <div className={`flex-1 min-h-0 relative flex flex-col md:flex-row overflow-hidden`}>
+          {/* Left/Top Map Area */}
+          <div className={`flex-1 h-full relative ${isStreetViewActive && isStreetViewFullscreen ? 'hidden' : 'flex flex-col'}`}>
           <MapContainer
             tracks={tracksWithCollectionVisibility}
             activeTrackId={activeTrackId}
@@ -1240,6 +1303,11 @@ function AppContent() {
             onInsertIntermediatePoint={insertIntermediatePoint}
             trackColorMode={trackColorMode}
             selectedRange={selectedRange}
+            isStreetViewActive={isStreetViewActive}
+            streetViewCoords={streetViewCoords}
+            onStreetViewCoordsChange={useCallback((lat: number, lng: number) => {
+              setStreetViewCoords({ lat, lng });
+            }, [])}
           />
 
           {/* Floating vertical Tools toolbar overlaying the map on the left */}
@@ -1405,6 +1473,42 @@ function AppContent() {
             )}
           </div>
 
+          {/* Floating Street View Toggle Button */}
+          <div className="absolute top-4 right-16 z-[4000] pointer-events-auto">
+            <button
+              onClick={() => {
+                setIsStreetViewActive((prev) => {
+                  const next = !prev;
+                  if (next) {
+                    // Turn off other drawing/edit modes
+                    setIsDrawing(false);
+                    setIsDrawingArea(false);
+                    setIsSplitting(false);
+                    setIsEditingRoute(false);
+                    setIsCleaningArea(false);
+                    // Set coordinates
+                    if (!streetViewCoords && mapInstance) {
+                      const center = mapInstance.getCenter();
+                      setStreetViewCoords({ lat: center.lat, lng: center.lng });
+                    }
+                  }
+                  return next;
+                });
+              }}
+              title={isStreetViewActive ? "Desactivar Vista de Calle (Pegman)" : "Activar Vista de Calle / Street View"}
+              className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer border transition-all ${
+                isStreetViewActive
+                  ? "bg-yellow-500/20 border-yellow-500/50 text-yellow-400 shadow-[0_0_12px_rgba(234,179,8,0.3)] animate-pulse"
+                  : "bg-[#131b17]/95 border-[#1b3d2b] hover:border-yellow-500/30 text-slate-300 hover:text-yellow-400"
+              }`}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 fill-current" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                <circle cx="12" cy="4" r="2"/>
+                <path d="M12 6c-1.1 0-2 .9-2 2v5h1v7h2v-7h1V8c0-1.1-.9-2-2-2z"/>
+              </svg>
+            </button>
+          </div>
+
           {/* Floating Cartographic Print Button */}
           <div className="absolute top-4 right-4 z-[4000] pointer-events-auto">
             <button
@@ -1550,6 +1654,85 @@ function AppContent() {
               >
                 <Compass className="w-[18px] h-[18px]" />
               </button>
+            </div>
+          )}
+          </div>
+
+          {/* Street View Panel (Split Screen) */}
+          {isStreetViewActive && streetViewCoords && (
+            <div
+              className={`border-[#1b3d2b]/40 bg-[#0a0e0c]/95 backdrop-blur-md flex flex-col z-[3000] transition-all duration-300 shrink-0 overflow-hidden ${
+                isStreetViewFullscreen
+                  ? "w-full h-full border-0"
+                  : "w-full md:w-[40%] h-[40%] md:h-full border-t md:border-t-0 md:border-l"
+              }`}
+            >
+              {/* Glassmorphic Panel Header */}
+              <div className="flex items-center justify-between p-3.5 border-b border-[#1b3d2b]/40 bg-[#0c120f]/60 select-none shrink-0">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-lg bg-yellow-500/10 border border-yellow-500/30 flex items-center justify-center shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-yellow-400 fill-current" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                      <circle cx="12" cy="4" r="2"/>
+                      <path d="M12 6c-1.1 0-2 .9-2 2v5h1v7h2v-7h1V8c0-1.1-.9-2-2-2z"/>
+                    </svg>
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="text-[11px] font-black text-slate-100 uppercase tracking-wider">
+                      Vista de Calle (Street View)
+                    </h4>
+                    <p className="text-[9.5px] text-slate-400 truncate leading-tight mt-0.5" title={streetViewAddress}>
+                      📍 {streetViewAddress || "Obteniendo dirección..."}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Panel Actions */}
+                <div className="flex items-center gap-1.5 shrink-0 ml-4">
+                  {/* Link to Open in Google Maps */}
+                  <a
+                    href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${streetViewCoords.lat},${streetViewCoords.lng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Abrir en Google Maps completo"
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-yellow-400 hover:bg-[#131b17] transition-all flex items-center justify-center"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                  </a>
+
+                  {/* Toggle Fullscreen button */}
+                  <button
+                    onClick={() => setIsStreetViewFullscreen(!isStreetViewFullscreen)}
+                    title={isStreetViewFullscreen ? "Salir de Pantalla Completa" : "Pantalla Completa"}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-yellow-400 hover:bg-[#131b17] transition-all flex items-center justify-center"
+                  >
+                    {isStreetViewFullscreen ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7"/></svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3M10 21v-6H4M14 3v6h6"/></svg>
+                    )}
+                  </button>
+
+                  {/* Close button */}
+                  <button
+                    onClick={() => setIsStreetViewActive(false)}
+                    title="Cerrar Vista de Calle (Esc)"
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-[#131b17] transition-all flex items-center justify-center"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Iframe Viewport */}
+              <div className="flex-1 bg-[#070a08] relative">
+                <iframe
+                  key={`${streetViewCoords.lat}-${streetViewCoords.lng}`}
+                  src={`https://maps.google.com/maps?q=&layer=c&cbll=${streetViewCoords.lat},${streetViewCoords.lng}&cbp=11,0,0,0,0&output=svembed`}
+                  className="w-full h-full border-none shadow-inner"
+                  allowFullScreen
+                  loading="lazy"
+                ></iframe>
+              </div>
             </div>
           )}
         </div>

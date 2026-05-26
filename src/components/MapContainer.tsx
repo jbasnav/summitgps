@@ -67,6 +67,9 @@ interface MapContainerProps {
   // Dynamic statistics & selection props
   trackColorMode: "solid" | "slope" | "elevation";
   selectedRange: [number, number] | null;
+  isStreetViewActive: boolean;
+  streetViewCoords: { lat: number; lng: number } | null;
+  onStreetViewCoordsChange: (lat: number, lng: number) => void;
 }
 
 // Map Tile Providers
@@ -139,6 +142,9 @@ export function MapContainer({
   onInsertIntermediatePoint,
   trackColorMode,
   selectedRange,
+  isStreetViewActive,
+  streetViewCoords,
+  onStreetViewCoordsChange,
 }: MapContainerProps) {
   const { customConfirm } = useCustomDialog();
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -155,6 +161,7 @@ export function MapContainer({
   const osmPoiMarkersRef = useRef<Record<string, L.Marker>>({});
   const hoverIndicatorRef = useRef<L.CircleMarker | null>(null);
   const markedLocationMarkerRef = useRef<L.Marker | null>(null);
+  const pegmanMarkerRef = useRef<L.Marker | null>(null);
   const gridGroupRef = useRef<L.LayerGroup | null>(null);
 
   // Box Area Selection refs (isSelectingArea state is now a prop)
@@ -253,7 +260,9 @@ export function MapContainer({
     if (!mapInstance) return;
 
     const onMapClick = (e: L.LeafletMouseEvent) => {
-      if (isDrawing) {
+      if (isStreetViewActive) {
+        onStreetViewCoordsChange(e.latlng.lat, e.latlng.lng);
+      } else if (isDrawing) {
         mapInstance.getContainer().style.cursor = "crosshair";
         onAddPoint(e.latlng.lat, e.latlng.lng);
       } else if (!isSplitting && !isSelectingArea && !isCleaningArea && !isBulkMode && !isDrawingArea && !isEditingRoute) {
@@ -275,7 +284,7 @@ export function MapContainer({
       mapInstance.off("click", onMapClick);
       mapInstance.off("contextmenu", onMapRightClick);
     };
-  }, [mapInstance, isDrawing, isSplitting, isSelectingArea, isCleaningArea, isBulkMode, isDrawingArea, isEditingRoute, onAddPoint, onSetMarkedLocation, onRightClickMap]);
+  }, [mapInstance, isDrawing, isSplitting, isSelectingArea, isCleaningArea, isBulkMode, isDrawingArea, isEditingRoute, onAddPoint, onSetMarkedLocation, onRightClickMap, isStreetViewActive, onStreetViewCoordsChange]);
 
   // Render Polylines for ALL visible tracks
   useEffect(() => {
@@ -1128,6 +1137,57 @@ export function MapContainer({
       markedLocationMarkerRef.current = marker;
     }
   }, [mapInstance, markedLocation]);
+
+  // Sync Pegman Marker for Street View
+  useEffect(() => {
+    if (!mapInstance) return;
+
+    if (pegmanMarkerRef.current) {
+      mapInstance.removeLayer(pegmanMarkerRef.current);
+      pegmanMarkerRef.current = null;
+    }
+
+    if (isStreetViewActive && streetViewCoords) {
+      const pegmanHtml = `
+        <div class="relative w-8 h-8 flex items-center justify-center">
+          <div class="absolute w-8 h-8 rounded-full bg-emerald-500/25 border border-emerald-500/40 animate-ping pointer-events-none"></div>
+          <div class="absolute w-6 h-6 rounded-full bg-yellow-400 border border-black/40 shadow-lg flex items-center justify-center z-10 transition-transform duration-200 hover:scale-110 active:scale-95 cursor-grab">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-[#0c120f] fill-[#0c120f]" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="4" r="2"/>
+              <path d="M12 6c-1.1 0-2 .9-2 2v5h1v7h2v-7h1V8c0-1.1-.9-2-2-2z"/>
+            </svg>
+          </div>
+        </div>
+      `;
+
+      const pegmanIcon = L.divIcon({
+        html: pegmanHtml,
+        className: "pegman-marker-icon",
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+      });
+
+      const marker = L.marker([streetViewCoords.lat, streetViewCoords.lng], {
+        icon: pegmanIcon,
+        draggable: true,
+        zIndexOffset: 1000,
+      }).addTo(mapInstance);
+
+      marker.on("dragend", (event: any) => {
+        const newLatLng = event.target.getLatLng();
+        onStreetViewCoordsChange(newLatLng.lat, newLatLng.lng);
+      });
+
+      pegmanMarkerRef.current = marker;
+    }
+
+    return () => {
+      if (pegmanMarkerRef.current && mapInstance) {
+        mapInstance.removeLayer(pegmanMarkerRef.current);
+        pegmanMarkerRef.current = null;
+      }
+    };
+  }, [mapInstance, isStreetViewActive, streetViewCoords, onStreetViewCoordsChange]);
 
   // Sync Grid Overlay
   useEffect(() => {

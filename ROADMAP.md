@@ -101,7 +101,7 @@ Marcar con `[x]` cuando la característica esté completamente implementada.
 #### 💻 Inspiradas en gpx.studio (Contexto Virtual)
 - [ ] Radar de lluvia en vivo superpuesto en tiempo real
 - [ ] Vista a pie de calle: integración con Mapillary (imágenes libres)
-- [ ] Vista a pie de calle: integración con Google Street View
+- [x] Vista a pie de calle: integración con Google Street View
 
 ---
 
@@ -231,4 +231,4 @@ Marcar con `[x]` cuando la característica esté completamente implementada.
 9. **✅ Fase 8:** ~~Herramientas de Limpieza (Simplify, Clean Rectangle)~~ — COMPLETADA
 10. **✅ Fase 9:** ~~Estadísticas Avanzadas (Splits, coloreado por variable, superficie)~~ — COMPLETADA
 11. **✅ Fase 11:** ~~Atajos de Teclado y Undo/Redo Global~~ — COMPLETADA
-12. **📍 Fase 10 (Actual):** Street View (Mapillary/Google) e Imágenes a Pie de Calle
+12. **✅ Fase 10:** ~~Street View (Mapillary/Google) e Imágenes a Pie de Calle~~ — COMPLETADA

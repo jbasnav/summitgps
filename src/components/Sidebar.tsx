@@ -176,6 +176,8 @@ interface SidebarProps {
   canUndo: boolean;
   canRedo: boolean;
   onToggleShortcutsModal: () => void;
+  isStreetViewActive: boolean;
+  onToggleStreetView: () => void;
 }
 
 type TabId = "search" | "layers" | "route" | "waypoints" | "settings";
@@ -297,6 +299,8 @@ export function Sidebar({
   canUndo,
   canRedo,
   onToggleShortcutsModal,
+  isStreetViewActive,
+  onToggleStreetView,
 }: SidebarProps) {
   const { customAlert, customConfirm, customPrompt } = useCustomDialog();
   const [activeTab, setActiveTab] = useState<TabId>("route");
@@ -3625,6 +3629,43 @@ export function Sidebar({
                     Imperial (mi, ft)
                   </button>
                 </div>
+              </div>
+
+              {/* Vista a Pie de Calle / Street View Section */}
+              <div className="space-y-3 bg-[#0c120f]/60 p-4 rounded-xl border border-[#1b3d2b]/25 shadow-lg">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-emerald-400 shrink-0 fill-current" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                      <circle cx="12" cy="4" r="2"/>
+                      <path d="M12 6c-1.1 0-2 .9-2 2v5h1v7h2v-7h1V8c0-1.1-.9-2-2-2z"/>
+                    </svg>
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-300 font-sans">Vista de Calle (Street View)</span>
+                  </div>
+                  {/* Indicator Badge */}
+                  {isStreetViewActive && (
+                    <span className="text-[8px] bg-yellow-500/15 border border-yellow-500/30 text-yellow-400 px-1.5 py-0.5 rounded font-extrabold uppercase animate-pulse">
+                      Activo
+                    </span>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-500 leading-normal">
+                  Inspecciona carreteras y caminos de montaña en vista panorámica dividida colocando el Pegman amarillo en el mapa.
+                </p>
+                <button
+                  type="button"
+                  onClick={onToggleStreetView}
+                  className={`w-full py-2.5 px-4 rounded-xl border transition-all flex items-center justify-center gap-2 shadow-lg cursor-pointer text-xs font-bold ${
+                    isStreetViewActive
+                      ? "bg-yellow-500/20 border-yellow-500/50 text-yellow-400 shadow-[0_0_12px_rgba(234,179,8,0.2)]"
+                      : "bg-[#0b100d] border-white/5 hover:border-yellow-500/20 text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                    <circle cx="12" cy="4" r="2"/>
+                    <path d="M12 6c-1.1 0-2 .9-2 2v5h1v7h2v-7h1V8c0-1.1-.9-2-2-2z"/>
+                  </svg>
+                  {isStreetViewActive ? "Desactivar Vista de Calle" : "Activar Vista de Calle"}
+                </button>
               </div>
 
               {/* Keyboard Shortcuts Section */}
