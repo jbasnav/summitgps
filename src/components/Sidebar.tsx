@@ -9,6 +9,7 @@ import {
   Download,
   Upload,
   Undo2,
+  Redo2,
   ChevronLeft,
   ChevronRight,
   Loader,
@@ -170,6 +171,11 @@ interface SidebarProps {
   setCleanBounds?: (bounds: { north: number; south: number; east: number; west: number } | null) => void;
   trackColorMode: "solid" | "slope" | "elevation";
   setTrackColorMode: (mode: "solid" | "slope" | "elevation") => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  onToggleShortcutsModal: () => void;
 }
 
 type TabId = "search" | "layers" | "route" | "waypoints" | "settings";
@@ -286,6 +292,11 @@ export function Sidebar({
   setCleanBounds,
   trackColorMode,
   setTrackColorMode,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
+  onToggleShortcutsModal,
 }: SidebarProps) {
   const { customAlert, customConfirm, customPrompt } = useCustomDialog();
   const [activeTab, setActiveTab] = useState<TabId>("route");
@@ -1730,6 +1741,37 @@ export function Sidebar({
                     <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                       Ruta Activa Seleccionada
                     </h4>
+                    
+                    {/* Visual Undo/Redo quick-access mouse buttons */}
+                    <div className="flex items-center gap-1 bg-[#0b100d] border border-[#1b3d2b]/40 rounded-xl p-0.5 shadow-md">
+                      <button
+                        type="button"
+                        onClick={onUndo}
+                        disabled={!canUndo}
+                        title="Deshacer (Ctrl+Z)"
+                        className={`p-1.5 rounded-lg transition-all ${
+                          canUndo 
+                            ? "text-slate-300 hover:text-emerald-400 hover:bg-emerald-500/10 cursor-pointer" 
+                            : "text-slate-600 opacity-40 cursor-not-allowed"
+                        }`}
+                      >
+                        <Undo2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={onRedo}
+                        disabled={!canRedo}
+                        title="Rehacer (Ctrl+Y)"
+                        className={`p-1.5 rounded-lg transition-all ${
+                          canRedo 
+                            ? "text-slate-300 hover:text-emerald-400 hover:bg-emerald-500/10 cursor-pointer" 
+                            : "text-slate-600 opacity-40 cursor-not-allowed"
+                        }`}
+                      >
+                        <Redo2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
                     <span className="text-[9px] bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-full font-bold">
                       ACTIVA
                     </span>
@@ -3583,6 +3625,24 @@ export function Sidebar({
                     Imperial (mi, ft)
                   </button>
                 </div>
+              </div>
+
+              {/* Keyboard Shortcuts Section */}
+              <div className="space-y-3 bg-[#0c120f]/60 p-4 rounded-xl border border-[#1b3d2b]/25 shadow-lg">
+                <div className="flex items-center gap-2">
+                  <Compass className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-300 font-sans">Accesos Directos</span>
+                </div>
+                <p className="text-[10px] text-slate-500 leading-normal">
+                  SummitGPS soporta atajos de teclado rápidos para agilizar tu flujo de trabajo en la planificación de rutas.
+                </p>
+                <button
+                  type="button"
+                  onClick={onToggleShortcutsModal}
+                  className="w-full py-2.5 px-4 rounded-xl border border-emerald-500/30 hover:border-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-300 text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg cursor-pointer"
+                >
+                  ⌨️ Mostrar Atajos de Teclado
+                </button>
               </div>
             </div>
           )}

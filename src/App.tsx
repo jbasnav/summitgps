@@ -86,6 +86,12 @@ function AppContent() {
     toggleAreaVisibility,
     applySimplifyTrack,
     cleanTrackArea,
+
+    // Global History additions
+    undo,
+    redo,
+    canUndo,
+    canRedo,
   } = useRoutePlanner(user);
 
   // App settings states
@@ -314,6 +320,7 @@ function AppContent() {
   const [isSplitting, setIsSplitting] = useState<boolean>(false); // Split route mode
   const [isDrawingArea, setIsDrawingArea] = useState<boolean>(false); // Area drawing mode
   const [isEditingRoute, setIsEditingRoute] = useState<boolean>(false); // Advanced Route Edit mode
+  const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState<boolean>(false); // Keyboard shortcuts modal
   const [mapCenter, setMapCenter] = useState<[number, number] | null>([43.1906, -4.8322]);
   const [osmPois, setOsmPois] = useState<any[]>([]);
 
@@ -353,6 +360,110 @@ function AppContent() {
   useEffect(() => {
     setSelectedRange(null);
   }, [activeTrackId]);
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is writing in any input field
+      const activeEl = document.activeElement;
+      if (
+        activeEl &&
+        (activeEl.tagName === "INPUT" ||
+          activeEl.tagName === "TEXTAREA" ||
+          activeEl.hasAttribute("contenteditable"))
+      ) {
+        return;
+      }
+
+      const key = e.key.toLowerCase();
+
+      // Undo / Redo
+      if (e.ctrlKey || e.metaKey) {
+        if (key === "z") {
+          e.preventDefault();
+          undo();
+        } else if (key === "y") {
+          e.preventDefault();
+          redo();
+        }
+        return;
+      }
+
+      // Undo/Redo fallback (some OS handle Shift+Z for Redo)
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && key === "z") {
+        e.preventDefault();
+        redo();
+        return;
+      }
+
+      // Drawing Route Mode toggle
+      if (key === "k" || key === "d") {
+        e.preventDefault();
+        setIsDrawing((prev) => {
+          const next = !prev;
+          if (next) {
+            setIsDrawingArea(false);
+            setIsSplitting(false);
+            setIsEditingRoute(false);
+            setIsCleaningArea(false);
+          }
+          return next;
+        });
+      }
+
+      // Drawing Area Mode toggle
+      if (key === "a") {
+        e.preventDefault();
+        setIsDrawingArea((prev) => {
+          const next = !prev;
+          if (next) {
+            setIsDrawing(false);
+            setIsSplitting(false);
+            setIsEditingRoute(false);
+            setIsCleaningArea(false);
+          }
+          return next;
+        });
+      }
+
+      // Edit Mode toggle
+      if (key === "e") {
+        e.preventDefault();
+        setIsEditingRoute((prev) => {
+          const next = !prev;
+          if (next) {
+            setIsDrawing(false);
+            setIsDrawingArea(false);
+            setIsSplitting(false);
+            setIsCleaningArea(false);
+          }
+          return next;
+        });
+      }
+
+      // Cancel modes / close modal
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setIsDrawing(false);
+        setIsDrawingArea(false);
+        setIsSplitting(false);
+        setIsEditingRoute(false);
+        setIsCleaningArea(false);
+        setIsShortcutsModalOpen(false);
+      }
+
+      // Toggle help cheatsheet modal (either "?" or "Shift + /")
+      if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
+        e.preventDefault();
+        setIsShortcutsModalOpen((prev) => !prev);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [undo, redo, setIsDrawing, setIsDrawingArea, setIsSplitting, setIsEditingRoute, setIsCleaningArea, setIsShortcutsModalOpen]);
 
   // Automatically clear POI selection when new search results load
   useEffect(() => {
@@ -697,6 +808,11 @@ function AppContent() {
         onSetTrackColor={setTrackColor}
         onMergeTracks={mergeTracks}
         onReverseTrack={reverseTrack}
+        onUndo={undo}
+        onRedo={redo}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        onToggleShortcutsModal={useCallback(() => setIsShortcutsModalOpen(prev => !prev), [])}
         onTrimTrack={trimTrack}
         onRoundTripTrack={roundTripTrack}
         applySimplifyTrack={applySimplifyTrack}
@@ -1387,6 +1503,86 @@ function AppContent() {
         tracks={tracksWithCollectionVisibility}
         defaultTitle={activeTrackForPrint?.name || 'Mapa de SummitGPS'}
       />
+
+      {/* Keyboard Shortcuts Modal */}
+      {isShortcutsModalOpen && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/40 backdrop-blur-md transition-all duration-300">
+          <div className="bg-[#0a0e0c]/95 border border-emerald-500/25 rounded-2xl shadow-[0_0_50px_rgba(16,185,129,0.15)] p-6 max-w-lg w-full relative overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            {/* Ambient subtle green glow */}
+            <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-[40px] pointer-events-none" />
+            
+            {/* Header */}
+            <div className="flex items-center gap-3 border-b border-[#1b3d2b]/40 pb-4 mb-4 select-none">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0">
+                <Compass className="w-5 h-5 text-emerald-400 animate-spin-slow" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-100 uppercase tracking-wider">Atajos de Teclado</h3>
+                <p className="text-[10px] text-emerald-500/60 uppercase tracking-widest font-semibold">SummitGPS Hub de Navegación</p>
+              </div>
+              <button 
+                onClick={() => setIsShortcutsModalOpen(false)}
+                className="ml-auto p-1.5 rounded-lg text-slate-400 hover:text-emerald-400 hover:bg-[#131b17] transition-all"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Content list */}
+            <div className="space-y-3.5 my-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {[
+                  { keys: ["Ctrl", "Z"], desc: "Deshacer la última acción (Undo)" },
+                  { keys: ["Ctrl", "Y"], desc: "Rehacer la última acción (Redo)" },
+                  { keys: ["K"], desc: "Alternar dibujar ruta por caminos", alternative: "D" },
+                  { keys: ["A"], desc: "Alternar dibujar área / polígono" },
+                  { keys: ["E"], desc: "Alternar modo edición de ruta" },
+                  { keys: ["Esc"], desc: "Cancelar dibujos o cerrar panel" },
+                  { keys: ["?"], desc: "Mostrar / ocultar menú de atajos" },
+                ].map((shortcut, i) => (
+                  <div key={i} className="flex flex-col gap-1.5 p-3 rounded-xl bg-[#0c120f]/80 border border-[#1b3d2b]/25 hover:border-emerald-500/30 transition-all select-none">
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {shortcut.keys.map((k, ki) => (
+                        <span key={ki} className="flex items-center gap-1">
+                          {ki > 0 && <span className="text-[9px] text-slate-500 font-bold">+</span>}
+                          <kbd className="px-2 py-0.5 min-w-[20px] text-center bg-[#131b17] border border-emerald-500/30 text-emerald-400 rounded-md font-mono text-[10px] font-bold shadow-[0_2px_0_rgba(16,185,129,0.2)]">
+                            {k}
+                          </kbd>
+                        </span>
+                      ))}
+                      {shortcut.alternative && (
+                        <>
+                          <span className="text-[9px] text-slate-500 mx-1 font-bold">o</span>
+                          <kbd className="px-2 py-0.5 min-w-[20px] text-center bg-[#131b17] border border-emerald-500/30 text-emerald-400 rounded-md font-mono text-[10px] font-bold shadow-[0_2px_0_rgba(16,185,129,0.2)]">
+                            {shortcut.alternative}
+                          </kbd>
+                        </>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-slate-400 leading-tight">
+                      {shortcut.desc}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="border-t border-[#1b3d2b]/40 pt-4 flex items-center justify-between">
+              <span className="text-[9px] text-slate-500 select-none">
+                Consejo: Presiona <kbd className="px-1.5 py-0.5 bg-[#131b17] border border-white/5 text-slate-400 rounded font-mono text-[9px]">?</kbd> para ver de nuevo.
+              </span>
+              <button
+                onClick={() => setIsShortcutsModalOpen(false)}
+                className="px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 hover:text-emerald-300 text-xs font-bold rounded-xl transition-all shadow-lg select-none cursor-pointer"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Exclusive loading or login overlay */}
       {authChecking && (
         <div className="absolute inset-0 z-[99999] flex flex-col items-center justify-center bg-[#070a08] select-none text-slate-100 overflow-hidden">

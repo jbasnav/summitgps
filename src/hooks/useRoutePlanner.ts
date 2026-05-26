@@ -107,6 +107,11 @@ export interface Track {
   collectionId?: string;
 }
 
+export interface HistoryState {
+  tracks: Track[];
+  areas: Area[];
+}
+
 const DEFAULT_TRACK_COLORS = ["#10b981", "#3b82f6", "#ef4444", "#f59e0b", "#8b5cf6", "#ec4899"];
 
 export function useRoutePlanner(user: any | null = null) {
@@ -209,6 +214,20 @@ export function useRoutePlanner(user: any | null = null) {
       return [];
     }
   });
+
+  const [undoStack, setUndoStack] = useState<HistoryState[]>([]);
+  const [redoStack, setRedoStack] = useState<HistoryState[]>([]);
+
+  const pushToHistory = useCallback((currentTracks: Track[], currentAreas: Area[]) => {
+    const clonedTracks = JSON.parse(JSON.stringify(currentTracks));
+    const clonedAreas = JSON.parse(JSON.stringify(currentAreas));
+    setUndoStack((prev) => {
+      const next = [...prev, { tracks: clonedTracks, areas: clonedAreas }];
+      if (next.length > 50) next.shift();
+      return next;
+    });
+    setRedoStack([]);
+  }, []);
 
   const [isDrawing, setIsDrawing] = useState(false);
   const [routingProfile, setRoutingProfile] = useState<RoutingProfile>(() => {
@@ -713,6 +732,7 @@ export function useRoutePlanner(user: any | null = null) {
 
   // 5. Track Management Core operations
   const createNewTrack = useCallback((name: string = "Nueva Ruta de Aventura", collectionId: string = "default") => {
+    pushToHistory(tracks, areas);
     const color = DEFAULT_TRACK_COLORS[tracks.length % DEFAULT_TRACK_COLORS.length];
     const newTrack: Track = {
       id: `track-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -741,9 +761,10 @@ export function useRoutePlanner(user: any | null = null) {
     }
 
     return newTrack.id;
-  }, [tracks.length, user]);
+  }, [tracks, areas, user, pushToHistory]);
 
   const setRouteName = useCallback((name: string) => {
+    pushToHistory(tracks, areas);
     setTracks((prev) =>
       prev.map((t) => (t.id === activeTrackId ? { ...t, name } : t))
     );
@@ -753,10 +774,11 @@ export function useRoutePlanner(user: any | null = null) {
         if (error) console.error("Failed to update track name in Supabase:", error);
       });
     }
-  }, [activeTrackId, user]);
+  }, [activeTrackId, user, tracks, areas, pushToHistory]);
 
   const deleteTrack = useCallback((id: string) => {
     if (id === "waypoints-global-track") return;
+    pushToHistory(tracks, areas);
     setTracks((prev) => prev.filter((t) => t.id !== id));
     setActiveTrackId((prevActive) => (prevActive === id ? null : prevActive));
 
@@ -765,10 +787,11 @@ export function useRoutePlanner(user: any | null = null) {
         if (error) console.error("Failed to delete track from Supabase:", error);
       });
     }
-  }, [user]);
+  }, [user, tracks, areas, pushToHistory]);
 
   const deleteMultipleTracks = useCallback((ids: string[]) => {
     const idsToKeep = ids.filter((id) => id !== "waypoints-global-track");
+    pushToHistory(tracks, areas);
     setTracks((prev) => prev.filter((t) => !idsToKeep.includes(t.id)));
     setActiveTrackId((prevActive) => (prevActive && idsToKeep.includes(prevActive) ? null : prevActive));
 
@@ -777,10 +800,11 @@ export function useRoutePlanner(user: any | null = null) {
         if (error) console.error("Failed to delete tracks from Supabase:", error);
       });
     }
-  }, [user]);
+  }, [user, tracks, areas, pushToHistory]);
 
   const toggleTrackVisibility = useCallback((id: string) => {
     let updatedVisible = false;
+    pushToHistory(tracks, areas);
     setTracks((prev) =>
       prev.map((t) => {
         if (t.id === id) {
@@ -799,9 +823,10 @@ export function useRoutePlanner(user: any | null = null) {
         });
       }
     }
-  }, [tracks, user]);
+  }, [tracks, user, areas, pushToHistory]);
 
   const setTrackColor = useCallback((id: string, color: string) => {
+    pushToHistory(tracks, areas);
     setTracks((prev) =>
       prev.map((t) => (t.id === id ? { ...t, color } : t))
     );
@@ -811,7 +836,7 @@ export function useRoutePlanner(user: any | null = null) {
         if (error) console.error("Failed to set track color in Supabase:", error);
       });
     }
-  }, [user]);
+  }, [user, tracks, areas, pushToHistory]);
 
   // 6. Draw/Points operations (Targeting active track)
   const addPoint = useCallback(
@@ -823,6 +848,7 @@ export function useRoutePlanner(user: any | null = null) {
         currentActiveId = createNewTrack();
       }
 
+      pushToHistory(tracks, areas);
       setLoading(true);
       try {
         const currentTrack = tracks.find((t) => t.id === currentActiveId);
@@ -920,7 +946,7 @@ export function useRoutePlanner(user: any | null = null) {
         setLoading(false);
       }
     },
-    [isDrawing, activeTrackId, createNewTrack, tracks, routingProfile, fetchElevations, fetchHikingRoute, user]
+    [isDrawing, activeTrackId, createNewTrack, tracks, areas, routingProfile, fetchElevations, fetchHikingRoute, user, pushToHistory]
   );
 
   const removeLastPoint = useCallback(() => {
@@ -931,6 +957,7 @@ export function useRoutePlanner(user: any | null = null) {
       size = segments[segments.length - 1];
     }
 
+    pushToHistory(tracks, areas);
     setTracks((prev) =>
       prev.map((t) =>
         t.id === activeTrackId ? { ...t, points: t.points.slice(0, -size) } : t
@@ -953,10 +980,11 @@ export function useRoutePlanner(user: any | null = null) {
         });
       }
     }
-  }, [activeTrackId, clickSegments, tracks, user]);
+  }, [activeTrackId, clickSegments, tracks, areas, user, pushToHistory]);
 
   const clearRoute = useCallback(() => {
     if (!activeTrackId) return;
+    pushToHistory(tracks, areas);
     setTracks((prev) =>
       prev.map((t) => (t.id === activeTrackId ? { ...t, points: [] } : t))
     );
@@ -966,7 +994,7 @@ export function useRoutePlanner(user: any | null = null) {
         if (error) console.error("Failed to clear points in Supabase:", error);
       });
     }
-  }, [activeTrackId, user]);
+  }, [activeTrackId, user, tracks, areas, pushToHistory]);
 
   // 7. Waypoints (linked to active track)
   const addWaypoint = useCallback((wpt: Omit<Waypoint, "id">) => {
@@ -982,6 +1010,7 @@ export function useRoutePlanner(user: any | null = null) {
       id: `wpt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     };
 
+    pushToHistory(tracks, areas);
     setTracks((prev) =>
       prev.map((t) =>
         t.id === currentActiveId ? { ...t, waypoints: [...t.waypoints, newWpt] } : t
@@ -1007,7 +1036,7 @@ export function useRoutePlanner(user: any | null = null) {
         if (error) console.error("Failed to insert waypoint into Supabase:", error);
       });
     }
-  }, [activeTrackId, user]);
+  }, [activeTrackId, user, tracks, areas, pushToHistory]);
 
   const addMultipleWaypoints = useCallback((wpts: Omit<Waypoint, "id">[], _trackName?: string) => {
     const currentActiveId = "waypoints-global-track";
@@ -1019,6 +1048,7 @@ export function useRoutePlanner(user: any | null = null) {
       id: `wpt-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 9)}`,
     }));
 
+    pushToHistory(tracks, areas);
     setTracks((prev) =>
       prev.map((t) =>
         t.id === currentActiveId ? { ...t, waypoints: [...t.waypoints, ...newWpts] } : t
@@ -1068,9 +1098,10 @@ export function useRoutePlanner(user: any | null = null) {
       };
       runDbOps();
     }
-  }, [user]);
+  }, [user, tracks, areas, pushToHistory]);
 
   const updateWaypoint = useCallback((id: string, fields: Partial<Waypoint>) => {
+    pushToHistory(tracks, areas);
     setTracks((prev) =>
       prev.map((t) => ({
         ...t,
@@ -1095,9 +1126,10 @@ export function useRoutePlanner(user: any | null = null) {
         if (error) console.error("Failed to update waypoint in Supabase:", error);
       });
     }
-  }, [user]);
+  }, [user, tracks, areas, pushToHistory]);
 
   const removeWaypoint = useCallback((id: string) => {
+    pushToHistory(tracks, areas);
     setTracks((prev) =>
       prev.map((t) => ({
         ...t,
@@ -1110,7 +1142,7 @@ export function useRoutePlanner(user: any | null = null) {
         if (error) console.error("Failed to delete waypoint from Supabase:", error);
       });
     }
-  }, [user]);
+  }, [user, tracks, areas, pushToHistory]);
 
   // 7.2 Waypoint Groups CRUD methods
   const addWaypointGroup = useCallback(async (group: Omit<WaypointGroup, "id"> & { id?: string }) => {
@@ -1346,6 +1378,8 @@ export function useRoutePlanner(user: any | null = null) {
       const selectedTracks = tracks.filter((t) => trackIds.includes(t.id));
       if (selectedTracks.length < 2) return;
 
+      pushToHistory(tracks, areas);
+
       let finalPoints: RoutePoint[] = [];
       let finalWaypoints: Waypoint[] = [];
       let cumulativeDist = 0;
@@ -1428,7 +1462,7 @@ export function useRoutePlanner(user: any | null = null) {
         }
       }
     },
-    [tracks, user]
+    [tracks, areas, user, pushToHistory]
   );
 
   // 10. ADVANCED: Split Active Track at Point Index
@@ -1437,6 +1471,8 @@ export function useRoutePlanner(user: any | null = null) {
       const targetTrack = tracks.find((t) => t.id === trackId);
       if (!targetTrack || targetTrack.points.length < 3) return;
       if (pointIndex <= 0 || pointIndex >= targetTrack.points.length - 1) return;
+
+      pushToHistory(tracks, areas);
 
       const pointsPart1 = targetTrack.points.slice(0, pointIndex + 1);
       const rawPointsPart2 = targetTrack.points.slice(pointIndex);
@@ -1576,7 +1612,7 @@ export function useRoutePlanner(user: any | null = null) {
         }
       }
     },
-    [tracks, user]
+    [tracks, areas, user, pushToHistory]
   );
 
   // 9. Route Collections CRUD methods
@@ -1745,6 +1781,7 @@ export function useRoutePlanner(user: any | null = null) {
 
   // 13. ADVANCED: Reverse Active Track (Invertir inicio/fin)
   const reverseTrack = useCallback((trackId: string) => {
+    pushToHistory(tracks, areas);
     setTracks((prev) =>
       prev.map((t) => {
         if (t.id === trackId) {
@@ -1785,10 +1822,11 @@ export function useRoutePlanner(user: any | null = null) {
         return t;
       })
     );
-  }, [clickSegments, user]);
+  }, [clickSegments, user, tracks, areas, pushToHistory]);
 
   // 14. ADVANCED GEOMETRY: Trim, Round-Trip, Drag Anchor and Insert Points
   const trimTrack = useCallback((trackId: string, startIndex: number, endIndex: number) => {
+    pushToHistory(tracks, areas);
     setTracks((prev) =>
       prev.map((t) => {
         if (t.id === trackId) {
@@ -1826,9 +1864,10 @@ export function useRoutePlanner(user: any | null = null) {
         return t;
       })
     );
-  }, [user]);
+  }, [user, tracks, areas, pushToHistory]);
 
   const roundTripTrack = useCallback((trackId: string) => {
+    pushToHistory(tracks, areas);
     setTracks((prev) =>
       prev.map((t) => {
         if (t.id === trackId && t.points.length > 1) {
@@ -1868,9 +1907,10 @@ export function useRoutePlanner(user: any | null = null) {
         return t;
       })
     );
-  }, [user]);
+  }, [user, tracks, areas, pushToHistory]);
 
   const updateRoutePoint = useCallback(async (trackId: string, index: number, lat: number, lng: number) => {
+    pushToHistory(tracks, areas);
     setLoading(true);
     try {
       const [elev] = await fetchElevations([[lat, lng]]);
@@ -1917,9 +1957,10 @@ export function useRoutePlanner(user: any | null = null) {
     } finally {
       setLoading(false);
     }
-  }, [fetchElevations, user]);
+  }, [fetchElevations, user, tracks, areas, pushToHistory]);
 
   const insertIntermediatePoint = useCallback(async (trackId: string, lat: number, lng: number) => {
+    pushToHistory(tracks, areas);
     setLoading(true);
     try {
       const [elev] = await fetchElevations([[lat, lng]]);
@@ -1997,9 +2038,10 @@ export function useRoutePlanner(user: any | null = null) {
     } finally {
       setLoading(false);
     }
-  }, [fetchElevations, user]);
+  }, [fetchElevations, user, tracks, areas, pushToHistory]);
 
   const applySimplifyTrack = useCallback((trackId: string, tolerance: number) => {
+    pushToHistory(tracks, areas);
     setTracks((prev) =>
       prev.map((t) => {
         if (t.id === trackId) {
@@ -2026,9 +2068,10 @@ export function useRoutePlanner(user: any | null = null) {
         return t;
       })
     );
-  }, [user]);
+  }, [user, tracks, areas, pushToHistory]);
 
   const cleanTrackArea = useCallback((trackId: string, bounds: { north: number, south: number, east: number, west: number }, keepInside: boolean) => {
+    pushToHistory(tracks, areas);
     setTracks((prev) =>
       prev.map((t) => {
         if (t.id === trackId) {
@@ -2064,10 +2107,11 @@ export function useRoutePlanner(user: any | null = null) {
         return t;
       })
     );
-  }, [user]);
+  }, [user, tracks, areas, pushToHistory]);
 
   // Area CRUD
   const addArea = useCallback((area: Omit<Area, "id">) => {
+    pushToHistory(tracks, areas);
     const newArea: Area = {
       ...area,
       id: `area-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
@@ -2092,9 +2136,10 @@ export function useRoutePlanner(user: any | null = null) {
       });
     }
     return newArea.id;
-  }, [user]);
+  }, [user, tracks, areas, pushToHistory]);
 
   const updateArea = useCallback((id: string, fields: Partial<Area>) => {
+    pushToHistory(tracks, areas);
     setAreas((prev) =>
       prev.map((a) => (a.id === id ? { ...a, ...fields } : a))
     );
@@ -2115,9 +2160,10 @@ export function useRoutePlanner(user: any | null = null) {
         }
       });
     }
-  }, [user]);
+  }, [user, tracks, areas, pushToHistory]);
 
   const deleteArea = useCallback((id: string) => {
+    pushToHistory(tracks, areas);
     setAreas((prev) => prev.filter((a) => a.id !== id));
 
     if (user && isSupabaseConfigured) {
@@ -2127,9 +2173,10 @@ export function useRoutePlanner(user: any | null = null) {
         }
       });
     }
-  }, [user]);
+  }, [user, tracks, areas, pushToHistory]);
 
   const toggleAreaVisibility = useCallback((id: string) => {
+    pushToHistory(tracks, areas);
     setAreas((prev) =>
       prev.map((a) => {
         if (a.id === id) {
@@ -2144,7 +2191,149 @@ export function useRoutePlanner(user: any | null = null) {
         return a;
       })
     );
-  }, [user]);
+  }, [user, tracks, areas, pushToHistory]);
+
+  const syncChangedTracksToSupabase = useCallback((nextTracks: Track[]) => {
+    if (!user || !isSupabaseConfigured) return;
+
+    nextTracks.forEach((nextTrack) => {
+      const currentTrack = tracks.find(t => t.id === nextTrack.id);
+      if (!currentTrack || JSON.stringify(currentTrack) !== JSON.stringify(nextTrack)) {
+        supabase.from("tracks").upsert({
+          id: nextTrack.id,
+          user_id: user.id,
+          name: nextTrack.name,
+          points: nextTrack.points,
+          visible: nextTrack.visible,
+          color: nextTrack.color,
+          collection_id: nextTrack.collectionId || "default"
+        }).then(({ error }) => {
+          if (error) console.error("Failed to sync track on undo/redo to Supabase:", error);
+        });
+
+        if (!currentTrack || JSON.stringify(currentTrack.waypoints) !== JSON.stringify(nextTrack.waypoints)) {
+          supabase.from("waypoints").delete().eq("track_id", nextTrack.id).then(() => {
+            if (nextTrack.waypoints.length > 0) {
+              const dbWaypoints = nextTrack.waypoints.map(w => ({
+                id: w.id,
+                user_id: user.id,
+                track_id: nextTrack.id,
+                name: w.name,
+                lat: w.lat,
+                lng: w.lng,
+                icon: w.icon,
+                note: w.note,
+                color: w.color,
+                group_id: w.groupId || "default",
+                completed: w.completed || false,
+                image: w.image || null,
+                link: w.link || null
+              }));
+              supabase.from("waypoints").insert(dbWaypoints).then(({ error }) => {
+                if (error) console.error("Failed to sync waypoints on undo/redo to Supabase:", error);
+              });
+            }
+          });
+        }
+      }
+    });
+
+    tracks.forEach((currTrack) => {
+      if (!nextTracks.some(t => t.id === currTrack.id)) {
+        supabase.from("tracks").delete().eq("id", currTrack.id).then(({ error }) => {
+          if (error) console.error("Failed to delete track on undo/redo in Supabase:", error);
+        });
+      }
+    });
+  }, [user, tracks]);
+
+  const undo = useCallback(() => {
+    if (undoStack.length === 0) return;
+    
+    const previous = undoStack[undoStack.length - 1];
+    
+    const currentClonedTracks = JSON.parse(JSON.stringify(tracks));
+    const currentClonedAreas = JSON.parse(JSON.stringify(areas));
+    setRedoStack((prev) => [...prev, { tracks: currentClonedTracks, areas: currentClonedAreas }]);
+
+    setTracks(previous.tracks);
+    setAreas(previous.areas);
+
+    setUndoStack((prev) => prev.slice(0, -1));
+
+    if (user && isSupabaseConfigured) {
+      syncChangedTracksToSupabase(previous.tracks);
+      previous.areas.forEach(nextArea => {
+        const currArea = areas.find(a => a.id === nextArea.id);
+        if (!currArea || JSON.stringify(currArea) !== JSON.stringify(nextArea)) {
+          supabase.from("areas").upsert({
+            id: nextArea.id,
+            user_id: user.id,
+            name: nextArea.name,
+            points: nextArea.points,
+            color: nextArea.color,
+            visible: nextArea.visible,
+            area_m2: nextArea.areaM2,
+            perimeter_m: nextArea.perimeterM,
+            collection_id: nextArea.collectionId || "default"
+          }).then(({ error }) => {
+            if (error) console.warn("Failed to sync area on undo/redo to Supabase:", error);
+          });
+        }
+      });
+      areas.forEach(currArea => {
+        if (!previous.areas.some(a => a.id === currArea.id)) {
+          supabase.from("areas").delete().eq("id", currArea.id).then(({ error }) => {
+            if (error) console.warn("Failed to delete area on undo/redo to Supabase:", error);
+          });
+        }
+      });
+    }
+  }, [undoStack, tracks, areas, user, syncChangedTracksToSupabase]);
+
+  const redo = useCallback(() => {
+    if (redoStack.length === 0) return;
+
+    const next = redoStack[redoStack.length - 1];
+
+    const currentClonedTracks = JSON.parse(JSON.stringify(tracks));
+    const currentClonedAreas = JSON.parse(JSON.stringify(areas));
+    setUndoStack((prev) => [...prev, { tracks: currentClonedTracks, areas: currentClonedAreas }]);
+
+    setTracks(next.tracks);
+    setAreas(next.areas);
+
+    setRedoStack((prev) => prev.slice(0, -1));
+
+    if (user && isSupabaseConfigured) {
+      syncChangedTracksToSupabase(next.tracks);
+      next.areas.forEach(nextArea => {
+        const currArea = areas.find(a => a.id === nextArea.id);
+        if (!currArea || JSON.stringify(currArea) !== JSON.stringify(nextArea)) {
+          supabase.from("areas").upsert({
+            id: nextArea.id,
+            user_id: user.id,
+            name: nextArea.name,
+            points: nextArea.points,
+            color: nextArea.color,
+            visible: nextArea.visible,
+            area_m2: nextArea.areaM2,
+            perimeter_m: nextArea.perimeterM,
+            collection_id: nextArea.collectionId || "default"
+          }).then(({ error }) => {
+            if (error) console.warn("Failed to sync area on undo/redo to Supabase:", error);
+          });
+        }
+      });
+      areas.forEach(currArea => {
+        if (!next.areas.some(a => a.id === currArea.id)) {
+          supabase.from("areas").delete().eq("id", currArea.id).then(({ error }) => {
+            if (error) console.warn("Failed to delete area on undo/redo to Supabase:", error);
+          });
+        }
+      });
+    }
+  }, [redoStack, tracks, areas, user, syncChangedTracksToSupabase]);
 
   return {
     routeName: activeRouteName,
@@ -2215,5 +2404,11 @@ export function useRoutePlanner(user: any | null = null) {
     updateArea,
     deleteArea,
     toggleAreaVisibility,
+
+    // Global History History additions
+    undo,
+    redo,
+    canUndo: undoStack.length > 0,
+    canRedo: redoStack.length > 0,
   };
 }
