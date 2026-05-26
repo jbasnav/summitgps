@@ -1,6 +1,11 @@
-# 🗺️ SummitGPS — Roadmap de Características (Gaia GPS Reference)
+# 🗺️ SummitGPS — Roadmap de Características
 
-Este documento rastrea la paridad de características entre **SummitGPS** y **Gaia GPS (gaiagps.com)**.
+Este documento organiza y rastrea la paridad de características entre **SummitGPS** y los dos grandes referentes del sector:
+1. **Gaia GPS**: Enfocado en la navegación en el terreno, capas cartográficas avanzadas, waypoints offline y gestión de carpetas de campo.
+2. **gpx.studio**: Enfocado en la edición precisa, manipulación de archivos GPX, limpieza de tracks, visualización de datos temporales y soporte multiformato.
+
+Las características se dividen en **Propiedades Comunes (Core)**, **Específicas de Gaia GPS** y **Específicas de gpx.studio**.
+
 Marcar con `[x]` cuando la característica esté completamente implementada.
 
 ---
@@ -9,105 +14,207 @@ Marcar con `[x]` cuando la característica esté completamente implementada.
 
 ### 🧭 Planificación y Rutas
 
+#### 📌 Propiedades Comunes (Core)
 - [x] Dibujo de rutas punto a punto en el mapa
 - [x] Snap-to-trail (ajustar a sendero) con Brouter/OSRM
 - [x] Selector de Modos de Enrutamiento (Senderismo, Ciclismo, Vehículo, Línea Recta)
 - [x] Deshacer último punto de la ruta
 - [x] Borrar ruta completa
+- [x] Invertir dirección de la ruta (Reverse Track)
+
+#### ⛰️ Inspiradas en Gaia GPS (Navegación y Terreno)
+- [x] Dibujo y Medición de Áreas / Polígonos (área en ha, perímetro en km)
+- [ ] Proyección de Waypoints (crear WPT a distancia + rumbo desde otro punto)
+
+#### 💻 Inspiradas en gpx.studio (Edición y Geometría)
 - [x] Dividir ruta en dos (Split Track)
 - [x] Fusionar múltiples rutas (Merge Tracks)
 - [ ] Recortar inicio/fin de ruta (Trim/Crop Track)
-- [ ] Invertir dirección de la ruta (Reverse Track)
-- [ ] Dibujo y Medición de Áreas / Polígonos (área en ha, perímetro en km)
-- [ ] Proyección de Waypoints (crear WPT a distancia + rumbo desde otro punto)
+- [ ] Volver al inicio / Ida y Vuelta (Back to Start / Round Trip)
+- [ ] Arrastrar puntos de anclaje para reajustar segmentos
+- [ ] Insertar puntos intermedios entre puntos existentes
+
+---
+
+### ✂️ Herramientas de Limpieza y Procesado
+*(Herramientas de edición fina típicamente asociadas a gpx.studio)*
+
+#### 💻 Inspiradas en gpx.studio (Edición y Limpieza)
+- [ ] Reducción de puntos GPS (Minify/Simplify) manteniendo la forma del track
+- [ ] Selección por rectángulo para eliminar puntos dentro/fuera de un área (Clean tool)
+- [ ] Eliminar puntos duplicados / outliers (picos GPS erráticos)
+- [ ] Suavizado de trazado GPS (smooth track)
+
+---
 
 ### 📍 Waypoints y Marcadores
 
+#### 📌 Propiedades Comunes (Core)
 - [x] Crear waypoints con clic derecho en mapa
-- [x] Editar nombre, icono, nota, color de waypoints
-- [x] Fotos y enlaces en waypoints (con Supabase Storage)
+- [x] Editar nombre, icono, nota y color de los waypoints
+- [ ] Biblioteca de iconos ampliada (+100 iconos outdoor y deportivos)
+
+#### ⛰️ Inspiradas en Gaia GPS (Trabajo de Campo)
+- [x] Asignar fotos y enlaces web a waypoints (con Supabase Storage)
 - [x] Grupos/Retos de waypoints con imagen de portada
-- [x] Marcar waypoints como completados (challenges)
+- [x] Marcar waypoints como completados (challenges en mapa)
 - [x] Crear waypoint por coordenadas directas en el buscador (DD, UTM, MGRS, DMS)
-- [ ] Biblioteca de iconos ampliada (+100 iconos outdoor/deportivos)
-- [ ] Waypoints con altitud automática pre-rellenada
+- [ ] Waypoints con altitud automática pre-rellenada al crearse
+
+#### 💻 Inspiradas en gpx.studio (Interactividad en GPX)
+- [ ] Mover waypoints existentes arrastrándolos directamente en el mapa
+- [ ] Iconos personalizados para waypoints (soporte para subida de custom SVG)
+
+---
 
 ### 🗂️ Biblioteca y Organización
 
+#### 📌 Propiedades Comunes (Core)
 - [x] Biblioteca de rutas multi-track
-- [x] Visibilidad individual por track (ojo)
-- [x] Cambiar color de track
+- [x] Visibilidad individual por track (ojo toggle)
+- [x] Cambiar color individual de cada track
+- [x] Buscador interno de elementos guardados (tracks/waypoints)
+
+#### ⛰️ Inspiradas en Gaia GPS (Gestión de Campo)
 - [x] Grupos/Carpetas de waypoints
-- [ ] Carpetas unificadas (contienen Tracks + Waypoints + Áreas)
-- [ ] Buscador interno de elementos guardados (tracks/waypoints)
-- [ ] Exportación en lote de toda una carpeta a GPX
+- [x] Carpetas unificadas (contienen simultáneamente Tracks + Waypoints + Áreas)
+
+#### 💻 Inspiradas en gpx.studio (Edición Multitarea)
+- [ ] Exportación en lote de toda una carpeta o grupo a un único archivo GPX
+
+---
 
 ### 🗺️ Capas y Mapas
 
+#### 📌 Propiedades Comunes (Core)
 - [x] Selector de capas base (OSM, Satélite, Topo España, etc.)
-- [x] Cuadrículas de coordenadas (UTM, MGRS, Lat/Lng, DMS)
-- [x] Etiquetas de cuadrícula con texto legible
-- [x] Contornos de elevación (overlay)
-- [x] Opacidad de overlay configurable
-- [ ] Capas de usuario personalizadas (servidores XYZ/WMS)
-- [ ] Capa de Sombreado de Pendientes (Slope Angle Shading)
-- [ ] Radar de lluvia en vivo superpuesto
-- [ ] Capa de tierras públicas / cotos
+- [ ] Capas de usuario personalizadas (soporte para servidores XYZ/WMS del usuario)
+
+#### ⛰️ Inspiradas en Gaia GPS (Información Cartográfica Avanzada)
+- [x] Cuadrículas de coordenadas superpuestas (UTM, MGRS, Lat/Lng, DMS)
+- [x] Etiquetas de cuadrícula flotantes con texto legible y dinámico
+- [x] Contornos de elevación e isolíneas (overlay topográfico)
+- [x] Opacidad de overlay topográfico configurable por slider
+- [ ] Capa de Sombreado de Pendientes (Slope Angle Shading para avalanchas)
+- [ ] Capa de tierras públicas / cotos forestales
+
+#### 💻 Inspiradas en gpx.studio (Contexto Virtual)
+- [ ] Radar de lluvia en vivo superpuesto en tiempo real
+- [ ] Vista a pie de calle: integración con Mapillary (imágenes libres)
+- [ ] Vista a pie de calle: integración con Google Street View
+
+---
 
 ### 📊 Estadísticas y Análisis
 
-- [x] Perfil de elevación interactivo sincronizado con el mapa
+#### 📌 Propiedades Comunes (Core)
+- [x] Perfil de elevación interactivo sincronizado con cursor en mapa
 - [x] Distancia total, ascenso y descenso acumulados
-- [x] Panel de estadísticas del track activo
-- [ ] Tabla de Splits (ritmo y desnivel por km)
-- [ ] Tiempo estimado de recorrido según perfil de actividad
+- [x] Panel de estadísticas flotante del track activo
+
+#### ⛰️ Inspiradas en Gaia GPS (Rendimiento de Ruta)
+- [ ] Tiempo estimado de recorrido según perfil de actividad (fórmula de Naismith/tobler)
+
+#### 💻 Inspiradas en gpx.studio (Análisis Geométrico)
+- [ ] Tabla de Splits detallada (ritmo, velocidad y desnivel por kilómetro)
+- [ ] Colorear track en el mapa según variables (velocidad, pendiente, elevación, etc.)
+- [ ] Selección de un segmento específico arrastrando sobre el perfil de elevación
+- [ ] Estadísticas detalladas de tipo de superficie (asfalto, tierra, grava, etc.)
+
+---
 
 ### 🌤️ Información del Terreno
 
-- [x] Información meteorológica al hacer clic en el mapa (actual + noche + 7 días)
-- [x] Elevación del punto clickado
-- [x] Geocodificación inversa (dirección del punto)
-- [x] Amanecer y atardecer
-- [ ] Datos de nieve / avalanchas (integración con servicios especializados)
+#### 📌 Propiedades Comunes (Core)
+- [x] Información meteorológica al hacer clic en el mapa (actual + noche + pronóstico 7 días)
+- [x] Consulta de elevación del punto clickado en mapa
+- [x] Geocodificación inversa (obtener dirección postal/lugar del punto)
+- [x] Hora exacta de amanecer y atardecer del punto seleccionado
+
+#### ⛰️ Inspiradas en Gaia GPS (Seguridad de Montaña)
+- [ ] Datos de nieve / peligro de avalanchas (integración con boletines especializados)
+
+#### 💻 Inspiradas en gpx.studio (Corrección de GPX)
+- [ ] Solicitar datos de elevación desde MapTiler/servidor para tracks importados sin elevación
+
+---
 
 ### 📥 Importación y Exportación
 
-- [x] Importar archivos GPX
-- [x] Importar archivos JSON personalizados
-- [x] Exportar a GPX
-- [ ] Importar KML / KMZ (Google Earth)
+#### 📌 Propiedades Comunes (Core)
+- [x] Importar archivos GPX locales
+- [x] Exportar tracks y rutas a GPX estándar
+- [ ] Importar archivos KML / KMZ (Google Earth)
+- [ ] Exportar tracks y puntos a KML
+
+#### 💻 Inspiradas en gpx.studio (Compatibilidad de Formatos)
+- [x] Importar archivos JSON de SummitGPS
 - [ ] Importar GeoJSON
-- [ ] Exportar a KML
+- [ ] Importar FIT (Garmin) para análisis de entrenamiento
 - [ ] Exportar a GeoJSON
+- [ ] Exportar seleccionando campos específicos (conservar/eliminar tiempo, HR, cadencia, etc.)
+- [ ] Exportar y guardar directamente a la nube (Google Drive, Dropbox)
+- [ ] Arrastrar y soltar archivos (drag & drop) directamente en el mapa para importar
+
+---
 
 ### 🖨️ Impresión
+*(Herramientas dedicadas de impresión cartográfica)*
 
-- [ ] Herramienta de Impresión de Mapa con escala cartográfica
-- [ ] Caja de selección interactiva del área a imprimir
-- [ ] Configuración de papel (A4/Carta) y orientación
-- [ ] Estilo CSS limpio para `@media print`
+#### 📌 Propiedades Comunes (Core)
+- [x] Herramienta de Impresión de Mapa con escala cartográfica precisa
+- [x] Caja de selección interactiva (rectángulo de encuadre) en el mapa del área a imprimir
+- [x] Configuración de papel (A4/Carta) y orientación (Horizontal/Vertical)
+- [x] Estilo CSS limpio y optimizado para `@media print` (escondiendo UI innecesaria)
+
+---
 
 ### 🔍 Búsqueda
 
+#### 📌 Propiedades Comunes (Core)
 - [x] Buscador de lugares por nombre (Nominatim)
 - [x] Búsqueda por coordenadas directas (DD, UTM, MGRS, DMS)
-- [ ] Búsqueda y exploración de tracks públicos de la comunidad
+
+#### ⛰️ Inspiradas en Gaia GPS (Comunidad)
+- [ ] Búsqueda y exploración de tracks públicos y rutas compartidas por la comunidad
+
+---
 
 ### 🔐 Cuenta y Sincronización
 
-- [x] Pantalla de Login / Auth con Supabase
-- [x] Sincronización en la nube de tracks, waypoints y grupos
-- [x] Modo invitado con LocalStorage
-- [ ] Perfil de usuario con avatar y preferencias
+#### 📌 Propiedades Comunes (Core)
+- [x] Pantalla de Login / Autenticación con Supabase (Email/Google)
+- [x] Sincronización en la nube en tiempo real de tracks, waypoints y grupos
+- [x] Modo invitado offline con persistencia en LocalStorage
+
+#### ⛰️ Inspiradas en Gaia GPS (Comunidad)
+- [ ] Perfil de usuario público/privado con avatar y preferencias de actividad
+
+---
 
 ### 🎨 Interfaz y UX
 
-- [x] Sidebar colapsable con diseño premium
-- [x] Tema oscuro profesional
-- [x] Animaciones y micro-interacciones
-- [x] Diseño responsive
-- [ ] Atajos de teclado (K para dibujar, Escape para cancelar, etc.)
-- [ ] Tutorial interactivo / onboarding para nuevos usuarios
+#### 📌 Propiedades Comunes (Core)
+- [x] Sidebar colapsable con diseño premium de baja densidad de luz
+- [x] Tema oscuro profesional outdoor-focused
+- [x] Animaciones fluidas y micro-interacciones en UI
+- [x] Diseño responsivo (adaptado a tablets y móviles)
+- [ ] Atajos de teclado rápidos (K para dibujar, Escape para cancelar, etc.)
+- [ ] Tutorial interactivo guiado / onboarding de inicio rápido para nuevos usuarios
+
+#### 💻 Inspiradas en gpx.studio (Edición Avanzada)
+- [ ] Soporte para múltiples archivos/rutas abiertas simultáneamente, diferenciadas por colores
+- [ ] Sistema global de Deshacer / Rehacer (Ctrl+Z / Ctrl+Y) para todas las operaciones en mapa
+
+---
+
+### ⏱️ Datos Temporales y Actividad
+*(Campos típicos de tracks grabados con GPS/gpx.studio)*
+
+#### 💻 Inspiradas en gpx.studio (Edición Temporal)
+- [ ] Editar y ajustar marcas de tiempo (timestamps) de un GPX (añadir velocidad virtual, desfasar hora)
+- [ ] Cálculo dinámico de velocidad y ritmo por segmento de track
+- [ ] Lectura y renderizado de sensores: frecuencia cardíaca (HR), cadencia, potencia y temperatura
 
 ---
 
@@ -115,7 +222,15 @@ Marcar con `[x]` cuando la característica esté completamente implementada.
 
 1. **✅ Fase 1:** ~~Selector de Modos de Enrutamiento (Hike/Cycle/Drive/Straight)~~ — COMPLETADA
 2. **✅ Fase 1b:** ~~Búsqueda por Coordenadas en Buscador~~ — COMPLETADA
-3. **🖨️ Fase 2:** Herramienta de Impresión Cartográfica
-4. **📐 Fase 3:** Dibujo y Medición de Áreas (Polígonos)
-5. **📁 Fase 4:** Carpetas Unificadas y Buscador de Biblioteca
-6. **📥 Fase 5:** Soporte KML/GeoJSON
+3. **✅ Fase 2:** ~~Inversión de Ruta y Dibujo de Áreas (Polígonos)~~ — COMPLETADA
+4. **✅ Fase 3:** ~~Herramienta de Impresión Cartográfica~~ — COMPLETADA
+5. **✅ Fase 4:** ~~Carpetas Unificadas y Buscador de Biblioteca~~ — COMPLETADA
+6. **📍 Fase 5 (Actual):** Waypoints Interactivos y Marcadores Avanzados
+   * Drag-and-drop de marcas en el mapa con persistencia
+   * Altitud automática desde API Open-Meteo al crear waypoint
+   * Catálogo extendido de iconos de outdoor
+7. **📥 Fase 6:** Soporte KML/GeoJSON/FIT
+8. **✂️ Fase 7:** Herramientas de Limpieza (Trim, Simplify, Clean Rectangle)
+9. **📊 Fase 8:** Estadísticas Avanzadas (Splits, coloreado por variable, superficie)
+10. **🗺️ Fase 9:** Street View (Mapillary/Google) e Imágenes a Pie de Calle
+11. **⌨️ Fase 10:** Atajos de Teclado y Undo/Redo Global

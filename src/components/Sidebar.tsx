@@ -31,11 +31,15 @@ import {
   X,
   Settings,
   Folder,
+  ArrowLeftRight,
+  Hexagon,
+  Palette,
 } from "lucide-react";
 import { LayerSelector, type BaseLayerId } from "./LayerSelector";
 import { StatsPanel } from "./StatsPanel";
 import { parseGPX, exportToGPX } from "../utils/gpxExporter";
-import { LANDSCAPE_IMAGES, type Track, type RouteCollection, type RoutingProfile } from "../hooks/useRoutePlanner";
+import { LANDSCAPE_IMAGES, type Track, type RouteCollection, type RoutingProfile, type Area } from "../hooks/useRoutePlanner";
+import { formatArea, calculatePolygonPerimeter } from "../utils/geoUtils";
 import { useCustomDialog } from "./CustomDialog";
 
 
@@ -69,7 +73,7 @@ interface SidebarProps {
   onUpdateWaypoint?: (id: string, fields: any) => void;
   
   // Multi-track additions
-  onCreateNewTrack: (name?: string) => string;
+  onCreateNewTrack: (name?: string, collectionId?: string) => string;
   onDeleteTrack: (id: string) => void;
   onDeleteMultipleTracks?: (ids: string[]) => void;
   onToggleTrackVisibility: (id: string) => void;
@@ -134,9 +138,18 @@ interface SidebarProps {
   onSetSelectedPoiIds: React.Dispatch<React.SetStateAction<string[]>>;
   isCollapsed: boolean;
   setIsCollapsed: (collapsed: boolean) => void;
+
+  // Area Drawing and Measurement props
+  isDrawingArea: boolean;
+  setIsDrawingArea: (drawing: boolean) => void;
+  areas: Area[];
+  onUpdateArea: (id: string, fields: Partial<Area>) => void;
+  onDeleteArea: (id: string) => void;
+  onToggleAreaVisibility: (id: string) => void;
+  onReverseTrack: (trackId: string) => void;
 }
 
-type TabId = "search" | "layers" | "route" | "waypoints";
+type TabId = "search" | "layers" | "route" | "waypoints" | "settings";
 
 const WPT_ICONS: Record<string, any> = {
   mountain: MapPin,
@@ -161,8 +174,6 @@ export function Sidebar({
   setIsDrawing,
   isSplitting,
   setIsSplitting,
-  snapToTrail,
-  setSnapToTrail,
   routingProfile,
   setRoutingProfile,
   distance,
@@ -225,6 +236,13 @@ export function Sidebar({
   onToggleGridLabels,
   isCollapsed,
   setIsCollapsed,
+  isDrawingArea,
+  setIsDrawingArea,
+  areas,
+  onUpdateArea,
+  onDeleteArea,
+  onToggleAreaVisibility,
+  onReverseTrack,
 }: SidebarProps) {
   const { customAlert, customConfirm, customPrompt } = useCustomDialog();
   const [activeTab, setActiveTab] = useState<TabId>("route");
@@ -252,6 +270,9 @@ export function Sidebar({
   const [newCollectionDesc, setNewCollectionDesc] = useState("");
   const [newCollectionColor, setNewCollectionColor] = useState("#10b981");
   const [newCollectionImage, setNewCollectionImage] = useState("https://images.unsplash.com/photo-1486873249359-2731bd6dafc7?auto=format&fit=crop&w=400&q=80");
+
+  // Library Search state
+  const [librarySearchQuery, setLibrarySearchQuery] = useState("");
 
   // OpenStreetMap POI Downloader states
   const [osmCategory, setOsmCategory] = useState("peak");
@@ -598,10 +619,7 @@ export function Sidebar({
     e.target.value = "";
   };
   
-  // Search state
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
+
 
   // GPX Import
   const handleGpxUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -695,34 +713,7 @@ export function Sidebar({
     }
   };
 
-  // Geocoding Search
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!searchQuery.trim()) return;
 
-    setSearchLoading(true);
-    setSearchResults([]);
-    try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-          searchQuery
-        )}&limit=5`
-      );
-      if (!response.ok) throw new Error("Search service error");
-      const data = await response.json();
-      setSearchResults(data);
-    } catch (err) {
-      console.error("Geocoding failed:", err);
-    } finally {
-      setSearchLoading(false);
-    }
-  };
-
-  const selectSearchResult = (result: any) => {
-    const lat = parseFloat(result.lat);
-    const lon = parseFloat(result.lon);
-    onFlyToCoords(lat, lon);
-  };
 
   return (
     <div
@@ -1121,231 +1112,474 @@ export function Sidebar({
                   </div>
                 )}
 
+                {/* BUSCADOR DE BIBLIOTECA */}
+                <div className="relative flex items-center mb-4 bg-[#0a0f0d]/80 border border-[#1b3d2b]/40 rounded-xl overflow-hidden focus-within:border-emerald-500/50 transition-all px-3 py-2 gap-2">
+                  <Search className="w-3.5 h-3.5 text-emerald-500/80" />
+                  <input
+                    type="text"
+                    value={librarySearchQuery}
+                    onChange={(e) => setLibrarySearchQuery(e.target.value)}
+                    placeholder="Buscar rutas, marcas o áreas..."
+                    className="bg-transparent text-xs text-slate-100 placeholder-slate-600 focus:outline-none w-full font-medium"
+                  />
+                  {librarySearchQuery && (
+                    <button 
+                      type="button" 
+                      onClick={() => setLibrarySearchQuery("")} 
+                      className="text-slate-500 hover:text-slate-300 transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
                 {/* ACCORDION COLLECTIONS LIST */}
                 <div className="space-y-3.5">
-                  {routeCollections.map((collection) => {
-                    const isExpanded = expandedCollectionId === collection.id;
-                    
-                    // Filter tracks belonging to this collection
-                    const collectionTracks = displayTracks.filter((t) => {
-                      if (collection.id === "default") {
-                        return !t.collectionId || t.collectionId === "default";
-                      }
-                      return t.collectionId === collection.id;
-                    });
+                  {routeCollections
+                    .filter((collection) => {
+                      if (!librarySearchQuery.trim()) return true;
+                      
+                      const q = librarySearchQuery.toLowerCase();
+                      const nameMatch = collection.name.toLowerCase().includes(q) || (collection.description && collection.description.toLowerCase().includes(q));
+                      if (nameMatch) return true;
 
-                    const totalCount = collectionTracks.length;
-                    
-                    // Calculate total distance of tracks in this collection
-                    const totalDistance = collectionTracks.reduce((acc, t) => {
-                      if (t.points.length === 0) return acc;
-                      return acc + t.points[t.points.length - 1].distance;
-                    }, 0);
+                      // Check if any element inside matches
+                      const hasTrack = displayTracks.some(t => 
+                        (collection.id === "default" ? (!t.collectionId || t.collectionId === "default") : t.collectionId === collection.id) &&
+                        t.name.toLowerCase().includes(q)
+                      );
+                      if (hasTrack) return true;
 
-                    return (
-                      <div
-                        key={collection.id}
-                        className="relative border border-[#1b3d2b]/40 rounded-xl overflow-hidden bg-[#1c2921]/45 hover:bg-[#1c2921]/55 transition-all duration-300 shadow-md"
-                      >
-                        {/* Accordion Header */}
+                      const hasWpt = waypoints.some(w => 
+                        (collection.id === "default" ? (!w.groupId || w.groupId === "default") : w.groupId === collection.id) &&
+                        (w.name.toLowerCase().includes(q) || (w.note && w.note.toLowerCase().includes(q)))
+                      );
+                      if (hasWpt) return true;
+
+                      const hasArea = areas.some(a => 
+                        (collection.id === "default" ? (!a.collectionId || a.collectionId === "default") : a.collectionId === collection.id) &&
+                        a.name.toLowerCase().includes(q)
+                      );
+                      if (hasArea) return true;
+
+                      return false;
+                    })
+                    .map((collection) => {
+                      // Filter tracks belonging to this collection
+                      const collectionTracks = displayTracks.filter((t) => {
+                        if (collection.id === "default") {
+                          return !t.collectionId || t.collectionId === "default";
+                        }
+                        return t.collectionId === collection.id;
+                      });
+
+                      // Filter waypoints belonging to this collection
+                      const collectionWaypoints = waypoints.filter((w) => {
+                        if (collection.id === "default") {
+                          return !w.groupId || w.groupId === "default";
+                        }
+                        return w.groupId === collection.id;
+                      });
+
+                      // Filter areas belonging to this collection
+                      const collectionAreas = areas.filter((a) => {
+                        if (collection.id === "default") {
+                          return !a.collectionId || a.collectionId === "default";
+                        }
+                        return a.collectionId === collection.id;
+                      });
+
+                      // Apply search filter locally to items if search query is active
+                      const filteredTracks = !librarySearchQuery.trim() 
+                        ? collectionTracks 
+                        : collectionTracks.filter(t => t.name.toLowerCase().includes(librarySearchQuery.toLowerCase()));
+
+                      const filteredWaypoints = !librarySearchQuery.trim() 
+                        ? collectionWaypoints 
+                        : collectionWaypoints.filter(w => w.name.toLowerCase().includes(librarySearchQuery.toLowerCase()) || (w.note && w.note.toLowerCase().includes(librarySearchQuery.toLowerCase())));
+
+                      const filteredAreas = !librarySearchQuery.trim() 
+                        ? collectionAreas 
+                        : collectionAreas.filter(a => a.name.toLowerCase().includes(librarySearchQuery.toLowerCase()));
+
+                      // Automatically expand collection if search matches items inside it
+                      const isExpanded = expandedCollectionId === collection.id || (librarySearchQuery.trim() !== "" && (filteredTracks.length > 0 || filteredWaypoints.length > 0 || filteredAreas.length > 0));
+                      
+                      const totalTracksCount = collectionTracks.length;
+                      
+
+
+                      return (
                         <div
-                          onClick={() => setExpandedCollectionId(isExpanded ? null : collection.id)}
-                          className="relative flex items-center justify-between p-3.5 transition-colors cursor-pointer gap-2.5 min-h-[58px]"
-                          style={{ borderLeft: `4px solid ${collection.color}` }}
+                          key={collection.id}
+                          className="relative border border-[#1b3d2b]/40 rounded-xl overflow-hidden bg-[#1c2921]/45 hover:bg-[#1c2921]/55 transition-all duration-300 shadow-md"
                         >
-                          {/* Full-height Left Fading Cover Image */}
-                          {collection.image && (
-                            <div className="absolute inset-y-0 left-0 w-36 overflow-hidden pointer-events-none select-none">
-                              <img
-                                src={collection.image}
-                                alt=""
-                                className="w-full h-full object-cover opacity-25"
-                              />
-                              {/* Sleek fade out gradient mask towards the interior (right) */}
-                              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#1c2921]/85 to-[#1c2921]" />
-                            </div>
-                          )}
+                          {/* Accordion Header */}
+                          <div
+                            onClick={() => setExpandedCollectionId(isExpanded ? null : collection.id)}
+                            className="relative flex items-center justify-between p-3.5 transition-colors cursor-pointer gap-2.5 min-h-[58px]"
+                            style={{ borderLeft: `4px solid ${collection.color}` }}
+                          >
+                            {/* Full-height Left Fading Cover Image */}
+                            {collection.image && (
+                              <div className="absolute inset-y-0 left-0 w-36 overflow-hidden pointer-events-none select-none">
+                                <img
+                                  src={collection.image}
+                                  alt=""
+                                  className="w-full h-full object-cover opacity-25"
+                                />
+                                {/* Sleek fade out gradient mask towards the interior (right) */}
+                                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#1c2921]/85 to-[#1c2921]" />
+                              </div>
+                            )}
 
-                          {/* Text and Info Content */}
-                          <div className="relative z-10 flex-1 min-w-0 pr-1 pl-1.5">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-xs font-bold text-slate-100 truncate shadow-sm">
-                                {collection.name}
-                              </span>
+                            {/* Text and Info Content */}
+                            <div className="relative z-10 flex-1 min-w-0 pr-1 pl-1.5">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-bold text-slate-100 truncate shadow-sm">
+                                  {collection.name}
+                                </span>
+                              </div>
+                              
+                              {/* Short Metrics */}
+                              <div className="flex items-center gap-2 mt-0.5 text-[9px] text-slate-400 font-semibold uppercase tracking-wider select-none">
+                                <span>
+                                  {totalTracksCount} {totalTracksCount === 1 ? "ruta" : "rutas"}
+                                </span>
+                                {collectionWaypoints.length > 0 && (
+                                  <>
+                                    <span>•</span>
+                                    <span>{collectionWaypoints.length} {collectionWaypoints.length === 1 ? "marca" : "marcas"}</span>
+                                  </>
+                                )}
+                                {collectionAreas.length > 0 && (
+                                  <>
+                                    <span>•</span>
+                                    <span>{collectionAreas.length} {collectionAreas.length === 1 ? "área" : "áreas"}</span>
+                                  </>
+                                )}
+                              </div>
                             </div>
-                            
-                            {/* Short Metrics */}
-                            <div className="flex items-center gap-2 mt-0.5 text-[9px] text-slate-400 font-semibold uppercase tracking-wider select-none">
-                              <span>
-                                {totalCount} {totalCount === 1 ? "ruta" : "rutas"}
-                              </span>
-                              {totalCount > 0 && (
+
+                            {/* Visibility, Edit & Delete icons */}
+                            <div className="relative z-10 flex items-center gap-2 shrink-0 pl-2 border-l border-white/5">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onToggleRouteCollectionVisibility(collection.id);
+                                }}
+                                className="text-slate-400 hover:text-slate-200 p-0.5 rounded transition-colors cursor-pointer"
+                                title={collection.visible ? "Ocultar contenido en el mapa" : "Mostrar contenido en el mapa"}
+                              >
+                                {collection.visible ? (
+                                  <Eye className="w-3.5 h-3.5 text-emerald-400" />
+                                ) : (
+                                  <EyeOff className="w-3.5 h-3.5 text-slate-600" />
+                                )}
+                              </button>
+
+                              {collection.id !== "default" && (
                                 <>
-                                  <span>•</span>
-                                  <span className="text-emerald-400">
-                                    {useImperial ? `${Math.round(totalDistance * 0.621371)} mi` : `${totalDistance.toFixed(1)} km`}
-                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setEditingCollectionId(collection.id);
+                                      setNewCollectionName(collection.name);
+                                      setNewCollectionDesc(collection.description);
+                                      setNewCollectionColor(collection.color);
+                                      setNewCollectionImage(collection.image || "https://images.unsplash.com/photo-1486873249359-2731bd6dafc7?auto=format&fit=crop&w=400&q=80");
+                                      setIsCreatingCollection(true);
+                                    }}
+                                    className="text-slate-400 hover:text-slate-200 p-0.5 rounded transition-colors cursor-pointer"
+                                    title="Editar Carpeta"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      if (await customConfirm(`¿Seguro que deseas eliminar la carpeta "${collection.name}"? Los elementos se conservarán y se moverán a la raíz.`)) {
+                                        onDeleteRouteCollection(collection.id);
+                                      }
+                                    }}
+                                    className="text-slate-400 hover:text-red-400 p-0.5 rounded transition-colors cursor-pointer"
+                                    title="Eliminar Carpeta (Conserva los elementos)"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
                                 </>
                               )}
                             </div>
                           </div>
 
-                          {/* Visibility, Edit & Delete icons */}
-                          <div className="relative z-10 flex items-center gap-2 shrink-0 pl-2 border-l border-white/5">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onToggleRouteCollectionVisibility(collection.id);
-                              }}
-                              className="text-slate-400 hover:text-slate-200 p-0.5 rounded transition-colors cursor-pointer"
-                              title={collection.visible ? "Ocultar rutas de la colección en el mapa" : "Mostrar rutas de la colección en el mapa"}
-                            >
-                              {collection.visible ? (
-                                <Eye className="w-3.5 h-3.5 text-emerald-400" />
-                              ) : (
-                                <EyeOff className="w-3.5 h-3.5 text-slate-600" />
+                          {/* Accordion Content: Unified elements lists */}
+                          {isExpanded && (
+                            <div className="border-t border-[#1b3d2b]/25 bg-[#0a0f0d]/60 p-3 space-y-4 animate-slide-in-top">
+                              {collection.description && (
+                                <p className="text-[10px] text-slate-400 px-2.5 py-1.5 bg-black/10 rounded-lg italic">
+                                  {collection.description}
+                                </p>
                               )}
-                            </button>
 
-                            {collection.id !== "default" && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingCollectionId(collection.id);
-                                    setNewCollectionName(collection.name);
-                                    setNewCollectionDesc(collection.description);
-                                    setNewCollectionColor(collection.color);
-                                    setNewCollectionImage(collection.image || "https://images.unsplash.com/photo-1486873249359-2731bd6dafc7?auto=format&fit=crop&w=400&q=80");
-                                    setIsCreatingCollection(true);
-                                  }}
-                                  className="text-slate-400 hover:text-slate-200 p-0.5 rounded transition-colors cursor-pointer"
-                                  title="Editar Colección"
-                                >
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                </button>
+                              {/* CATEGORY 1: ROUTES (TRACKS) */}
+                              <div className="space-y-1.5">
+                                <div className="flex items-center justify-between text-[9px] font-bold text-slate-500 uppercase tracking-wider select-none px-1">
+                                  <span className="flex items-center gap-1.5">
+                                    <Route className="w-3 h-3 text-emerald-500" />
+                                    Rutas ({filteredTracks.length})
+                                  </span>
+                                </div>
+                                <div className="space-y-1.5">
+                                  {filteredTracks.length === 0 ? (
+                                    <p className="text-[9.5px] text-slate-600 italic px-2">No hay rutas en esta carpeta.</p>
+                                  ) : (
+                                    filteredTracks.map((track) => {
+                                      const isActive = track.id === activeTrackId;
+                                      const isCheckedForMerge = selectedMergeIds.includes(track.id);
+                                      return (
+                                        <div
+                                          key={track.id}
+                                          className={`flex items-center justify-between p-2 rounded-lg border text-[11px] transition-all ${
+                                            isActive
+                                              ? "bg-emerald-500/[0.04] border-emerald-400/35"
+                                              : "bg-[#0c120f] border-white/5 hover:border-white/10"
+                                          }`}
+                                        >
+                                          <div className="flex items-center gap-2 min-w-0">
+                                            <input
+                                              type="checkbox"
+                                              checked={isCheckedForMerge}
+                                              onChange={() => handleToggleMergeSelect(track.id)}
+                                              title="Seleccionar para unir"
+                                              className="w-3 h-3 accent-emerald-400 bg-black rounded border-[#1b3d2b] cursor-pointer"
+                                            />
+                                            <button
+                                              onClick={() => handleCycleColor(track.id, track.color)}
+                                              className="w-2.5 h-2.5 rounded-full shrink-0 border border-white/20 transition-transform active:scale-95 cursor-pointer"
+                                              style={{ backgroundColor: track.color }}
+                                              title="Cambiar color de ruta"
+                                            />
+                                            <button
+                                              onClick={() => onToggleTrackVisibility(track.id)}
+                                              className="text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                                              title={track.visible ? "Ocultar en mapa" : "Mostrar en mapa"}
+                                            >
+                                              {track.visible ? (
+                                                <Eye className="w-3 h-3 text-emerald-400" />
+                                              ) : (
+                                                <EyeOff className="w-3 h-3 text-slate-600" />
+                                              )}
+                                            </button>
+                                            <span
+                                              onClick={() => setActiveTrackId(track.id)}
+                                              className={`truncate cursor-pointer hover:underline ${
+                                                isActive ? "font-bold text-emerald-300" : "text-slate-300"
+                                              }`}
+                                            >
+                                              {track.name}
+                                            </span>
+                                          </div>
 
-                                <button
-                                  type="button"
-                                  onClick={async (e) => {
-                                    e.stopPropagation();
-                                    if (await customConfirm(`¿Seguro que deseas eliminar la colección "${collection.name}"? Las rutas se conservarán y se moverán a "Mis Rutas".`)) {
-                                      onDeleteRouteCollection(collection.id);
-                                    }
-                                  }}
-                                  className="text-slate-400 hover:text-red-400 p-0.5 rounded transition-colors cursor-pointer"
-                                  title="Eliminar Colección (Mueve rutas a Mis Rutas)"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </>
-                            )}
-                          </div>
+                                          <div className="flex items-center gap-1.5 shrink-0">
+                                            <button
+                                              onClick={() => {
+                                                setActiveTrackId(track.id);
+                                                if (track.points.length > 0) {
+                                                  onFlyToCoords(track.points[0].lat, track.points[0].lng);
+                                                }
+                                              }}
+                                              className={`p-1 rounded transition-colors cursor-pointer ${
+                                                isActive
+                                                  ? "bg-emerald-500/10 text-emerald-300"
+                                                  : "text-slate-500 hover:text-slate-300 hover:bg-white/5"
+                                              }`}
+                                              title="Habilitar edición de esta ruta"
+                                            >
+                                              <Edit2 className="w-2.5 h-2.5" />
+                                            </button>
+
+                                            <button
+                                              onClick={async () => {
+                                                if (await customConfirm(`¿Seguro que deseas eliminar la ruta "${track.name}"?`)) {
+                                                  onDeleteTrack(track.id);
+                                                }
+                                              }}
+                                              className="text-slate-500 hover:text-red-400 p-1 rounded hover:bg-white/5 transition-colors cursor-pointer"
+                                              title="Eliminar de la biblioteca"
+                                            >
+                                              <Trash2 className="w-2.5 h-2.5" />
+                                            </button>
+                                          </div>
+                                        </div>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* CATEGORY 2: WAYPOINTS (MARCAS) */}
+                              <div className="space-y-1.5 border-t border-[#1b3d2b]/15 pt-3">
+                                <div className="flex items-center justify-between text-[9px] font-bold text-slate-500 uppercase tracking-wider select-none px-1">
+                                  <span className="flex items-center gap-1.5">
+                                    <MapPin className="w-3 h-3 text-emerald-500" />
+                                    Marcas ({filteredWaypoints.length})
+                                  </span>
+                                </div>
+                                <div className="space-y-1.5">
+                                  {filteredWaypoints.length === 0 ? (
+                                    <p className="text-[9.5px] text-slate-600 italic px-2">No hay marcas en esta carpeta.</p>
+                                  ) : (
+                                    filteredWaypoints.map((wpt) => {
+                                      const WptIcon = WPT_ICONS[wpt.icon] || MapPin;
+                                      const isCompleted = !!wpt.completed;
+                                      return (
+                                        <div
+                                          key={wpt.id}
+                                          onClick={() => {
+                                            if (isBulkMode) {
+                                              setSelectedWptIds((prev) =>
+                                                prev.includes(wpt.id)
+                                                  ? prev.filter((id) => id !== wpt.id)
+                                                  : [...prev, wpt.id]
+                                              );
+                                            } else {
+                                              onFlyToCoords(wpt.lat, wpt.lng);
+                                            }
+                                          }}
+                                          className={`group flex items-start justify-between p-2 rounded-lg border text-[11px] transition-all cursor-pointer ${
+                                            isBulkMode && selectedWptIds.includes(wpt.id)
+                                              ? "bg-blue-500/10 border-blue-500/40 hover:border-blue-500/50"
+                                              : isCompleted
+                                              ? "bg-emerald-500/[0.01] border-emerald-500/10 hover:border-emerald-500/20"
+                                              : "bg-[#0c120f] border-white/5 hover:border-white/10"
+                                          }`}
+                                        >
+                                          <div className="flex items-center gap-2 min-w-0">
+                                            {isBulkMode && (
+                                              <input
+                                                type="checkbox"
+                                                checked={selectedWptIds.includes(wpt.id)}
+                                                onChange={() => {}} // handled by div onClick
+                                                className="w-3 h-3 accent-blue-500"
+                                              />
+                                            )}
+                                            <WptIcon className="w-3.5 h-3.5 shrink-0" style={{ color: wpt.color }} />
+                                            <span className={`truncate hover:underline text-slate-300 ${isCompleted ? 'line-through opacity-50' : ''}`}>
+                                              {wpt.name}
+                                            </span>
+                                          </div>
+                                          <div className="flex items-center gap-1.5 shrink-0">
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                onEditWaypoint(wpt);
+                                              }}
+                                              className="text-slate-500 hover:text-emerald-400 p-1 rounded hover:bg-white/5 transition-colors cursor-pointer"
+                                              title="Editar marca"
+                                            >
+                                              <Edit2 className="w-2.5 h-2.5" />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={async (e) => {
+                                                e.stopPropagation();
+                                                if (await customConfirm(`¿Seguro que deseas eliminar la marca "${wpt.name}"?`)) {
+                                                  onDeleteWaypoint(wpt.id);
+                                                }
+                                              }}
+                                              className="text-slate-500 hover:text-red-400 p-1 rounded hover:bg-white/5 transition-colors cursor-pointer"
+                                              title="Eliminar marca"
+                                            >
+                                              <Trash2 className="w-2.5 h-2.5" />
+                                            </button>
+                                          </div>
+                                        </div>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* CATEGORY 3: AREAS (POLYGONS) */}
+                              <div className="space-y-1.5 border-t border-[#1b3d2b]/15 pt-3">
+                                <div className="flex items-center justify-between text-[9px] font-bold text-slate-500 uppercase tracking-wider select-none px-1">
+                                  <span className="flex items-center gap-1.5">
+                                    <Hexagon className="w-3 h-3 text-emerald-500" />
+                                    Áreas ({filteredAreas.length})
+                                  </span>
+                                </div>
+                                <div className="space-y-1.5">
+                                  {filteredAreas.length === 0 ? (
+                                    <p className="text-[9.5px] text-slate-600 italic px-2">No hay áreas en esta carpeta.</p>
+                                  ) : (
+                                    filteredAreas.map((area) => {
+                                      const areaLabel = formatArea(area.areaM2, useImperial);
+                                      return (
+                                        <div
+                                          key={area.id}
+                                          onClick={() => {
+                                            if (area.points.length > 0) {
+                                              onFlyToCoords(area.points[0].lat, area.points[0].lng);
+                                            }
+                                          }}
+                                          className="group flex items-start justify-between p-2 rounded-lg border border-white/5 bg-[#0c120f] hover:border-white/10 text-[11px] transition-all cursor-pointer animate-fade-in"
+                                        >
+                                          <div className="flex items-center gap-2 min-w-0">
+                                            <div
+                                              className="w-2.5 h-2.5 rounded-full shrink-0 border border-white/10"
+                                              style={{ backgroundColor: area.color }}
+                                            />
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                onToggleAreaVisibility(area.id);
+                                              }}
+                                              className="text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                                              title={area.visible ? "Ocultar" : "Mostrar"}
+                                            >
+                                              {area.visible ? (
+                                                <Eye className="w-3 h-3 text-emerald-400" />
+                                              ) : (
+                                                <EyeOff className="w-3 h-3 text-slate-600" />
+                                              )}
+                                            </button>
+                                            <span className="truncate text-slate-300">
+                                              {area.name} <span className="text-[9px] text-slate-500">({areaLabel})</span>
+                                            </span>
+                                          </div>
+                                          <div className="flex items-center gap-1.5 shrink-0">
+                                            <button
+                                              type="button"
+                                              onClick={async (e) => {
+                                                e.stopPropagation();
+                                                if (await customConfirm(`¿Seguro que deseas eliminar el área "${area.name}"?`)) {
+                                                  onDeleteArea(area.id);
+                                                }
+                                              }}
+                                              className="text-slate-500 hover:text-red-400 p-1 rounded hover:bg-white/5 transition-colors cursor-pointer"
+                                              title="Eliminar de la biblioteca"
+                                            >
+                                              <Trash2 className="w-2.5 h-2.5" />
+                                            </button>
+                                          </div>
+                                        </div>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                              </div>
+
+                            </div>
+                          )}
                         </div>
-
-                        {/* Accordion Content: List of Tracks inside this collection */}
-                        {isExpanded && (
-                          <div className="border-t border-[#1b3d2b]/25 bg-[#0a0f0d]/60 p-2 space-y-1.5 animate-slide-in-top">
-                            {collection.description && (
-                              <p className="text-[10px] text-slate-400 px-2.5 py-1.5 bg-black/10 rounded-lg italic">
-                                {collection.description}
-                              </p>
-                            )}
-
-                            {collectionTracks.length === 0 ? (
-                              <p className="text-[10px] text-slate-500 italic p-3 text-center">
-                                No hay rutas en esta colección. Usa el selector de la ruta activa para mover rutas aquí.
-                              </p>
-                            ) : (
-                              collectionTracks.map((track) => {
-                                const isActive = track.id === activeTrackId;
-                                const isCheckedForMerge = selectedMergeIds.includes(track.id);
-                                return (
-                                  <div
-                                    key={track.id}
-                                    className={`flex items-center justify-between p-2 rounded-lg border text-[11px] transition-all ${
-                                      isActive
-                                        ? "bg-emerald-500/[0.04] border-emerald-400/35"
-                                        : "bg-[#0c120f] border-white/5 hover:border-white/10"
-                                    }`}
-                                  >
-                                    <div className="flex items-center gap-2 min-w-0">
-                                      <input
-                                        type="checkbox"
-                                        checked={isCheckedForMerge}
-                                        onChange={() => handleToggleMergeSelect(track.id)}
-                                        title="Seleccionar para unir"
-                                        className="w-3 h-3 accent-emerald-400 bg-black rounded border-[#1b3d2b] cursor-pointer"
-                                      />
-                                      <button
-                                        onClick={() => handleCycleColor(track.id, track.color)}
-                                        className="w-2.5 h-2.5 rounded-full shrink-0 border border-white/20 transition-transform active:scale-95"
-                                        style={{ backgroundColor: track.color }}
-                                        title="Hacer clic para cambiar color"
-                                      />
-                                      <button
-                                        onClick={() => onToggleTrackVisibility(track.id)}
-                                        className="text-slate-400 hover:text-slate-200 transition-colors"
-                                        title={track.visible ? "Ocultar en mapa" : "Mostrar en mapa"}
-                                      >
-                                        {track.visible ? (
-                                          <Eye className="w-3 h-3 text-emerald-400" />
-                                        ) : (
-                                          <EyeOff className="w-3 h-3 text-slate-600" />
-                                        )}
-                                      </button>
-                                      <span
-                                        onClick={() => setActiveTrackId(track.id)}
-                                        className={`truncate cursor-pointer hover:underline ${
-                                          isActive ? "font-bold text-emerald-300" : "text-slate-300"
-                                        }`}
-                                      >
-                                        {track.name}
-                                      </span>
-                                    </div>
-
-                                    <div className="flex items-center gap-1.5 shrink-0">
-                                      <button
-                                        onClick={() => {
-                                          setActiveTrackId(track.id);
-                                          if (track.points.length > 0) {
-                                            onFlyToCoords(track.points[0].lat, track.points[0].lng);
-                                          }
-                                        }}
-                                        className={`p-1 rounded transition-colors ${
-                                          isActive
-                                            ? "bg-emerald-500/10 text-emerald-300"
-                                            : "text-slate-500 hover:text-slate-300 hover:bg-white/5"
-                                        }`}
-                                        title="Habilitar edición de esta ruta"
-                                      >
-                                        <Edit2 className="w-2.5 h-2.5" />
-                                      </button>
-
-                                      <button
-                                        onClick={async () => {
-                                          if (await customConfirm(`¿Seguro que deseas eliminar la ruta "${track.name}"?`)) {
-                                            onDeleteTrack(track.id);
-                                          }
-                                        }}
-                                        className="text-slate-500 hover:text-red-400 p-1 rounded hover:bg-white/5 transition-colors"
-                                        title="Eliminar de la biblioteca"
-                                      >
-                                        <Trash2 className="w-2.5 h-2.5" />
-                                      </button>
-                                    </div>
-                                  </div>
-                                );
-                              })
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
               </div>
 
               {/* SECTION 2: EDITING CONTROLS FOR ACTIVE ROUTE */}
@@ -1440,6 +1674,21 @@ export function Sidebar({
                           }`}
                         >
                           <Scissors className="w-4 h-4" />
+                        </button>
+                      )}
+
+                      {/* Reverse track button */}
+                      {points.length > 1 && (
+                        <button
+                          onClick={async () => {
+                            if (activeTrackId) {
+                              onReverseTrack(activeTrackId);
+                            }
+                          }}
+                          title="Invertir Ruta (Reverse Track)"
+                          className="px-3.5 border rounded-xl transition-colors flex items-center justify-center bg-[#18231e] border-[#1b3d2b] text-slate-300 hover:text-cyan-400 hover:border-cyan-500/30 cursor-pointer"
+                        >
+                          <ArrowLeftRight className="w-4 h-4" />
                         </button>
                       )}
 
@@ -1552,6 +1801,155 @@ export function Sidebar({
                     className="hidden"
                   />
                 </label>
+              </div>
+
+              {/* ══════════ AREAS SECTION ══════════ */}
+              <div className="border-t border-[#1b3d2b]/40 pt-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                    <Hexagon className="w-3.5 h-3.5 text-emerald-400" />
+                    Áreas y Polígonos
+                  </span>
+                  <button
+                    onClick={() => {
+                      setIsDrawingArea(!isDrawingArea);
+                      if (isDrawing) setIsDrawing(false);
+                      if (isSplitting) setIsSplitting(false);
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all border cursor-pointer ${
+                      isDrawingArea
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-[0_0_10px_rgba(16,185,129,0.2)] animate-pulse'
+                        : 'bg-[#0b100d] text-slate-400 border-white/5 hover:text-emerald-300 hover:border-emerald-500/20'
+                    }`}
+                  >
+                    <Hexagon className="w-3 h-3" />
+                    {isDrawingArea ? 'Dibujando...' : 'Dibujar Área'}
+                  </button>
+                </div>
+
+                {isDrawingArea && (
+                  <p className="text-[10px] text-emerald-400/80 bg-emerald-500/5 border border-emerald-500/10 rounded-lg p-2 text-center animate-pulse">
+                    🎯 Haz clic en el mapa para trazar los vértices del polígono. Haz doble clic o clic en el primer punto para cerrar el área.
+                  </p>
+                )}
+
+                {/* Saved Areas List */}
+                {areas.length > 0 && (
+                  <div className="space-y-2">
+                    {areas.map((area) => {
+                      const areaLabel = formatArea(area.areaM2, useImperial);
+                      const perimM = calculatePolygonPerimeter(area.points);
+                      const perimLabel = useImperial
+                        ? perimM * 3.28084 < 5280
+                          ? `${Math.round(perimM * 3.28084)} ft`
+                          : `${(perimM * 0.000621371).toFixed(2)} mi`
+                        : perimM < 1000
+                        ? `${Math.round(perimM)} m`
+                        : `${(perimM / 1000).toFixed(2)} km`;
+
+                      return (
+                        <div
+                          key={area.id}
+                          className="group bg-[#0c120f]/80 border border-[#1b3d2b]/30 rounded-xl p-3 space-y-2 hover:border-[#1b3d2b]/60 transition-all"
+                        >
+                          {/* Area Header */}
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="w-3 h-3 rounded-full shrink-0 ring-1 ring-white/10"
+                              style={{ backgroundColor: area.color }}
+                            />
+                            <input
+                              type="text"
+                              value={area.name}
+                              onChange={(e) => onUpdateArea(area.id, { name: e.target.value })}
+                              className="flex-1 bg-transparent text-xs font-semibold text-slate-200 border-none outline-none placeholder-slate-500 focus:text-emerald-300 transition-colors"
+                              placeholder="Nombre del área..."
+                            />
+                            <button
+                              onClick={() => onToggleAreaVisibility(area.id)}
+                              title={area.visible ? 'Ocultar' : 'Mostrar'}
+                              className="p-1 rounded-lg text-slate-400 hover:text-emerald-400 transition-colors cursor-pointer"
+                            >
+                              {area.visible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (await customConfirm('¿Eliminar esta área?')) {
+                                  onDeleteArea(area.id);
+                                }
+                              }}
+                              title="Eliminar área"
+                              className="p-1 rounded-lg text-slate-500 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          {/* Collection Assignment Selector */}
+                          <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                            <Folder className="w-3.5 h-3.5 shrink-0" />
+                            <select
+                              value={area.collectionId || "default"}
+                              onChange={(e) => onUpdateArea(area.id, { collectionId: e.target.value })}
+                              className="flex-1 bg-[#0a0f0d]/80 border border-[#1b3d2b]/40 rounded-lg px-2 py-1 text-[10px] text-slate-300 focus:outline-none focus:border-emerald-400 transition-colors cursor-pointer"
+                            >
+                              {routeCollections.map((col) => (
+                                <option key={col.id} value={col.id} style={{ backgroundColor: '#0c120f', color: '#e2e8f0' }}>
+                                  📁 {col.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* Metrics Row */}
+                          <div className="flex items-center gap-3 text-[10px] text-slate-400 font-mono">
+                            <span title="Área">📐 {areaLabel}</span>
+                            <span title="Perímetro">📏 {perimLabel}</span>
+                            <span title="Vértices">⬡ {area.points.length}</span>
+                          </div>
+
+                          {/* Color Picker Row */}
+                          <div className="flex items-center gap-1.5">
+                            <Palette className="w-3 h-3 text-slate-500" />
+                            {['#10b981', '#3b82f6', '#ef4444', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'].map((c) => (
+                              <button
+                                key={c}
+                                onClick={() => onUpdateArea(area.id, { color: c })}
+                                className={`w-4 h-4 rounded-full border-2 transition-all hover:scale-125 cursor-pointer ${
+                                  area.color === c
+                                    ? 'border-white/80 shadow-[0_0_6px] scale-110'
+                                    : 'border-transparent opacity-60 hover:opacity-100'
+                                }`}
+                                style={{ backgroundColor: c, boxShadow: area.color === c ? `0 0 6px ${c}` : undefined }}
+                              />
+                            ))}
+                          </div>
+
+                          {/* Center on Map button */}
+                          <button
+                            onClick={() => {
+                              if (area.points.length > 0) {
+                                const lat = area.points.reduce((s, p) => s + p.lat, 0) / area.points.length;
+                                const lng = area.points.reduce((s, p) => s + p.lng, 0) / area.points.length;
+                                onFlyToCoords(lat, lng);
+                              }
+                            }}
+                            className="w-full py-1.5 rounded-lg border border-[#1b3d2b]/30 bg-[#0a0f0d] text-[10px] text-slate-400 hover:text-emerald-300 hover:border-emerald-500/20 transition-all flex items-center justify-center gap-1.5 font-semibold cursor-pointer"
+                          >
+                            <Compass className="w-3 h-3" />
+                            Centrar en Mapa
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {areas.length === 0 && !isDrawingArea && (
+                  <p className="text-[10px] text-slate-500 text-center py-2">
+                    No hay áreas dibujadas. Usa el botón "Dibujar Área" para trazar un polígono en el mapa.
+                  </p>
+                )}
               </div>
 
             </div>

@@ -55,6 +55,22 @@ export interface RouteCollection {
   image?: string;
 }
 
+export interface AreaPoint {
+  lat: number;
+  lng: number;
+}
+
+export interface Area {
+  id: string;
+  name: string;
+  points: AreaPoint[];
+  color: string;
+  visible: boolean;
+  areaM2: number;
+  perimeterM: number;
+  collectionId?: string;
+}
+
 export interface Track {
   id: string;
   name: string;
@@ -159,6 +175,15 @@ export function useRoutePlanner(user: any | null = null) {
     }
   });
 
+  const [areas, setAreas] = useState<Area[]>(() => {
+    try {
+      const saved = localStorage.getItem("summit_areas");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
   const [isDrawing, setIsDrawing] = useState(false);
   const [routingProfile, setRoutingProfile] = useState<RoutingProfile>(() => {
     return (localStorage.getItem('summit_routing_profile') as RoutingProfile) || 'hike';
@@ -214,6 +239,15 @@ export function useRoutePlanner(user: any | null = null) {
       console.error("Failed to save activeTrackId to localStorage:", e);
     }
   }, [activeTrackId, user]);
+
+  useEffect(() => {
+    if (user) return;
+    try {
+      localStorage.setItem("summit_areas", JSON.stringify(areas));
+    } catch (e) {
+      console.error("Failed to save areas to localStorage:", e);
+    }
+  }, [areas, user]);
 
   useEffect(() => {
     localStorage.setItem('summit_routing_profile', routingProfile);
@@ -288,6 +322,9 @@ export function useRoutePlanner(user: any | null = null) {
 
           const savedClickSegments = localStorage.getItem("summit_click_segments");
           setClickSegments(savedClickSegments ? JSON.parse(savedClickSegments) : {});
+
+          const savedAreas = localStorage.getItem("summit_areas");
+          setAreas(savedAreas ? JSON.parse(savedAreas) : []);
         } catch (e) {
           console.error("Failed to load local data:", e);
         }
@@ -382,7 +419,42 @@ export function useRoutePlanner(user: any | null = null) {
 
         if (waypointsError) throw waypointsError;
 
+        // 4. Fetch areas
+        let dbAreas: any[] = [];
+        try {
+          const { data, error: areasError } = await supabase
+            .from("areas")
+            .select("*")
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: true });
+          if (!areasError && data) {
+            dbAreas = data;
+          }
+        } catch (err) {
+          console.warn("Could not load areas from Supabase (table might not exist yet):", err);
+        }
+
         if (!active) return;
+
+        const mappedAreas: Area[] = dbAreas.map((a: any) => ({
+          id: a.id,
+          name: a.name,
+          points: Array.isArray(a.points) ? a.points : [],
+          color: a.color,
+          visible: a.visible !== false,
+          areaM2: a.area_m2 || 0,
+          perimeterM: a.perimeter_m || 0,
+          collectionId: a.collection_id || undefined,
+        }));
+
+        if (mappedAreas.length > 0) {
+          setAreas(mappedAreas);
+        } else {
+          const savedAreas = localStorage.getItem("summit_areas");
+          if (savedAreas) {
+            setAreas(JSON.parse(savedAreas));
+          }
+        }
 
         // Map route collections
         const mappedCollections: RouteCollection[] = collections.map((c: any) => ({
@@ -1473,6 +1545,17 @@ export function useRoutePlanner(user: any | null = null) {
     };
     setRouteCollections((prev) => [...prev, newCollection]);
 
+    // Mirror to waypoint groups
+    const newGroup: WaypointGroup = {
+      id: newCollection.id,
+      name: newCollection.name,
+      description: newCollection.description,
+      color: newCollection.color,
+      visible: newCollection.visible,
+      image: newCollection.image,
+    };
+    setWaypointGroups((prev) => [...prev, newGroup]);
+
     if (user && isSupabaseConfigured) {
       const { error } = await supabase.from("route_collections").insert({
         id: newCollection.id,
@@ -1487,6 +1570,20 @@ export function useRoutePlanner(user: any | null = null) {
         console.error("Failed to insert route collection into Supabase:", error);
         throw error;
       }
+
+      // Also mirror insertion in waypoint_groups
+      const { error: groupErr } = await supabase.from("waypoint_groups").insert({
+        id: newCollection.id,
+        user_id: user.id,
+        name: newCollection.name,
+        description: newCollection.description,
+        color: newCollection.color,
+        visible: newCollection.visible,
+        image: newCollection.image || null,
+      });
+      if (groupErr) {
+        console.error("Failed to insert mirrored waypoint group into Supabase:", groupErr);
+      }
     }
     return newCollection.id;
   }, [user]);
@@ -1494,6 +1591,11 @@ export function useRoutePlanner(user: any | null = null) {
   const updateRouteCollection = useCallback((id: string, fields: Partial<RouteCollection>) => {
     setRouteCollections((prev) =>
       prev.map((c) => (c.id === id ? { ...c, ...fields } : c))
+    );
+
+    // Mirror update to waypointGroups
+    setWaypointGroups((prev) =>
+      prev.map((g) => (g.id === id ? { ...g, ...fields } : g))
     );
 
     if (user && isSupabaseConfigured) {
@@ -1507,25 +1609,52 @@ export function useRoutePlanner(user: any | null = null) {
       supabase.from("route_collections").update(dbFields).eq("id", id).then(({ error }) => {
         if (error) console.error("Failed to update route collection in Supabase:", error);
       });
+
+      supabase.from("waypoint_groups").update(dbFields).eq("id", id).then(({ error }) => {
+        if (error) console.error("Failed to update mirrored waypoint group in Supabase:", error);
+      });
     }
   }, [user]);
 
   const deleteRouteCollection = useCallback((id: string) => {
     if (id === "default") return;
-    
+
     setRouteCollections((prev) => prev.filter((c) => c.id !== id));
-    
+    setWaypointGroups((prev) => prev.filter((g) => g.id !== id));
+
     // Safety move of routes inside it to "default"
     setTracks((prev) =>
       prev.map((t) => (t.collectionId === id ? { ...t, collectionId: "default" } : t))
+    );
+
+    // Safety move of waypoints to "default"
+    setTracks((prev) =>
+      prev.map((t) => ({
+        ...t,
+        waypoints: t.waypoints.map((w) => (w.groupId === id ? { ...w, groupId: "default" } : w)),
+      }))
+    );
+
+    // Safety move of areas inside it to undefined
+    setAreas((prev) =>
+      prev.map((a) => (a.collectionId === id ? { ...a, collectionId: undefined } : a))
     );
 
     if (user && isSupabaseConfigured) {
       supabase.from("route_collections").delete().eq("id", id).then(({ error }) => {
         if (error) console.error("Failed to delete route collection from Supabase:", error);
       });
+      supabase.from("waypoint_groups").delete().eq("id", id).then(({ error }) => {
+        if (error) console.error("Failed to delete mirrored waypoint group from Supabase:", error);
+      });
       supabase.from("tracks").update({ collection_id: "default" }).eq("collection_id", id).then(({ error }) => {
         if (error) console.error("Failed to reassign collection tracks in Supabase:", error);
+      });
+      supabase.from("waypoints").update({ group_id: null }).eq("group_id", id).then(({ error }) => {
+        if (error) console.error("Failed to reassign collection waypoints in Supabase:", error);
+      });
+      supabase.from("areas").update({ collection_id: null }).eq("collection_id", id).then(({ error }) => {
+        if (error) console.error("Failed to reassign collection areas in Supabase:", error);
       });
     }
   }, [user]);
@@ -1542,11 +1671,19 @@ export function useRoutePlanner(user: any | null = null) {
       })
     );
 
+    setWaypointGroups((prev) =>
+      prev.map((g) => (g.id === id ? { ...g, visible: updatedVisible } : g))
+    );
+
     if (user && isSupabaseConfigured) {
       const target = routeCollections.find((c) => c.id === id);
       if (target) {
-        supabase.from("route_collections").update({ visible: !target.visible }).eq("id", id).then(({ error }) => {
+        const nextVis = !target.visible;
+        supabase.from("route_collections").update({ visible: nextVis }).eq("id", id).then(({ error }) => {
           if (error) console.error("Failed to toggle route collection visibility in Supabase:", error);
+        });
+        supabase.from("waypoint_groups").update({ visible: nextVis }).eq("id", id).then(({ error }) => {
+          if (error) console.error("Failed to toggle mirrored waypoint group visibility in Supabase:", error);
         });
       }
     }
@@ -1562,6 +1699,130 @@ export function useRoutePlanner(user: any | null = null) {
         if (error) console.error("Failed to update track collection in Supabase:", error);
       });
     }
+  }, [user]);
+
+  // 13. ADVANCED: Reverse Active Track (Invertir inicio/fin)
+  const reverseTrack = useCallback((trackId: string) => {
+    setTracks((prev) =>
+      prev.map((t) => {
+        if (t.id === trackId) {
+          const reversedPoints = [...t.points].reverse();
+          let cumulativeDist = 0;
+          const updatedPoints = reversedPoints.map((pt, idx) => {
+            if (idx > 0) {
+              const prevPt = reversedPoints[idx - 1];
+              cumulativeDist += calculateHaversineDistance([prevPt.lat, prevPt.lng], [pt.lat, pt.lng]);
+            }
+            return {
+              ...pt,
+              distance: cumulativeDist,
+            };
+          });
+
+          // Also reverse clickSegments for this track
+          const segments = clickSegments[trackId];
+          if (segments) {
+            const reversedSegments = [...segments].reverse();
+            setClickSegments((prevSegments) => ({
+              ...prevSegments,
+              [trackId]: reversedSegments,
+            }));
+          }
+
+          if (user && isSupabaseConfigured) {
+            supabase.from("tracks")
+              .update({ points: updatedPoints })
+              .eq("id", trackId)
+              .then(({ error }) => {
+                if (error) console.error("Failed to sync reversed track to Supabase:", error);
+              });
+          }
+
+          return { ...t, points: updatedPoints };
+        }
+        return t;
+      })
+    );
+  }, [clickSegments, user]);
+
+  // Area CRUD
+  const addArea = useCallback((area: Omit<Area, "id">) => {
+    const newArea: Area = {
+      ...area,
+      id: `area-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+    };
+    setAreas((prev) => [...prev, newArea]);
+
+    if (user && isSupabaseConfigured) {
+      supabase.from("areas").insert({
+        id: newArea.id,
+        user_id: user.id,
+        name: newArea.name,
+        points: newArea.points,
+        color: newArea.color,
+        visible: newArea.visible,
+        area_m2: newArea.areaM2,
+        perimeter_m: newArea.perimeterM,
+        collection_id: newArea.collectionId || null,
+      }).then(({ error }) => {
+        if (error) {
+          console.warn("Failed to sync new area to Supabase (check if areas table exists):", error);
+        }
+      });
+    }
+    return newArea.id;
+  }, [user]);
+
+  const updateArea = useCallback((id: string, fields: Partial<Area>) => {
+    setAreas((prev) =>
+      prev.map((a) => (a.id === id ? { ...a, ...fields } : a))
+    );
+
+    if (user && isSupabaseConfigured) {
+      const dbFields: any = {};
+      if (fields.name !== undefined) dbFields.name = fields.name;
+      if (fields.points !== undefined) dbFields.points = fields.points;
+      if (fields.color !== undefined) dbFields.color = fields.color;
+      if (fields.visible !== undefined) dbFields.visible = fields.visible;
+      if (fields.areaM2 !== undefined) dbFields.area_m2 = fields.areaM2;
+      if (fields.perimeterM !== undefined) dbFields.perimeter_m = fields.perimeterM;
+      if (fields.collectionId !== undefined) dbFields.collection_id = fields.collectionId || null;
+
+      supabase.from("areas").update(dbFields).eq("id", id).then(({ error }) => {
+        if (error) {
+          console.warn("Failed to update area in Supabase:", error);
+        }
+      });
+    }
+  }, [user]);
+
+  const deleteArea = useCallback((id: string) => {
+    setAreas((prev) => prev.filter((a) => a.id !== id));
+
+    if (user && isSupabaseConfigured) {
+      supabase.from("areas").delete().eq("id", id).then(({ error }) => {
+        if (error) {
+          console.warn("Failed to delete area in Supabase:", error);
+        }
+      });
+    }
+  }, [user]);
+
+  const toggleAreaVisibility = useCallback((id: string) => {
+    setAreas((prev) =>
+      prev.map((a) => {
+        if (a.id === id) {
+          const nextVisible = !a.visible;
+          if (user && isSupabaseConfigured) {
+            supabase.from("areas").update({ visible: nextVisible }).eq("id", id).then(({ error }) => {
+              if (error) console.warn("Failed to toggle area visibility in Supabase:", error);
+            });
+          }
+          return { ...a, visible: nextVisible };
+        }
+        return a;
+      })
+    );
   }, [user]);
 
   return {
@@ -1600,6 +1861,7 @@ export function useRoutePlanner(user: any | null = null) {
     setTrackColor,
     mergeTracks,
     splitTrack,
+    reverseTrack,
 
     // Waypoint Group additions
     waypointGroups,
@@ -1618,5 +1880,13 @@ export function useRoutePlanner(user: any | null = null) {
     updateRouteCollection,
     toggleRouteCollectionVisibility,
     setTrackCollection,
+
+    // Area additions
+    areas,
+    setAreas,
+    addArea,
+    updateArea,
+    deleteArea,
+    toggleAreaVisibility,
   };
 }

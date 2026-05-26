@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { BaseLayerId } from "./LayerSelector";
-import type { Track, RoutePoint, Waypoint, WaypointGroup } from "../hooks/useRoutePlanner";
+import type { Track, RoutePoint, Waypoint, WaypointGroup, Area } from "../hooks/useRoutePlanner";
 import { Plus, Scissors } from "lucide-react";
 import { useCustomDialog } from "./CustomDialog";
-import { formatCoordinatesByFormat, convertLatLngToUtm, convertUtmToLatLng } from "../utils/geoUtils";
+import { formatCoordinatesByFormat, convertLatLngToUtm, convertUtmToLatLng, formatArea, calculatePolygonPerimeter } from "../utils/geoUtils";
 
 interface MapContainerProps {
   tracks: Track[];
@@ -41,6 +41,13 @@ interface MapContainerProps {
   showGridLabels: boolean;
   markedLocation: { lat: number; lng: number } | null;
   onSetMarkedLocation: (loc: { lat: number; lng: number } | null) => void;
+
+  // Area drawing and measurement props
+  isDrawingArea: boolean;
+  areas: Area[];
+  onAreaComplete: (points: { lat: number; lng: number }[], color: string) => void;
+  useImperial: boolean;
+  onMapReady?: (map: L.Map) => void;
 }
 
 // Map Tile Providers
@@ -92,6 +99,11 @@ export function MapContainer({
   onSetMarkedLocation,
   isSelectingArea,
   setIsSelectingArea,
+  isDrawingArea,
+  areas,
+  onAreaComplete,
+  useImperial,
+  onMapReady,
 }: MapContainerProps) {
   const { customConfirm } = useCustomDialog();
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -112,6 +124,13 @@ export function MapContainer({
   // Box Area Selection refs (isSelectingArea state is now a prop)
   const activeRectRef = useRef<L.Rectangle | null>(null);
   const startLatLngRef = useRef<L.LatLng | null>(null);
+
+  // Area drawing refs
+  const areaPolygonRef = useRef<L.Polygon | null>(null);
+  const areaVertexMarkersRef = useRef<L.CircleMarker[]>([]);
+  const areaPointsRef = useRef<{ lat: number; lng: number }[]>([]);
+  const areaLayersRef = useRef<Record<string, L.Polygon>>({});
+  const areaLabelMarkersRef = useRef<Record<string, L.Marker>>({});
 
   // Initialize Map
   useEffect(() => {
@@ -140,6 +159,10 @@ export function MapContainer({
 
     mapRef.current = map;
     setMapInstance(map);
+
+    if (onMapReady) {
+      onMapReady(map);
+    }
 
     // Report initial coordinates
     if (onMapMove) {
@@ -192,13 +215,15 @@ export function MapContainer({
     const onMapClick = (e: L.LeafletMouseEvent) => {
       if (isDrawing) {
         onAddPoint(e.latlng.lat, e.latlng.lng);
-      } else if (!isSplitting && !isSelectingArea && !isBulkMode) {
+      } else if (!isSplitting && !isSelectingArea && !isBulkMode && !isDrawingArea) {
         onSetMarkedLocation({ lat: e.latlng.lat, lng: e.latlng.lng });
       }
     };
 
     const onMapRightClick = (e: L.LeafletMouseEvent) => {
-      onRightClickMap(e.latlng.lat, e.latlng.lng);
+      if (!isDrawingArea) {
+        onRightClickMap(e.latlng.lat, e.latlng.lng);
+      }
     };
 
     mapInstance.on("click", onMapClick);
@@ -208,7 +233,7 @@ export function MapContainer({
       mapInstance.off("click", onMapClick);
       mapInstance.off("contextmenu", onMapRightClick);
     };
-  }, [mapInstance, isDrawing, isSplitting, isSelectingArea, isBulkMode, onAddPoint, onSetMarkedLocation, onRightClickMap]);
+  }, [mapInstance, isDrawing, isSplitting, isSelectingArea, isBulkMode, isDrawingArea, onAddPoint, onSetMarkedLocation, onRightClickMap]);
 
   // Render Polylines for ALL visible tracks
   useEffect(() => {
@@ -491,6 +516,198 @@ export function MapContainer({
       }
     };
   }, [mapInstance, isSelectingArea, waypoints, onSetSelectedWptIds, osmPois, onSetSelectedPoiIds]);
+
+  // Area Drawing Mode: click to add vertices, double-click to close
+  useEffect(() => {
+    if (!mapInstance) return;
+
+    const cleanup = () => {
+      if (areaPolygonRef.current) {
+        mapInstance.removeLayer(areaPolygonRef.current);
+        areaPolygonRef.current = null;
+      }
+      areaVertexMarkersRef.current.forEach((m) => mapInstance.removeLayer(m));
+      areaVertexMarkersRef.current = [];
+      areaPointsRef.current = [];
+    };
+
+    if (!isDrawingArea) {
+      cleanup();
+      return;
+    }
+
+    const onMapClick = (e: L.LeafletMouseEvent) => {
+      if (!isDrawingArea) return;
+      const pts = areaPointsRef.current;
+
+      // If clicking near the first vertex (distance < 20px), close the polygon
+      if (pts.length >= 3) {
+        const firstPt = mapInstance.latLngToContainerPoint(L.latLng(pts[0].lat, pts[0].lng));
+        const clickPt = e.containerPoint;
+        const dx = firstPt.x - clickPt.x;
+        const dy = firstPt.y - clickPt.y;
+        if (Math.sqrt(dx * dx + dy * dy) < 20) {
+          // Close the polygon
+          const finalPoints = [...pts];
+          onAreaComplete(finalPoints, "#10b981");
+          cleanup();
+          return;
+        }
+      }
+
+      // Add a new vertex
+      const newPt = { lat: e.latlng.lat, lng: e.latlng.lng };
+      areaPointsRef.current = [...pts, newPt];
+      const updatedPts = areaPointsRef.current;
+
+      // Update or create the live polygon preview
+      const latlngs = updatedPts.map((p) => L.latLng(p.lat, p.lng));
+      if (areaPolygonRef.current) {
+        areaPolygonRef.current.setLatLngs(latlngs);
+      } else {
+        areaPolygonRef.current = L.polygon(latlngs, {
+          color: "#10b981",
+          weight: 2,
+          opacity: 0.9,
+          fillColor: "#10b981",
+          fillOpacity: 0.15,
+          dashArray: "6, 5",
+        }).addTo(mapInstance);
+      }
+
+      // Add a vertex circle marker
+      const isFirst = updatedPts.length === 1;
+      const vm = L.circleMarker([newPt.lat, newPt.lng], {
+        radius: isFirst ? 7 : 4,
+        fillColor: isFirst ? "#ffffff" : "#10b981",
+        fillOpacity: 1,
+        color: "#10b981",
+        weight: 2,
+        className: isFirst ? "animate-pulse" : "",
+      }).addTo(mapInstance);
+
+      if (isFirst) {
+        vm.bindTooltip(
+          '<div class="text-[9px] font-bold text-emerald-300 bg-[#131b17]/95 px-2 py-0.5 rounded border border-emerald-500/30">Clic aquí para cerrar</div>',
+          { permanent: false, direction: "top" }
+        );
+      }
+      areaVertexMarkersRef.current.push(vm);
+    };
+
+    const onDblClick = (e: L.LeafletMouseEvent) => {
+      L.DomEvent.stopPropagation(e);
+      const pts = areaPointsRef.current;
+      if (pts.length >= 3) {
+        onAreaComplete([...pts], "#10b981");
+        cleanup();
+      }
+    };
+
+    mapInstance.on("click", onMapClick);
+    mapInstance.on("dblclick", onDblClick);
+
+    return () => {
+      mapInstance.off("click", onMapClick);
+      mapInstance.off("dblclick", onDblClick);
+      cleanup();
+    };
+  }, [mapInstance, isDrawingArea, onAreaComplete]);
+
+  // Render saved Area polygons on the map
+  useEffect(() => {
+    if (!mapInstance) return;
+
+    // Remove stale layers
+    const currentAreaIds = new Set(areas.filter((a) => a.visible).map((a) => a.id));
+    Object.keys(areaLayersRef.current).forEach((id) => {
+      if (!currentAreaIds.has(id)) {
+        mapInstance.removeLayer(areaLayersRef.current[id]);
+        delete areaLayersRef.current[id];
+      }
+    });
+    Object.keys(areaLabelMarkersRef.current).forEach((id) => {
+      if (!currentAreaIds.has(id)) {
+        mapInstance.removeLayer(areaLabelMarkersRef.current[id]);
+        delete areaLabelMarkersRef.current[id];
+      }
+    });
+
+    areas.forEach((area) => {
+      if (!area.visible || area.points.length < 3) return;
+
+      const latlngs = area.points.map((p) => L.latLng(p.lat, p.lng));
+
+      const existing = areaLayersRef.current[area.id];
+      if (existing) {
+        existing.setLatLngs(latlngs);
+        existing.setStyle({ color: area.color, fillColor: area.color });
+      } else {
+        const polygon = L.polygon(latlngs, {
+          color: area.color,
+          weight: 2.5,
+          opacity: 0.85,
+          fillColor: area.color,
+          fillOpacity: 0.12,
+        }).addTo(mapInstance);
+        areaLayersRef.current[area.id] = polygon;
+      }
+
+      // Area label marker at centroid
+      const centroidLat = area.points.reduce((s, p) => s + p.lat, 0) / area.points.length;
+      const centroidLng = area.points.reduce((s, p) => s + p.lng, 0) / area.points.length;
+
+      const areaLabel = formatArea(area.areaM2, useImperial);
+      
+      const perimM = calculatePolygonPerimeter(area.points);
+      const perimLabel = useImperial
+        ? perimM * 3.28084 < 5280
+          ? `${Math.round(perimM * 3.28084)} ft`
+          : `${(perimM * 0.000621371).toFixed(2)} mi`
+        : perimM < 1000
+        ? `${Math.round(perimM)} m`
+        : `${(perimM / 1000).toFixed(2)} km`;
+
+      const labelHtml = `<div class="text-[9px] font-bold text-white px-2 py-1 rounded-lg shadow-lg text-center" style="background:${area.color}dd; border: 1px solid ${area.color}; pointer-events: none; white-space: nowrap;">
+        <div>${area.name}</div>
+        <div class="font-mono text-[8px] opacity-90">${areaLabel} · ${perimLabel}</div>
+      </div>`;
+
+      const labelIcon = L.divIcon({
+        html: labelHtml,
+        className: "area-label-icon",
+        iconSize: undefined,
+        iconAnchor: undefined,
+      });
+
+      const existingLabel = areaLabelMarkersRef.current[area.id];
+      if (existingLabel) {
+        existingLabel.setLatLng([centroidLat, centroidLng]);
+        existingLabel.setIcon(labelIcon);
+      } else {
+        const labelMarker = L.marker([centroidLat, centroidLng], {
+          icon: labelIcon,
+          interactive: false,
+          zIndexOffset: -100,
+        }).addTo(mapInstance);
+        areaLabelMarkersRef.current[area.id] = labelMarker;
+      }
+    });
+  }, [mapInstance, areas, useImperial]);
+
+  // Area layers cleanup on mapInstance reset
+  useEffect(() => {
+    return () => {
+      Object.keys(areaLayersRef.current).forEach((id) => {
+        if (mapInstance) mapInstance.removeLayer(areaLayersRef.current[id]);
+      });
+      Object.keys(areaLabelMarkersRef.current).forEach((id) => {
+        if (mapInstance) mapInstance.removeLayer(areaLabelMarkersRef.current[id]);
+      });
+      areaLayersRef.current = {};
+      areaLabelMarkersRef.current = {};
+    };
+  }, [mapInstance]);
 
   // Sync Temporary OSM POIs on the map
   useEffect(() => {
@@ -945,7 +1162,7 @@ export function MapContainer({
   }, [mapInstance, flyToCoords]);
 
   return (
-    <div className={`relative w-full h-full bg-[#0a0e0c] overflow-hidden ${isDrawing || isSelectingArea ? "leaflet-crosshair" : isSplitting ? "leaflet-scissors" : ""}`}>
+    <div className={`relative w-full h-full bg-[#0a0e0c] overflow-hidden ${isDrawing || isSelectingArea || isDrawingArea ? "leaflet-crosshair" : isSplitting ? "leaflet-scissors" : ""}`}>
       <div ref={mapContainerRef} className="w-full h-full z-10" />
 
       {/* Map Drawing overlay badge */}
@@ -953,6 +1170,14 @@ export function MapContainer({
         <div className="absolute top-5 left-1/2 transform -translate-x-1/2 z-[2000] bg-emerald-500/90 border border-emerald-400/30 text-[#0c120f] font-bold text-[11px] uppercase tracking-wider px-4 py-2 rounded-full flex items-center gap-1.5 shadow-2xl backdrop-blur-sm animate-pulse pointer-events-none">
           <Plus className="w-4 h-4 animate-spin-slow" />
           Modo Dibujo Activo: Haz clic en el mapa
+        </div>
+      )}
+
+      {/* Map Area Drawing overlay badge */}
+      {isDrawingArea && (
+        <div className="absolute top-5 left-1/2 transform -translate-x-1/2 z-[2000] bg-emerald-500/90 border border-emerald-400/30 text-[#0c120f] font-bold text-[11px] uppercase tracking-wider px-4 py-2 rounded-full flex items-center gap-1.5 shadow-2xl backdrop-blur-sm animate-pulse pointer-events-none">
+          <Plus className="w-4 h-4" />
+          Modo Área Activo: Clic en el mapa y doble clic (o clic en inicio) para cerrar
         </div>
       )}
 

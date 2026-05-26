@@ -116,6 +116,40 @@ CREATE POLICY "Usuarios pueden actualizar sus propios waypoints" ON waypoints
 
 CREATE POLICY "Usuarios pueden borrar sus propios waypoints" ON waypoints
     FOR DELETE USING (auth.uid() = user_id);
+
+-- =========================================================
+-- 6. TABLA DE ÁREAS / POLÍGONOS GEODÉSICOS
+-- =========================================================
+CREATE TABLE IF NOT EXISTS areas (
+    id TEXT PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    points JSONB NOT NULL DEFAULT '[]'::jsonb,
+    color TEXT NOT NULL DEFAULT '#10b981',
+    visible BOOLEAN DEFAULT TRUE,
+    area_m2 DOUBLE PRECISION DEFAULT 0,
+    perimeter_m DOUBLE PRECISION DEFAULT 0,
+    collection_id TEXT REFERENCES route_collections(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+-- Si ya tienes la tabla creada en tu base de datos, ejecuta esta línea para añadir la columna:
+-- ALTER TABLE areas ADD COLUMN IF NOT EXISTS collection_id TEXT REFERENCES route_collections(id) ON DELETE SET NULL;
+
+ALTER TABLE areas ENABLE ROW LEVEL SECURITY;
+
+-- Políticas para areas (Polígonos)
+CREATE POLICY "Usuarios pueden ver sus propias áreas" ON areas
+    FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Usuarios pueden insertar sus propias áreas" ON areas
+    FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Usuarios pueden actualizar sus propias áreas" ON areas
+    FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Usuarios pueden borrar sus propias áreas" ON areas
+    FOR DELETE USING (auth.uid() = user_id);
 ```
 
 4. Haz clic en **Run** (Ejecutar) en la esquina superior derecha del editor. Deberías ver un mensaje indicando que la consulta se ejecutó con éxito.

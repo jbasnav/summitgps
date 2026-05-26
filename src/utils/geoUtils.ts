@@ -564,3 +564,59 @@ export function parseCoordinateInput(input: string): ParsedCoordinate | null {
 
   return null;
 }
+
+/**
+ * Calculates the geodesic area (in square meters) of a polygon
+ * using the spherical excess formula.
+ * Points are {lat, lng} objects. Polygon does NOT need to be closed.
+ */
+export function calculateGeodesicArea(points: { lat: number; lng: number }[]): number {
+  if (points.length < 3) return 0;
+  const R = 6378137; // Earth's radius in meters (WGS84)
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  let area = 0;
+  const n = points.length;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const lat1 = toRad(points[i].lat);
+    const lat2 = toRad(points[j].lat);
+    const dLng = toRad(points[j].lng - points[i].lng);
+    area += dLng * (2 + Math.sin(lat1) + Math.sin(lat2));
+  }
+  area = Math.abs((area * R * R) / 2);
+  return area;
+}
+
+/**
+ * Calculates the perimeter (in meters) of a polygon
+ * using the Haversine formula between consecutive vertices.
+ */
+export function calculatePolygonPerimeter(points: { lat: number; lng: number }[]): number {
+  if (points.length < 2) return 0;
+  let perimeter = 0;
+  for (let i = 0; i < points.length; i++) {
+    const j = (i + 1) % points.length;
+    perimeter += calculateHaversineDistance(
+      [points[i].lat, points[i].lng],
+      [points[j].lat, points[j].lng]
+    ) * 1000; // Convert km to meters
+  }
+  return perimeter;
+}
+
+/**
+ * Formats an area value into a human-readable string.
+ */
+export function formatArea(m2: number, useImperial: boolean = false): string {
+  if (useImperial) {
+    const sqft = m2 * 10.7639;
+    if (sqft < 43560) return `${Math.round(sqft).toLocaleString()} sq ft`;
+    const acres = m2 / 4046.86;
+    if (acres < 640) return `${acres.toFixed(2)} acres`;
+    return `${(acres / 640).toFixed(2)} sq mi`;
+  }
+  if (m2 < 10000) return `${Math.round(m2).toLocaleString()} m²`;
+  const ha = m2 / 10000;
+  if (ha < 100) return `${ha.toFixed(2)} ha`;
+  return `${(m2 / 1000000).toFixed(3)} km²`;
+}

@@ -215,3 +215,44 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .leaflet-scissors .leaflet-interactive {
   cursor: pointer !important;
 }
+
+/* Cartographic Printing Styles & Media Queries */
+@media print {
+  body, html, #root {
+    background: #ffffff !important;
+    color: #000000 !important;
+    overflow: visible !important;
+    height: auto !important;
+  }
+  
+  /* Hide all app Chrome/UI during printing */
+  .fixed, 
+  .absolute:not(.leaflet-pane), 
+  aside, 
+  nav, 
+  button, 
+  .sidebar, 
+  .elevation-profile-container, 
+  .toolbar-container {
+    display: none !important;
+  }
+
+  /* Expand map to span full sheet */
+  .leaflet-container {
+    width: 100vw !important;
+    height: 100vh !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    visibility: visible !important;
+    z-index: 1000 !important;
+  }
+}
+
+/* Custom icon reset for Leaflet labels used in print/areas */
+.area-label-icon {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+

@@ -3,12 +3,13 @@ import { Sidebar } from "./components/Sidebar";
 import { MapContainer } from "./components/MapContainer";
 import { ElevationProfile } from "./components/ElevationProfile";
 import { WaypointModal } from "./components/WaypointModal";
-import { useRoutePlanner, type Waypoint, type RoutePoint, type RouteCollection } from "./hooks/useRoutePlanner";
+import { useRoutePlanner, type Waypoint, type RoutePoint } from "./hooks/useRoutePlanner";
 import type { BaseLayerId } from "./components/LayerSelector";
-import { ChevronDown, ChevronUp, Search, X, Compass, Loader, MapPin, Route, Square, Upload, Download } from "lucide-react";
+import { ChevronDown, ChevronUp, Search, X, Compass, Loader, MapPin, Route, Square, Upload, Download, Printer } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "./utils/supabaseClient";
 import { AuthScreen } from "./components/AuthScreen";
-import { formatCoordinatesByFormat, parseCoordinateInput } from "./utils/geoUtils";
+import PrintMapModal from "./components/PrintMapModal";
+import { formatCoordinatesByFormat, parseCoordinateInput, calculateGeodesicArea, calculatePolygonPerimeter } from "./utils/geoUtils";
 import { exportToGPX } from "./utils/gpxExporter";
 
 import { CustomDialogProvider, useCustomDialog } from "./components/CustomDialog";
@@ -55,6 +56,7 @@ function AppContent() {
     setTrackColor,
     mergeTracks,
     splitTrack,
+    reverseTrack,
 
     // Waypoint Groups / Challenges
     waypointGroups,
@@ -71,6 +73,13 @@ function AppContent() {
     updateRouteCollection,
     toggleRouteCollectionVisibility,
     setTrackCollection,
+
+    // Area additions
+    areas,
+    addArea,
+    updateArea,
+    deleteArea,
+    toggleAreaVisibility,
   } = useRoutePlanner(user);
 
   // App settings states
@@ -297,6 +306,7 @@ function AppContent() {
   const [flyToCoords, setFlyToCoords] = useState<[number, number] | null>(null);
   const [isChartCollapsed, setIsChartCollapsed] = useState<boolean>(false);
   const [isSplitting, setIsSplitting] = useState<boolean>(false); // Split route mode
+  const [isDrawingArea, setIsDrawingArea] = useState<boolean>(false); // Area drawing mode
   const [mapCenter, setMapCenter] = useState<[number, number] | null>([43.1906, -4.8322]);
   const [osmPois, setOsmPois] = useState<any[]>([]);
 
@@ -315,6 +325,14 @@ function AppContent() {
   const [selectedWptIds, setSelectedWptIds] = useState<string[]>([]);
   const [selectedPoiIds, setSelectedPoiIds] = useState<string[]>([]);
   const [isSelectingArea, setIsSelectingArea] = useState<boolean>(false);
+
+  // Cartographic Printing States
+  const [mapInstance, setMapInstance] = useState<any>(null);
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
+
+  const activeTrackForPrint = useMemo(() => {
+    return tracks.find((t) => t.id === activeTrackId);
+  }, [tracks, activeTrackId]);
 
   // Automatically clear POI selection when new search results load
   useEffect(() => {
@@ -607,6 +625,21 @@ function AppContent() {
     setIsSplitting(false); // turn off split mode after cutting
   }, [splitTrack]);
 
+  // Handle polygon area drawing complete action
+  const handleAreaComplete = useCallback((points: { lat: number; lng: number }[], color: string) => {
+    const areaM2 = calculateGeodesicArea(points);
+    const perimeterM = calculatePolygonPerimeter(points);
+    addArea({
+      name: `Área ${areas.length + 1}`,
+      points,
+      color,
+      visible: true,
+      areaM2,
+      perimeterM,
+    });
+    setIsDrawingArea(false);
+  }, [addArea, areas.length]);
+
   return (
     <div className="w-screen h-screen flex overflow-hidden bg-[#070a08] select-none relative">
       {/* Sidebar Panel */}
@@ -663,6 +696,13 @@ function AppContent() {
         onUpdateRouteCollection={updateRouteCollection}
         onToggleRouteCollectionVisibility={toggleRouteCollectionVisibility}
         onSetTrackCollection={setTrackCollection}
+        isDrawingArea={isDrawingArea}
+        setIsDrawingArea={setIsDrawingArea}
+        areas={areas}
+        onUpdateArea={updateArea}
+        onDeleteArea={deleteArea}
+        onToggleAreaVisibility={toggleAreaVisibility}
+        onReverseTrack={reverseTrack}
         mapCenter={mapCenter}
         osmPois={osmPois}
         onSetOsmPois={setOsmPois}
@@ -1039,6 +1079,11 @@ function AppContent() {
             onSetMarkedLocation={setMarkedLocation}
             isSelectingArea={isSelectingArea}
             setIsSelectingArea={setIsSelectingArea}
+            isDrawingArea={isDrawingArea}
+            areas={areas}
+            onAreaComplete={handleAreaComplete}
+            useImperial={useImperial}
+            onMapReady={setMapInstance}
           />
 
           {/* Floating vertical Tools toolbar overlaying the map on the left */}
@@ -1203,6 +1248,17 @@ function AppContent() {
               </div>
             )}
           </div>
+
+          {/* Floating Cartographic Print Button */}
+          <div className="absolute top-4 right-4 z-[4000] pointer-events-auto">
+            <button
+              onClick={() => setIsPrintModalOpen(true)}
+              title="Imprimir Mapa (Composición Cartográfica)"
+              className="w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer bg-[#131b17]/95 hover:bg-[#182a20] border border-[#1b3d2b] hover:border-emerald-500/50 text-emerald-400 hover:text-emerald-300 transition-all shadow-[0_4px_12px_rgba(0,0,0,0.4)]"
+            >
+              <Printer className="w-[18px] h-[18px]" />
+            </button>
+          </div>
         </div>
 
         {/* Collapsible Elevation Chart */}
@@ -1268,6 +1324,15 @@ function AppContent() {
               }
             : undefined
         }
+      />
+
+      {/* Cartographic Print Modal */}
+      <PrintMapModal
+        isOpen={isPrintModalOpen}
+        onClose={() => setIsPrintModalOpen(false)}
+        mapInstance={mapInstance}
+        tracks={tracksWithCollectionVisibility}
+        defaultTitle={activeTrackForPrint?.name || 'Mapa de SummitGPS'}
       />
       {/* Exclusive loading or login overlay */}
       {authChecking && (
@@ -1346,20 +1411,6 @@ function getWeatherDescription(code: number): string {
   if (code >= 85 && code <= 86) return "Chubascos de Nieve";
   if (code >= 95 && code <= 99) return "Tormenta Eléctrica";
   return "Nubosidad";
-}
-
-function getSpanishDayName(dateStr: string, idx: number): string {
-  if (idx === 0) return "Hoy";
-  if (idx === 1) return "Mañana";
-  
-  try {
-    const date = new Date(dateStr);
-    const day = date.getDay();
-    const days = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
-    return days[day];
-  } catch {
-    return dateStr;
-  }
 }
 
 function getWindDirectionCardinal(degrees: number): string {
