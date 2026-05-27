@@ -52,14 +52,14 @@ Marcar con `[x]` cuando la característica esté completamente implementada.
 #### 📌 Propiedades Comunes (Core)
 - [x] Crear waypoints con clic derecho en mapa
 - [x] Editar nombre, icono, nota y color de los waypoints
-- [ ] Biblioteca de iconos ampliada (+100 iconos outdoor y deportivos)
+- [x] Biblioteca de iconos ampliada (+100 iconos outdoor y deportivos)
 
 #### ⛰️ Inspiradas en Gaia GPS (Trabajo de Campo)
 - [x] Asignar fotos y enlaces web a waypoints (con Supabase Storage)
 - [x] Grupos/Retos de waypoints con imagen de portada
 - [x] Marcar waypoints como completados (challenges en mapa)
 - [x] Crear waypoint por coordenadas directas en el buscador (DD, UTM, MGRS, DMS)
-- [ ] Waypoints con altitud automática pre-rellenada al crearse
+- [x] Waypoints con altitud automática pre-rellenada al crearse
 
 #### 💻 Inspiradas en gpx.studio (Interactividad en GPX)
 - [ ] Mover waypoints existentes arrastrándolos directamente en el mapa
@@ -232,8 +232,8 @@ Marcar con `[x]` cuando la característica esté completamente implementada.
 10. **✅ Fase 9:** ~~Estadísticas Avanzadas (Splits, coloreado por variable, superficie)~~ — COMPLETADA
 11. **✅ Fase 11:** ~~Atajos de Teclado y Undo/Redo Global~~ — COMPLETADA
 12. **✅ Fase 10:** ~~Street View (Mapillary/Google) e Imágenes a Pie de Calle~~ — COMPLETADA
-13. **📍 Fase 12 (Actual):** Waypoints Avanzados con Altitud Automática y Biblioteca de +100 Iconos
-14. **⏳ Fase 13:** Capas Personalizadas (XYZ/WMS) y Capa de Sombreado de Pendientes (Slope Angle Shading)
+13. **✅ Fase 12:** ~~Waypoints Avanzados con Altitud Automática y Biblioteca de +100 Iconos~~ — COMPLETADA
+14. **📍 Fase 13 (Actual):** Capas Personalizadas (XYZ/WMS) y Capa de Sombreado de Pendientes (Slope Angle Shading)
 15. **⏳ Fase 14:** Herramientas de Edición Fina (Trim, Round-Trip, Arrastre de Vértices y Waypoints)
 16. **⏳ Fase 15:** Limpieza Avanzada (Outliers, Suavizado y Elevación Online de GPX)
 17. **⏳ Fase 16:** Exportaciones Avanzadas (KML/GeoJSON, Exportación en Lote, Cloud Storage y Drag & Drop)
