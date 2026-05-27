@@ -88,14 +88,14 @@ Marcar con `[x]` cuando la característica esté completamente implementada.
 
 #### 📌 Propiedades Comunes (Core)
 - [x] Selector de capas base (OSM, Satélite, Topo España, etc.)
-- [ ] Capas de usuario personalizadas (soporte para servidores XYZ/WMS del usuario)
+- [x] Capas de usuario personalizadas (soporte para servidores XYZ/WMS del usuario)
 
 #### ⛰️ Inspiradas en Gaia GPS (Información Cartográfica Avanzada)
 - [x] Cuadrículas de coordenadas superpuestas (UTM, MGRS, Lat/Lng, DMS)
 - [x] Etiquetas de cuadrícula flotantes con texto legible y dinámico
 - [x] Contornos de elevación e isolíneas (overlay topográfico)
 - [x] Opacidad de overlay topográfico configurable por slider
-- [ ] Capa de Sombreado de Pendientes (Slope Angle Shading para avalanchas)
+- [x] Capa de Sombreado de Pendientes (Slope Angle Shading para avalanchas)
 - [ ] Capa de tierras públicas / cotos forestales
 
 #### 💻 Inspiradas en gpx.studio (Contexto Virtual)
@@ -233,7 +233,7 @@ Marcar con `[x]` cuando la característica esté completamente implementada.
 11. **✅ Fase 11:** ~~Atajos de Teclado y Undo/Redo Global~~ — COMPLETADA
 12. **✅ Fase 10:** ~~Street View (Mapillary/Google) e Imágenes a Pie de Calle~~ — COMPLETADA
 13. **✅ Fase 12:** ~~Waypoints Avanzados con Altitud Automática y Biblioteca de +100 Iconos~~ — COMPLETADA
-14. **📍 Fase 13 (Actual):** Capas Personalizadas (XYZ/WMS) y Capa de Sombreado de Pendientes (Slope Angle Shading)
+14. **✅ Fase 13:** ~~Capas Personalizadas (XYZ/WMS) y Capa de Sombreado de Pendientes (Slope Angle Shading)~~ — COMPLETADA
 15. **✅ Fase 14:** ~~Herramientas de Edición Fina (Trim, Round-Trip, Arrastre de Vértices y Waypoints)~~ — COMPLETADA
-16. **⏳ Fase 15:** Limpieza Avanzada (Outliers, Suavizado y Elevación Online de GPX)
+16. **📍 Fase 15 (Actual):** Limpieza Avanzada (Outliers, Suavizado y Elevación Online de GPX)
 17. **⏳ Fase 16:** Exportaciones Avanzadas (KML/GeoJSON, Exportación en Lote, Cloud Storage y Drag & Drop)
