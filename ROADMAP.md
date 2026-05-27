@@ -236,4 +236,7 @@ Marcar con `[x]` cuando la característica esté completamente implementada.
 14. **✅ Fase 13:** ~~Capas Personalizadas (XYZ/WMS) y Capa de Sombreado de Pendientes (Slope Angle Shading)~~ — COMPLETADA
 15. **✅ Fase 14:** ~~Herramientas de Edición Fina (Trim, Round-Trip, Arrastre de Vértices y Waypoints)~~ — COMPLETADA
 16. **📍 Fase 15 (Actual):** Limpieza Avanzada (Outliers, Suavizado y Elevación Online de GPX)
-17. **⏳ Fase 16:** Exportaciones Avanzadas (KML/GeoJSON, Exportación en Lote, Cloud Storage y Drag & Drop)
+17. **⏳ Fase 16:** Exportaciones y Nube (GPX en lote, KML/GeoJSON, Cloud Storage y Drag & Drop)
+18. **⏳ Fase 17:** Biometría y Datos Temporales (Timestamps, ritmos, sensor de FC/cadencia/potencia, y tiempo estimado Naismith)
+19. **⏳ Fase 18:** Cartografía Dinámica y Clima (Radar de lluvia, Mapillary, cotos, riesgo de aludes y Proyección de Waypoints)
+20. **⏳ Fase 19:** Comunidad y Perfiles (Perfil con avatar, rutas compartidas de la comunidad, onboarding interactivo, custom SVG para waypoints y multi-ruta simultánea)
