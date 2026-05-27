@@ -12,6 +12,8 @@ export interface PrintOptions {
   showScaleBar: boolean;
   showNorthArrow: boolean;
   showElevationProfile: boolean;
+  logoDataUrl?: string;
+  logoPosition?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 }
 
 export interface PaperDimension {
@@ -433,6 +435,44 @@ export async function composeCartographicImage(
     });
 
     ctx.restore();
+  }
+
+  // E. Club Logo
+  if (options.logoDataUrl) {
+    await new Promise<void>((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        ctx.save();
+        const logoMaxSize = 100;
+        const ratio = img.width / img.height;
+        const logoW = ratio >= 1 ? logoMaxSize : logoMaxSize * ratio;
+        const logoH = ratio >= 1 ? logoMaxSize / ratio : logoMaxSize;
+
+        const pad = 14;
+        const pos = options.logoPosition ?? 'top-left';
+        let logoX: number;
+        let logoY: number;
+        if (pos === 'top-left')     { logoX = mapX + pad;           logoY = mapY + pad; }
+        else if (pos === 'top-right')    { logoX = mapX + mapW - logoW - pad; logoY = mapY + pad; }
+        else if (pos === 'bottom-left')  { logoX = mapX + pad;           logoY = mapY + mapH - logoH - pad; }
+        else                             { logoX = mapX + mapW - logoW - pad; logoY = mapY + mapH - logoH - pad; }
+
+        const cardPad = 7;
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.93)';
+        ctx.beginPath();
+        ctx.roundRect(logoX - cardPad, logoY - cardPad, logoW + cardPad * 2, logoH + cardPad * 2, 6);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(15, 23, 42, 0.12)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.drawImage(img, logoX, logoY, logoW, logoH);
+        ctx.restore();
+        resolve();
+      };
+      img.onerror = () => resolve();
+      img.src = options.logoDataUrl!;
+    });
   }
 
   return canvas;

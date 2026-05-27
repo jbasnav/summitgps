@@ -1,14 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
-import { 
-  X, 
-  Printer, 
-  FileText, 
-  Image as ImageIcon, 
-  Check, 
-  Map, 
-  Eye, 
+import {
+  X,
+  Printer,
+  FileText,
+  Image as ImageIcon,
+  Check,
+  Map,
+  Eye,
   EyeOff,
-  RefreshCw
+  RefreshCw,
+  Upload
 } from 'lucide-react';
 import { 
   composeCartographicImage, 
@@ -43,7 +44,9 @@ export default function PrintMapModal({
   const [showLegend, setShowLegend] = useState(true);
   const [showScaleBar, setShowScaleBar] = useState(true);
   const [showNorthArrow, setShowNorthArrow] = useState(true);
-  
+  const [logoDataUrl, setLogoDataUrl] = useState('');
+  const [logoPosition, setLogoPosition] = useState<'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'>('top-left');
+
   // Progress states
   const [isCapturing, setIsCapturing] = useState(false);
   const [isComposing, setIsComposing] = useState(false);
@@ -103,7 +106,9 @@ export default function PrintMapModal({
           showLegend,
           showScaleBar,
           showNorthArrow,
-          showElevationProfile: false
+          showElevationProfile: false,
+          logoDataUrl: logoDataUrl || undefined,
+          logoPosition,
         };
 
         const composed = await composeCartographicImage(
@@ -133,9 +138,11 @@ export default function PrintMapModal({
     orientation, 
     title, 
     showTitle, 
-    showLegend, 
-    showScaleBar, 
-    showNorthArrow
+    showLegend,
+    showScaleBar,
+    showNorthArrow,
+    logoDataUrl,
+    logoPosition,
   ]);
 
   if (!isOpen) return null;
@@ -155,6 +162,14 @@ export default function PrintMapModal({
     } finally {
       setIsCapturing(false);
     }
+  };
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => setLogoDataUrl(ev.target?.result as string);
+    reader.readAsDataURL(file);
   };
 
   const handleDownloadPNG = () => {
@@ -361,6 +376,54 @@ export default function PrintMapModal({
               </label>
 
             </div>
+          </div>
+
+          {/* Section: Club Logo */}
+          <div className="space-y-2.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Logo del Club</span>
+            {logoDataUrl ? (
+              <div className="space-y-2">
+                <div className="bg-[#050806] border border-[#16271c] rounded-xl p-3 flex items-center gap-3">
+                  <img src={logoDataUrl} alt="Logo" className="w-10 h-10 object-contain rounded-lg bg-white p-1 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] text-slate-300 font-medium">Logo cargado</p>
+                    <p className="text-[9px] text-slate-500">Listo para imprimir</p>
+                  </div>
+                  <button onClick={() => setLogoDataUrl('')} className="text-slate-500 hover:text-red-400 transition-colors cursor-pointer">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div>
+                  <p className="text-[9px] text-slate-500 mb-1.5">Posición:</p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {([
+                      { id: 'top-left', label: 'Superior izq.' },
+                      { id: 'top-right', label: 'Superior der.' },
+                      { id: 'bottom-left', label: 'Inferior izq.' },
+                      { id: 'bottom-right', label: 'Inferior der.' },
+                    ] as const).map((pos) => (
+                      <button
+                        key={pos.id}
+                        onClick={() => setLogoPosition(pos.id)}
+                        className={`text-[9px] py-1.5 px-2 rounded-lg border transition-all cursor-pointer ${
+                          logoPosition === pos.id
+                            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                            : 'bg-[#060a08] border-white/5 text-slate-400 hover:text-slate-200 hover:border-white/10'
+                        }`}
+                      >
+                        {pos.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <label className="flex flex-col items-center justify-center gap-1.5 bg-[#050806] border border-dashed border-[#16271c] hover:border-emerald-500/30 rounded-xl p-4 cursor-pointer transition-all group">
+                <Upload className="w-5 h-5 text-slate-500 group-hover:text-emerald-400 transition-colors" />
+                <span className="text-[10px] text-slate-500 group-hover:text-slate-300 transition-colors">Subir logo (PNG, SVG, JPG)</span>
+                <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+              </label>
+            )}
           </div>
 
           {/* Alert / Notice */}
