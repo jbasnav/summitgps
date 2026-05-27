@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Compass,
   Search,
@@ -1980,11 +1981,11 @@ export function Sidebar({
                   </div>
               </div>
 
-              {/* SECTION 2: ROUTE EDIT PANEL (popup card below tabs) */}
-              {isRouteEditPanelOpen && activeTrackId && (
+              {/* SECTION 2: ROUTE EDIT PANEL — rendered via Portal as a sibling of the sidebar */}
+              {isRouteEditPanelOpen && activeTrackId && createPortal(
                 <div
-                  className="fixed w-[360px] max-h-[calc(100vh-210px)] bg-[#0b120e] border border-[#1b3d2b] shadow-[0_8px_40px_rgba(0,0,0,0.7)] z-[9996] flex flex-col overflow-hidden rounded-tr-2xl rounded-b-2xl animate-fade-in"
-                  style={{ top: 200, left: isCollapsed ? 64 : 380 }}
+                  className="fixed top-0 h-full w-[380px] bg-[#131b17]/97 border-r border-[#1b3d2b] shadow-2xl backdrop-blur-md z-[9997] flex flex-col overflow-hidden animate-slide-in-left pointer-events-auto"
+                  style={{ left: isCollapsed ? 64 : 380 }}
                 >
                   {/* Panel Header */}
                   <div className="p-4 border-b border-[#1b3d2b] flex items-center justify-between shrink-0 bg-[#080e0a]">
@@ -2064,6 +2065,39 @@ export function Sidebar({
                       </select>
                     </div>
                   )}
+
+                  {/* Modo de Enrutamiento — primero para que sea siempre visible */}
+                  <div className="space-y-2 p-3 rounded-xl bg-[#0b100d] border border-white/5">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                      🗺️ Modo de Enrutamiento
+                    </span>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {([
+                        { id: 'hike' as RoutingProfile, label: 'Senderismo', emoji: '🥾' },
+                        { id: 'cycle' as RoutingProfile, label: 'Ciclismo', emoji: '🚴' },
+                        { id: 'drive' as RoutingProfile, label: 'Vehículo', emoji: '🚗' },
+                        { id: 'straight' as RoutingProfile, label: 'Línea Recta', emoji: '📏' },
+                      ]).map((mode) => (
+                        <button
+                          key={mode.id}
+                          onClick={() => setRoutingProfile(mode.id)}
+                          className={`flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl text-center transition-all border ${
+                            routingProfile === mode.id
+                              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.15)]'
+                              : 'bg-[#0c120f] border-white/5 text-slate-400 hover:text-slate-200 hover:border-white/10'
+                          }`}
+                        >
+                          <span className="text-lg">{mode.emoji}</span>
+                          <span className="text-[8px] font-bold uppercase tracking-wider leading-none">{mode.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-slate-500 text-center">
+                      {routingProfile === 'straight'
+                        ? 'Línea recta punto a punto sin enrutamiento.'
+                        : `Snap-to-trail activo — BRouter/OSRM detecta ${routingProfile === 'hike' ? 'senderos y caminos de montaña' : routingProfile === 'cycle' ? 'rutas ciclables y pistas' : 'carreteras y pistas'}.`}
+                    </p>
+                  </div>
 
                   {/* Drawing Actions */}
                   <div className="space-y-3">
@@ -2419,34 +2453,6 @@ export function Sidebar({
                       </div>
                     )}
 
-                    {/* Modo de Enrutamiento */}
-                    <div className="space-y-2">
-                      <span className="text-xs font-semibold text-slate-200">Modo de Ruta</span>
-                      <div className="grid grid-cols-4 gap-1.5">
-                        {([
-                          { id: 'hike' as RoutingProfile, label: 'Senderismo', emoji: '🥾' },
-                          { id: 'cycle' as RoutingProfile, label: 'Ciclismo', emoji: '🚴' },
-                          { id: 'drive' as RoutingProfile, label: 'Vehículo', emoji: '🚗' },
-                          { id: 'straight' as RoutingProfile, label: 'Línea Recta', emoji: '📏' },
-                        ]).map((mode) => (
-                          <button
-                            key={mode.id}
-                            onClick={() => setRoutingProfile(mode.id)}
-                            className={`flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl text-center transition-all border ${
-                              routingProfile === mode.id
-                                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.15)]'
-                                : 'bg-[#0b100d] border-white/5 text-slate-400 hover:text-slate-200 hover:border-white/10'
-                            }`}
-                          >
-                            <span className="text-lg">{mode.emoji}</span>
-                            <span className="text-[8px] font-bold uppercase tracking-wider leading-none">{mode.label}</span>
-                          </button>
-                        ))}
-                      </div>
-                      <p className="text-[10px] text-slate-500 text-center">
-                        {routingProfile === 'straight' ? 'Línea recta punto a punto sin enrutamiento.' : `Enrutamiento inteligente por ${routingProfile === 'hike' ? 'senderos y caminos de montaña' : routingProfile === 'cycle' ? 'rutas ciclables y pistas' : 'carreteras y pistas para vehículos'}.`}
-                      </p>
-                    </div>
                   </div>
 
                   {/* Route metrics display */}
@@ -2551,6 +2557,7 @@ export function Sidebar({
                   </div>
                 </div>
               </div>
+              , document.body
               )}
 
               {/* Import Upload Widget (Always Visible) */}
