@@ -78,6 +78,8 @@ interface MapContainerProps {
   customLayers?: CustomLayer[];
   showSlopeShading?: boolean;
   slopeShadingOpacity?: number;
+  onToggleUnits?: () => void;
+  coordinateFormat?: "dd" | "ddm" | "dms" | "utm" | "mgrs";
 }
 
 // Map Tile Providers
@@ -141,6 +143,8 @@ export function MapContainer({
   customLayers = [],
   showSlopeShading = false,
   slopeShadingOpacity = 0.6,
+  onToggleUnits,
+  coordinateFormat = "dd",
 }: MapContainerProps) {
   const { customConfirm } = useCustomDialog();
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -1734,6 +1738,40 @@ export function MapContainer({
       <div className="absolute bottom-5 left-5 z-[2000] pointer-events-none opacity-30 select-none hidden sm:block">
         <h2 className="text-xl font-black text-emerald-400 tracking-widest font-mono">SUMMIT MAPS</h2>
         <p className="text-[9px] text-slate-500 tracking-wider">TOPOGRAPHIC PLANNING SUITE</p>
+      </div>
+
+      {/* Map Info Bar — bottom center: units toggle + coordinate system */}
+      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-[2000] flex items-center gap-0 rounded-lg overflow-hidden shadow-lg border border-[#1b3d2b]/60 select-none pointer-events-auto">
+        <button
+          type="button"
+          onClick={onToggleUnits}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0c120f]/85 hover:bg-emerald-500/10 text-[10px] font-bold text-slate-300 hover:text-emerald-400 transition-colors border-r border-[#1b3d2b]/60 backdrop-blur-sm cursor-pointer"
+          title="Cambiar unidades"
+        >
+          {useImperial ? "mi / ft" : "km / m"}
+        </button>
+        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0c120f]/85 text-[10px] font-semibold text-slate-400 backdrop-blur-sm border-r border-[#1b3d2b]/60">
+          {coordinateFormat === "utm"
+            ? "UTM · WGS 84"
+            : coordinateFormat === "mgrs"
+            ? "MGRS · WGS 84"
+            : coordinateFormat === "dms"
+            ? "DMS · WGS 84"
+            : coordinateFormat === "ddm"
+            ? "DDM · WGS 84"
+            : "WGS 84 · EPSG:4326"}
+        </div>
+        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0c120f]/85 text-[10px] font-semibold text-slate-500 backdrop-blur-sm">
+          {activeBaseLayer === "osm"
+            ? "OpenStreetMap"
+            : activeBaseLayer === "opentopo"
+            ? "OpenTopoMap"
+            : activeBaseLayer === "satellite"
+            ? "Satélite · Esri"
+            : activeBaseLayer === "terrain"
+            ? "Terreno · Esri"
+            : activeBaseLayer}
+        </div>
       </div>
     </div>
   );

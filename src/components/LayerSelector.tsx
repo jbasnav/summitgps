@@ -47,7 +47,7 @@ const BASE_LAYERS = [
   },
   {
     id: "opentopo" as BaseLayerId,
-    name: "Gaia Topo (OpenTopoMap)",
+    name: "OpenTopoMap",
     desc: "Curvas de nivel ultra-detalladas, picos y sombreado de relieve perfecto.",
     icon: Mountain,
     thumbnail: "https://a.tile.opentopomap.org/12/2079/1431.png",

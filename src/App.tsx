@@ -392,6 +392,7 @@ function AppContent() {
   const [isWptModalOpen, setIsWptModalOpen] = useState(false);
   const [editingWaypoint, setEditingWaypoint] = useState<Waypoint | null>(null);
   const [newWptCoords, setNewWptCoords] = useState<[number, number] | null>(null);
+  const [newWptGroupId, setNewWptGroupId] = useState<string>("default");
 
   // Floating Geocoding Search States
   const [floatingSearchQuery, setFloatingSearchQuery] = useState("");
@@ -957,6 +958,12 @@ function AppContent() {
         onAddOsmPoi={handleAddOsmPoi}
         onAddWaypoint={addWaypoint}
         onAddMultipleWaypoints={addMultipleWaypoints}
+        onRequestAddWaypointAtCenter={useCallback((groupId?: string) => {
+          setNewWptCoords(mapCenter ?? null);
+          setNewWptGroupId(groupId || "default");
+          setEditingWaypoint(null);
+          setIsWptModalOpen(true);
+        }, [mapCenter])}
         user={user}
         onSignOut={handleSignOut}
         onSignInClick={useCallback(() => setShowAuthScreen(true), [])}
@@ -1368,6 +1375,8 @@ function AppContent() {
             areas={areas}
             onAreaComplete={handleAreaComplete}
             useImperial={useImperial}
+            onToggleUnits={handleToggleUnits}
+            coordinateFormat={coordinateFormat}
             onMapReady={setMapInstance}
             onUpdateWaypoint={updateWaypoint}
             isEditingRoute={isEditingRoute}
@@ -1868,16 +1877,16 @@ function AppContent() {
                 lng: editingWaypoint.lng,
                 elevation: editingWaypoint.elevation,
               }
-            : newWptCoords
+            : (newWptCoords || newWptGroupId !== "default")
             ? {
                 name: "",
                 icon: "mountain",
                 note: "",
                 color: "#10b981",
-                groupId: "default",
+                groupId: newWptGroupId,
                 completed: false,
-                lat: newWptCoords[0],
-                lng: newWptCoords[1],
+                lat: newWptCoords?.[0],
+                lng: newWptCoords?.[1],
               }
             : undefined
         }
