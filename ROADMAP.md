@@ -29,10 +29,10 @@ Marcar con `[x]` cuando la característica esté completamente implementada.
 #### 💻 Inspiradas en gpx.studio (Edición y Geometría)
 - [x] Dividir ruta en dos (Split Track)
 - [x] Fusionar múltiples rutas (Merge Tracks)
-- [ ] Recortar inicio/fin de ruta (Trim/Crop Track)
-- [ ] Volver al inicio / Ida y Vuelta (Back to Start / Round Trip)
-- [ ] Arrastrar puntos de anclaje para reajustar segmentos
-- [ ] Insertar puntos intermedios entre puntos existentes
+- [x] Recortar inicio/fin de ruta (Trim/Crop Track)
+- [x] Volver al inicio / Ida y Vuelta (Back to Start / Round Trip)
+- [x] Arrastrar puntos de anclaje para reajustar segmentos
+- [x] Insertar puntos intermedios entre puntos existentes
 
 ---
 
@@ -62,7 +62,7 @@ Marcar con `[x]` cuando la característica esté completamente implementada.
 - [x] Waypoints con altitud automática pre-rellenada al crearse
 
 #### 💻 Inspiradas en gpx.studio (Interactividad en GPX)
-- [ ] Mover waypoints existentes arrastrándolos directamente en el mapa
+- [x] Mover waypoints existentes arrastrándolos directamente en el mapa
 - [ ] Iconos personalizados para waypoints (soporte para subida de custom SVG)
 
 ---
@@ -234,6 +234,6 @@ Marcar con `[x]` cuando la característica esté completamente implementada.
 12. **✅ Fase 10:** ~~Street View (Mapillary/Google) e Imágenes a Pie de Calle~~ — COMPLETADA
 13. **✅ Fase 12:** ~~Waypoints Avanzados con Altitud Automática y Biblioteca de +100 Iconos~~ — COMPLETADA
 14. **📍 Fase 13 (Actual):** Capas Personalizadas (XYZ/WMS) y Capa de Sombreado de Pendientes (Slope Angle Shading)
-15. **⏳ Fase 14:** Herramientas de Edición Fina (Trim, Round-Trip, Arrastre de Vértices y Waypoints)
+15. **✅ Fase 14:** ~~Herramientas de Edición Fina (Trim, Round-Trip, Arrastre de Vértices y Waypoints)~~ — COMPLETADA
 16. **⏳ Fase 15:** Limpieza Avanzada (Outliers, Suavizado y Elevación Online de GPX)
 17. **⏳ Fase 16:** Exportaciones Avanzadas (KML/GeoJSON, Exportación en Lote, Cloud Storage y Drag & Drop)
