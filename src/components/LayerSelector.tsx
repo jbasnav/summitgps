@@ -39,6 +39,13 @@ export interface LayerSelectorProps {
 
 const BASE_LAYERS = [
   {
+    id: "none" as BaseLayerId,
+    name: "Sin mapa base",
+    desc: "Solo las capas personalizadas y overlays. Fondo negro.",
+    icon: Layers,
+    thumbnail: null,
+  },
+  {
     id: "osm" as BaseLayerId,
     name: "OpenStreetMap",
     desc: "Estándar urbano y vial, ideal para rutas de senderismo cercanas a ciudades.",
@@ -187,9 +194,11 @@ export function LayerSelector({
                     : "bg-[#0b100d] border-white/5 hover:border-white/10 hover:bg-[#0f1612]"
                 }`}
               >
-                <div className="absolute right-0 bottom-0 w-12 h-12 opacity-10 group-hover:opacity-20 transition-opacity rounded-tl-xl overflow-hidden pointer-events-none">
-                  <img src={layer.thumbnail} alt="" className="w-full h-full object-cover" />
-                </div>
+                {layer.thumbnail && (
+                  <div className="absolute right-0 bottom-0 w-12 h-12 opacity-10 group-hover:opacity-20 transition-opacity rounded-tl-xl overflow-hidden pointer-events-none">
+                    <img src={layer.thumbnail} alt="" className="w-full h-full object-cover" />
+                  </div>
+                )}
                 
                 <Icon className={`w-4 h-4 mb-2 ${isActive ? "text-emerald-400" : "text-slate-400"}`} />
                 <span className={`text-xs font-semibold ${isActive ? "text-emerald-300" : "text-slate-200"}`}>

@@ -304,16 +304,16 @@ export function Sidebar({
 
   // Header hero image — rotates on each mount
   const HERO_IMAGES = [
-    "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=800&q=80",
-    "https://images.unsplash.com/photo-1486823249359-2731bd6dafc7?auto=format&fit=crop&w=800&q=80",
-    "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=800&q=80",
-    "https://images.unsplash.com/photo-1501854140801-50d01698950b?auto=format&fit=crop&w=800&q=80",
-    "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=800&q=80",
-    "https://images.unsplash.com/photo-1483728642387-6c3bdd6c93e5?auto=format&fit=crop&w=800&q=80",
-    "https://images.unsplash.com/photo-1454496522488-7a8e488e8606?auto=format&fit=crop&w=800&q=80",
-    "https://images.unsplash.com/photo-1439853949212-36589f9a6400?auto=format&fit=crop&w=800&q=80",
-    "https://images.unsplash.com/photo-1522163182402-834f871fd851?auto=format&fit=crop&w=800&q=80",
-    "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?auto=format&fit=crop&w=800&q=80",
+    "/hero/hero1.jpg",
+    "/hero/hero2.jpg",
+    "/hero/hero3.jpg",
+    "/hero/hero4.jpg",
+    "/hero/hero5.jpg",
+    "/hero/hero6.jpg",
+    "/hero/hero7.jpg",
+    "/hero/hero8.jpg",
+    "/hero/hero9.jpg",
+    "/hero/hero10.jpg",
   ];
   const [heroImage] = useState(() => HERO_IMAGES[Math.floor(Math.random() * HERO_IMAGES.length)]);
   
@@ -1056,7 +1056,7 @@ export function Sidebar({
         </div>
       ) : (
         /* Main Sidebar Panel */
-        <div className="w-full h-full bg-[#131b17]/95 border-r border-[#1b3d2b] text-slate-100 flex flex-col overflow-hidden backdrop-blur-md">
+        <div className="w-full h-full bg-[#131b17]/95 border-r border-[#1b3d2b] text-slate-100 flex flex-col overflow-hidden">
         {/* Header / Brand — Hero Image */}
         <div className="relative h-[110px] shrink-0 overflow-hidden border-b border-[#1b3d2b]">
           <img
@@ -1067,13 +1067,20 @@ export function Sidebar({
           {/* dark gradient overlay */}
           <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/40 to-[#0c120f]/90" />
           {/* content */}
-          <div className="relative z-10 h-full flex flex-col justify-end px-5 pb-4 pt-3">
-            <h1 className="text-lg font-black tracking-widest text-white leading-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">
-              SUMMIT<span className="text-emerald-400">GPS</span>
-            </h1>
-            <p className="text-[9px] text-slate-300/70 uppercase tracking-[0.2em] font-semibold mt-0.5">
-              Outdoor Planner
-            </p>
+          <div className="relative z-10 h-full flex flex-col justify-end px-4 pb-4 pt-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-[#0d1a12]/80 border border-emerald-500/30 flex items-center justify-center shadow-[0_0_10px_rgba(16,185,129,0.2)] shrink-0">
+                <Compass className="w-4 h-4 text-emerald-400" />
+              </div>
+              <div>
+                <h1 className="text-lg font-black tracking-widest text-white leading-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">
+                  SUMMIT<span className="text-emerald-400">GPS</span>
+                </h1>
+                <p className="text-[9px] text-slate-300/70 uppercase tracking-[0.2em] font-semibold mt-0.5">
+                  Outdoor Planner
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 

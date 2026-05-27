@@ -194,34 +194,30 @@ export function MapContainer({
     
     L.control.zoom({ position: "bottomright" }).addTo(map);
 
-    // Initial base layer (low zIndex so it stays underneath overlays) (supporting custom base layers)
-    const customBase = customLayers.find(l => l.isBase && l.id === activeBaseLayer);
-    let baseLayer: L.TileLayer | L.TileLayer.WMS;
-    
-    if (customBase) {
-      if (customBase.type === "wms") {
-        baseLayer = L.tileLayer.wms(customBase.url, {
-          layers: customBase.wmsLayers || "",
-          format: "image/png",
-          transparent: true,
-          maxZoom: 19,
-          zIndex: 1,
-          attribution: customBase.attribution,
-        });
+    // Initial base layer (low zIndex so it stays underneath overlays)
+    if (activeBaseLayer !== "none") {
+      const customBase = customLayers.find(l => l.isBase && l.id === activeBaseLayer);
+      let baseLayer: L.TileLayer | L.TileLayer.WMS;
+      if (customBase) {
+        if (customBase.type === "wms") {
+          baseLayer = L.tileLayer.wms(customBase.url, {
+            layers: customBase.wmsLayers || "",
+            format: "image/png",
+            transparent: true,
+            maxZoom: 19,
+            zIndex: 1,
+            attribution: customBase.attribution,
+          });
+        } else {
+          baseLayer = L.tileLayer(customBase.url, { maxZoom: 19, zIndex: 1, attribution: customBase.attribution });
+        }
       } else {
-        baseLayer = L.tileLayer(customBase.url, {
-          maxZoom: 19,
-          zIndex: 1,
-          attribution: customBase.attribution,
-        });
+        const url = TILE_LAYERS[activeBaseLayer as keyof typeof TILE_LAYERS] || TILE_LAYERS.osm;
+        baseLayer = L.tileLayer(url, { maxZoom: 19, zIndex: 1 });
       }
-    } else {
-      const url = TILE_LAYERS[activeBaseLayer as keyof typeof TILE_LAYERS] || TILE_LAYERS.osm;
-      baseLayer = L.tileLayer(url, { maxZoom: 19, zIndex: 1 });
+      baseLayer.addTo(map);
+      tileLayerRef.current = baseLayer;
     }
-
-    baseLayer.addTo(map);
-    tileLayerRef.current = baseLayer;
 
     // Hillshading overlay layer (high zIndex so it always stays on top of base layers)
     const hillshadeLayer = L.tileLayer(HILLSHADE_URL, {
@@ -260,35 +256,34 @@ export function MapContainer({
   useEffect(() => {
     if (!mapInstance || !tileLayerRef.current) return;
 
-    mapInstance.removeLayer(tileLayerRef.current);
-
-    const customBase = customLayers.find(l => l.isBase && l.id === activeBaseLayer);
-    let newBaseLayer: L.TileLayer | L.TileLayer.WMS;
-    
-    if (customBase) {
-      if (customBase.type === "wms") {
-        newBaseLayer = L.tileLayer.wms(customBase.url, {
-          layers: customBase.wmsLayers || "",
-          format: "image/png",
-          transparent: true,
-          maxZoom: 19,
-          zIndex: 1,
-          attribution: customBase.attribution,
-        });
-      } else {
-        newBaseLayer = L.tileLayer(customBase.url, {
-          maxZoom: 19,
-          zIndex: 1,
-          attribution: customBase.attribution,
-        });
-      }
-    } else {
-      const url = TILE_LAYERS[activeBaseLayer as keyof typeof TILE_LAYERS] || TILE_LAYERS.osm;
-      newBaseLayer = L.tileLayer(url, { maxZoom: 19, zIndex: 1 });
+    if (tileLayerRef.current) {
+      mapInstance.removeLayer(tileLayerRef.current);
+      tileLayerRef.current = null;
     }
 
-    newBaseLayer.addTo(mapInstance);
-    tileLayerRef.current = newBaseLayer;
+    if (activeBaseLayer !== "none") {
+      const customBase = customLayers.find(l => l.isBase && l.id === activeBaseLayer);
+      let newBaseLayer: L.TileLayer | L.TileLayer.WMS;
+      if (customBase) {
+        if (customBase.type === "wms") {
+          newBaseLayer = L.tileLayer.wms(customBase.url, {
+            layers: customBase.wmsLayers || "",
+            format: "image/png",
+            transparent: true,
+            maxZoom: 19,
+            zIndex: 1,
+            attribution: customBase.attribution,
+          });
+        } else {
+          newBaseLayer = L.tileLayer(customBase.url, { maxZoom: 19, zIndex: 1, attribution: customBase.attribution });
+        }
+      } else {
+        const url = TILE_LAYERS[activeBaseLayer as keyof typeof TILE_LAYERS] || TILE_LAYERS.osm;
+        newBaseLayer = L.tileLayer(url, { maxZoom: 19, zIndex: 1 });
+      }
+      newBaseLayer.addTo(mapInstance);
+      tileLayerRef.current = newBaseLayer;
+    }
   }, [mapInstance, activeBaseLayer, customLayers]);
 
   // Update Hillshade Overlay
@@ -1762,7 +1757,9 @@ export function MapContainer({
             : "WGS 84 · EPSG:4326"}
         </div>
         <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0c120f]/85 text-[10px] font-semibold text-slate-500 backdrop-blur-sm">
-          {activeBaseLayer === "osm"
+          {activeBaseLayer === "none"
+            ? "Sin mapa base"
+            : activeBaseLayer === "osm"
             ? "OpenStreetMap"
             : activeBaseLayer === "opentopo"
             ? "OpenTopoMap"
