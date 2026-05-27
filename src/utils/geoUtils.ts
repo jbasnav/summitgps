@@ -818,3 +818,105 @@ export function calculateSurfaceStats(
     })
     .filter(stat => stat.distance > 0);
 }
+
+/**
+ * Estimates activity duration based on distance, ascent, descent and routing profile.
+ * Incorporates Naismith's Rule adapted for different outdoor sports.
+ */
+export function estimateActivityTime(
+  km: number,
+  ascentMeters: number,
+  descentMeters: number,
+  profile: 'hike' | 'cycle' | 'drive' | 'straight'
+): string {
+  if (km === 0) return "0 min";
+
+  let flatSpeedKmh = 4.0;
+  let ascentFactorSecPerMeter = 6.0; // 6 seconds per meter (1 hour per 600m)
+  let descentFactorSecPerMeter = 0.0;
+
+  switch (profile) {
+    case 'hike':
+    case 'straight':
+      flatSpeedKmh = 4.0;
+      ascentFactorSecPerMeter = 6.0; // 600m/h ascent
+      // Steep descent adds small time penalty (2 seconds per meter if slope > 15%)
+      descentFactorSecPerMeter = descentMeters > 0 && descentMeters / (km * 1000) > 0.15 ? 2.0 : 0.0; 
+      break;
+    case 'cycle':
+      flatSpeedKmh = 16.0; // average 16 km/h cycling flat
+      ascentFactorSecPerMeter = 8.0; // 450m/h ascent for cycling
+      descentFactorSecPerMeter = 0.0;
+      break;
+    case 'drive':
+      flatSpeedKmh = 50.0; // average 50 km/h driving on mountain roads
+      ascentFactorSecPerMeter = 1.0;
+      descentFactorSecPerMeter = 0.0;
+      break;
+  }
+
+  const flatTimeHours = km / flatSpeedKmh;
+  const flatTimeSeconds = flatTimeHours * 3600;
+  const climbTimeSeconds = ascentMeters * ascentFactorSecPerMeter;
+  const descendTimeSeconds = descentMeters * descentFactorSecPerMeter;
+
+  const totalSeconds = flatTimeSeconds + climbTimeSeconds + descendTimeSeconds;
+  const totalHours = totalSeconds / 3600;
+
+  const hours = Math.floor(totalHours);
+  const minutes = Math.round((totalHours - hours) * 60);
+
+  if (hours === 0) {
+    return `${minutes} min`;
+  }
+  return `${hours}h ${minutes}m`;
+}
+
+/**
+ * Maps a heart rate (bpm) to a specific HSL or hex color.
+ */
+export function getColorForHeartRate(hr: number): string {
+  if (hr <= 100) return "#3b82f6"; // Blue
+  if (hr <= 120) return "#10b981"; // Emerald
+  if (hr <= 140) return "#84cc16"; // Lime
+  if (hr <= 160) return "#eab308"; // Amber
+  if (hr <= 175) return "#f97316"; // Orange
+  return "#ef4444"; // Red
+}
+
+/**
+ * Maps a cadence value (rpm) to a specific HSL or hex color.
+ */
+export function getColorForCadence(cad: number): string {
+  if (cad < 60) return "#ef4444"; // Red
+  if (cad < 75) return "#f97316"; // Orange
+  if (cad < 85) return "#eab308"; // Yellow
+  if (cad <= 95) return "#10b981"; // Emerald (Ideal)
+  if (cad <= 105) return "#06b6d4"; // Cyan
+  return "#8b5cf6"; // Purple
+}
+
+/**
+ * Maps a power value (Watts) to a specific HSL or hex color.
+ */
+export function getColorForPower(power: number): string {
+  if (power < 150) return "#3b82f6"; // Blue
+  if (power < 220) return "#10b981"; // Emerald
+  if (power < 280) return "#eab308"; // Yellow
+  if (power < 350) return "#f97316"; // Orange
+  return "#ef4444"; // Red
+}
+
+/**
+ * Maps a speed value (m/s) to a specific HSL or hex color.
+ */
+export function getColorForSpeed(speed: number): string {
+  const kmh = speed * 3.6;
+  if (kmh < 5) return "#3b82f6"; // Blue
+  if (kmh < 10) return "#10b981"; // Emerald
+  if (kmh < 20) return "#eab308"; // Yellow
+  if (kmh < 35) return "#f97316"; // Orange
+  return "#ef4444"; // Red
+}
+
+

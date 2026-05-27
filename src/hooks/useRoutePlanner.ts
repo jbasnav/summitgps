@@ -12,7 +12,14 @@ export interface RoutePoint {
   elevation: number;
   distance: number; // Cumulative distance in km
   surface?: string; // Optional surface type (asfalto, grava, tierra, desconocido)
+  time?: string; // Optional timestamp ISO 8601 string
+  heartRate?: number; // Heart rate in bpm (ppm)
+  cadence?: number; // Cadence in rpm
+  power?: number; // Power in Watts (vatios)
+  temperature?: number; // Temperature in Celsius (°C)
+  speed?: number; // Instantaneous speed in m/s
 }
+
 
 function extractSurfaceFromTags(tagsStr: string): string {
   if (!tagsStr) return "desconocido";

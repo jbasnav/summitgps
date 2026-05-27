@@ -17,6 +17,12 @@ interface RoutePoint {
   elevation: number;
   distance: number;
   surface?: string;
+  time?: string;
+  heartRate?: number;
+  cadence?: number;
+  power?: number;
+  temperature?: number;
+  speed?: number;
 }
 
 interface ElevationProfileProps {
@@ -108,8 +114,9 @@ export function ElevationProfile({
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
+      const pt = data.originalPoint as RoutePoint;
       return (
-        <div className="bg-[#101714]/90 border border-emerald-500/20 backdrop-blur-md rounded-xl p-3 shadow-xl text-slate-200 text-xs space-y-1 animate-fade-in">
+        <div className="bg-[#101714]/90 border border-emerald-500/20 backdrop-blur-md rounded-xl p-3 shadow-xl text-slate-200 text-xs space-y-1 animate-fade-in min-w-[160px]">
           <p className="font-semibold text-emerald-400">Punto de Ruta</p>
           <p className="flex justify-between gap-4">
             <span className="text-slate-500">Distancia:</span>
@@ -119,6 +126,47 @@ export function ElevationProfile({
             <span className="text-slate-500">Altitud:</span>
             <span className="font-bold">{data.elevation} {elevUnit}</span>
           </p>
+          {pt.time && (
+            <p className="flex justify-between gap-4">
+              <span className="text-slate-500">Hora:</span>
+              <span className="font-bold font-mono">{new Date(pt.time).toLocaleTimeString()}</span>
+            </p>
+          )}
+          {pt.heartRate !== undefined && (
+            <p className="flex justify-between gap-4">
+              <span className="text-slate-500">💓 FC:</span>
+              <span className="font-bold text-rose-400">{pt.heartRate} ppm</span>
+            </p>
+          )}
+          {pt.cadence !== undefined && (
+            <p className="flex justify-between gap-4">
+              <span className="text-slate-500">🔄 Cadencia:</span>
+              <span className="font-bold text-blue-400">{pt.cadence} rpm</span>
+            </p>
+          )}
+          {pt.power !== undefined && (
+            <p className="flex justify-between gap-4">
+              <span className="text-slate-500">⚡ Potencia:</span>
+              <span className="font-bold text-amber-400">{pt.power} W</span>
+            </p>
+          )}
+          {pt.temperature !== undefined && (
+            <p className="flex justify-between gap-4">
+              <span className="text-slate-500">🌡️ Temp:</span>
+              <span className="font-bold text-orange-400">{pt.temperature} °C</span>
+            </p>
+          )}
+          {pt.speed !== undefined && (
+            <p className="flex justify-between gap-4">
+              <span className="text-slate-500">🚀 Velocidad:</span>
+              <span className="font-bold text-cyan-400">
+                {useImperial
+                  ? `${(pt.speed * 2.23694).toFixed(1)} mph`
+                  : `${(pt.speed * 3.6).toFixed(1)} km/h`
+                }
+              </span>
+            </p>
+          )}
         </div>
       );
     }

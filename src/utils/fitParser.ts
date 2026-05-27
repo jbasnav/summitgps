@@ -12,13 +12,62 @@ interface LocalDefinition {
 }
 
 /**
+ * Helper to parse record fields from record message (global message number 20)
+ */
+function parseRecordField(
+  globalMessageNumber: number,
+  fieldDefNum: number,
+  size: number,
+  fieldOffset: number,
+  view: DataView,
+  isBig: boolean,
+  recordData: any
+) {
+  if (globalMessageNumber === 20) { // Record Message
+    if (fieldDefNum === 0 && size === 4) {
+      recordData.lat = view.getInt32(fieldOffset, !isBig);
+    } else if (fieldDefNum === 1 && size === 4) {
+      recordData.lng = view.getInt32(fieldOffset, !isBig);
+    } else if (fieldDefNum === 2) {
+      if (size === 2) {
+        recordData.elevation = view.getUint16(fieldOffset, !isBig);
+      } else if (size === 4) {
+        recordData.elevation = view.getUint32(fieldOffset, !isBig);
+      }
+    } else if (fieldDefNum === 3 && size === 1) {
+      recordData.heartRate = view.getUint8(fieldOffset);
+    } else if (fieldDefNum === 4 && size === 1) {
+      recordData.cadence = view.getUint8(fieldOffset);
+    } else if (fieldDefNum === 7 && size === 2) {
+      recordData.power = view.getUint16(fieldOffset, !isBig);
+    } else if (fieldDefNum === 13 && size === 1) {
+      recordData.temperature = view.getInt8(fieldOffset);
+    } else if (fieldDefNum === 253 && size === 4) {
+      recordData.timestamp = view.getUint32(fieldOffset, !isBig);
+    } else if (fieldDefNum === 6 && size === 2) {
+      recordData.speed = view.getUint16(fieldOffset, !isBig) / 1000; // speed in m/s
+    }
+  }
+}
+
+/**
  * Parsers a Garmin binary FIT file ArrayBuffer and decodes it into RoutePoints
  */
 export function parseFIT(buffer: ArrayBuffer): { trackName: string; points: RoutePoint[]; waypoints: Waypoint[] } {
   const trackName = "Actividad Garmin FIT Importada";
   const points: RoutePoint[] = [];
   const waypoints: Waypoint[] = [];
-  const rawPoints: { lat: number; lng: number; elevation: number }[] = [];
+  const rawPoints: {
+    lat: number;
+    lng: number;
+    elevation: number;
+    time?: string;
+    heartRate?: number;
+    cadence?: number;
+    power?: number;
+    temperature?: number;
+    speed?: number;
+  }[] = [];
 
   try {
     const view = new DataView(buffer);
@@ -108,23 +157,7 @@ export function parseFIT(buffer: ArrayBuffer): { trackName: string; points: Rout
           for (const field of def.fields) {
             const fieldOffset = offset;
             offset += field.size;
-
-            if (def.globalMessageNumber === 20) { // Record Message
-              // Field 0: position_lat (sint32 semicircles)
-              // Field 1: position_long (sint32 semicircles)
-              // Field 2: altitude (uint16/uint32)
-              if (field.fieldDefNum === 0 && field.size === 4) {
-                recordData.lat = view.getInt32(fieldOffset, !isBig);
-              } else if (field.fieldDefNum === 1 && field.size === 4) {
-                recordData.lng = view.getInt32(fieldOffset, !isBig);
-              } else if (field.fieldDefNum === 2) {
-                if (field.size === 2) {
-                  recordData.elevation = view.getUint16(fieldOffset, !isBig);
-                } else if (field.size === 4) {
-                  recordData.elevation = view.getUint32(fieldOffset, !isBig);
-                }
-              }
-            }
+            parseRecordField(def.globalMessageNumber, field.fieldDefNum, field.size, fieldOffset, view, isBig, recordData);
           }
 
           if (def.globalMessageNumber === 20 && recordData.lat !== undefined && recordData.lng !== undefined) {
@@ -139,9 +172,24 @@ export function parseFIT(buffer: ArrayBuffer): { trackName: string; points: Rout
               if (elev < -500 || elev > 9000) elev = 0; // protection
             }
 
+            let timeIso: string | undefined = undefined;
+            if (recordData.timestamp !== undefined) {
+              timeIso = new Date((recordData.timestamp + 631065600) * 1000).toISOString();
+            }
+
             // Standard boundaries check
             if (latDeg >= -90 && latDeg <= 90 && lngDeg >= -180 && lngDeg <= 180) {
-              rawPoints.push({ lat: latDeg, lng: lngDeg, elevation: elev });
+              rawPoints.push({
+                lat: latDeg,
+                lng: lngDeg,
+                elevation: elev,
+                time: timeIso,
+                heartRate: recordData.heartRate,
+                cadence: recordData.cadence,
+                power: recordData.power,
+                temperature: recordData.temperature,
+                speed: recordData.speed,
+              });
             }
           }
         }
@@ -156,20 +204,7 @@ export function parseFIT(buffer: ArrayBuffer): { trackName: string; points: Rout
           for (const field of def.fields) {
             const fieldOffset = offset;
             offset += field.size;
-
-            if (def.globalMessageNumber === 20) {
-              if (field.fieldDefNum === 0 && field.size === 4) {
-                recordData.lat = view.getInt32(fieldOffset, !isBig);
-              } else if (field.fieldDefNum === 1 && field.size === 4) {
-                recordData.lng = view.getInt32(fieldOffset, !isBig);
-              } else if (field.fieldDefNum === 2) {
-                if (field.size === 2) {
-                  recordData.elevation = view.getUint16(fieldOffset, !isBig);
-                } else if (field.size === 4) {
-                  recordData.elevation = view.getUint32(fieldOffset, !isBig);
-                }
-              }
-            }
+            parseRecordField(def.globalMessageNumber, field.fieldDefNum, field.size, fieldOffset, view, isBig, recordData);
           }
 
           if (def.globalMessageNumber === 20 && recordData.lat !== undefined && recordData.lng !== undefined) {
@@ -180,8 +215,24 @@ export function parseFIT(buffer: ArrayBuffer): { trackName: string; points: Rout
               elev = (recordData.elevation / 5) - 500;
               if (elev < -500 || elev > 9000) elev = 0;
             }
+
+            let timeIso: string | undefined = undefined;
+            if (recordData.timestamp !== undefined) {
+              timeIso = new Date((recordData.timestamp + 631065600) * 1000).toISOString();
+            }
+
             if (latDeg >= -90 && latDeg <= 90 && lngDeg >= -180 && lngDeg <= 180) {
-              rawPoints.push({ lat: latDeg, lng: lngDeg, elevation: elev });
+              rawPoints.push({
+                lat: latDeg,
+                lng: lngDeg,
+                elevation: elev,
+                time: timeIso,
+                heartRate: recordData.heartRate,
+                cadence: recordData.cadence,
+                power: recordData.power,
+                temperature: recordData.temperature,
+                speed: recordData.speed,
+              });
             }
           }
         } else {
@@ -203,6 +254,12 @@ export function parseFIT(buffer: ArrayBuffer): { trackName: string; points: Rout
         lng: pt.lng,
         elevation: pt.elevation,
         distance: cumulativeDist,
+        time: pt.time,
+        heartRate: pt.heartRate,
+        cadence: pt.cadence,
+        power: pt.power,
+        temperature: pt.temperature,
+        speed: pt.speed,
       });
     });
 

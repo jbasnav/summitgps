@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Compass, ChevronsUp, ChevronsDown, Clock, Activity, ChevronDown, ChevronUp, Layers } from "lucide-react";
-import { formatDistance, formatElevation, estimateHikingTime, calculateDifficulty, calculateSurfaceStats } from "../utils/geoUtils";
+import { formatDistance, formatElevation, estimateActivityTime, calculateDifficulty, calculateSurfaceStats } from "../utils/geoUtils";
 import type { RoutePoint } from "../hooks/useRoutePlanner";
 import { SplitsTable } from "./SplitsTable";
 
@@ -10,11 +10,12 @@ interface StatsPanelProps {
   descent: number; // in meters
   useImperial: boolean;
   points?: RoutePoint[];
+  routingProfile?: 'hike' | 'cycle' | 'drive' | 'straight';
 }
 
-export function StatsPanel({ distance, ascent, descent, useImperial, points = [] }: StatsPanelProps) {
+export function StatsPanel({ distance, ascent, descent, useImperial, points = [], routingProfile = 'hike' }: StatsPanelProps) {
   const [showSplits, setShowSplits] = useState(false);
-  const timeStr = estimateHikingTime(distance, ascent);
+  const timeStr = estimateActivityTime(distance, ascent, descent, routingProfile);
   const difficulty = calculateDifficulty(distance, ascent);
 
   // Calculate surface statistics
@@ -154,7 +155,7 @@ export function StatsPanel({ distance, ascent, descent, useImperial, points = []
       )}
       
       <p className="text-[9.5px] text-slate-500 italic text-center leading-relaxed">
-        * El tiempo estimado y ritmo se calculan según la regla de Naismith (4 km/h base + 10 min por cada 100m de ascenso).
+        * El tiempo estimado se calcula según la regla de Naismith optimizada para cada perfil (4 km/h senderismo, 16 km/h ciclismo).
       </p>
     </div>
   );

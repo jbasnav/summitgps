@@ -159,8 +159,8 @@ interface SidebarProps {
   setIsCleaningArea?: (cleaning: boolean) => void;
   cleanBounds?: { north: number; south: number; east: number; west: number } | null;
   setCleanBounds?: (bounds: { north: number; south: number; east: number; west: number } | null) => void;
-  trackColorMode: "solid" | "slope" | "elevation";
-  setTrackColorMode: (mode: "solid" | "slope" | "elevation") => void;
+  trackColorMode: "solid" | "slope" | "elevation" | "heartRate" | "cadence" | "power" | "speed";
+  setTrackColorMode: (mode: "solid" | "slope" | "elevation" | "heartRate" | "cadence" | "power" | "speed") => void;
   onUndo: () => void;
   onRedo: () => void;
   canUndo: boolean;
@@ -2212,31 +2212,46 @@ export function Sidebar({
                   {points.length > 0 && (
                     <div className="space-y-4">
                       {/* Modo de Color del Track */}
-                      <div className="space-y-2 p-3 rounded-xl bg-[#0b100d] border border-white/5">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                          🎨 Modo de Color del Mapa
-                        </span>
-                        <div className="grid grid-cols-3 gap-1.5">
-                          {[
-                            { id: 'solid', label: 'Sólido', emoji: '🟢' },
-                            { id: 'slope', label: 'Pendiente', emoji: '📈' },
-                            { id: 'elevation', label: 'Altitud', emoji: '🏔️' },
-                          ].map((mode) => (
-                            <button
-                              key={mode.id}
-                              onClick={() => setTrackColorMode(mode.id as any)}
-                              className={`flex flex-col items-center gap-1 py-1.5 px-1 rounded-lg text-center transition-all border ${
-                                trackColorMode === mode.id
-                                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.15)]'
-                                  : 'bg-[#0b100d] border-white/5 text-slate-500 hover:text-slate-200 hover:border-white/10'
-                              }`}
-                            >
-                              <span className="text-xs">{mode.emoji}</span>
-                              <span className="text-[7.5px] font-bold uppercase tracking-wider leading-none">{mode.label}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
+                      {(() => {
+                        const hasHr = points.some(pt => pt.heartRate !== undefined);
+                        const hasCad = points.some(pt => pt.cadence !== undefined);
+                        const hasPwr = points.some(pt => pt.power !== undefined);
+                        const hasSpd = points.some(pt => pt.speed !== undefined);
+                        
+                        const colorModes = [
+                          { id: 'solid', label: 'Sólido', emoji: '🟢' },
+                          { id: 'slope', label: 'Pendiente', emoji: '📈' },
+                          { id: 'elevation', label: 'Altitud', emoji: '🏔️' },
+                        ];
+                        if (hasHr) colorModes.push({ id: 'heartRate', label: 'Pulsaciones', emoji: '💓' });
+                        if (hasCad) colorModes.push({ id: 'cadence', label: 'Cadencia', emoji: '🔄' });
+                        if (hasPwr) colorModes.push({ id: 'power', label: 'Potencia', emoji: '⚡' });
+                        if (hasSpd) colorModes.push({ id: 'speed', label: 'Velocidad', emoji: '🚀' });
+
+                        return (
+                          <div className="space-y-2 p-3 rounded-xl bg-[#0b100d] border border-white/5">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                              🎨 Modo de Color del Mapa
+                            </span>
+                            <div className={`grid ${colorModes.length > 3 ? 'grid-cols-4' : 'grid-cols-3'} gap-1.5`}>
+                              {colorModes.map((mode) => (
+                                <button
+                                  key={mode.id}
+                                  onClick={() => setTrackColorMode(mode.id as any)}
+                                  className={`flex flex-col items-center gap-1 py-1.5 px-1 rounded-lg text-center transition-all border ${
+                                    trackColorMode === mode.id
+                                      ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.15)]'
+                                      : 'bg-[#0b100d] border-white/5 text-slate-500 hover:text-slate-200 hover:border-white/10'
+                                  }`}
+                                >
+                                  <span className="text-xs">{mode.emoji}</span>
+                                  <span className="text-[7.5px] font-bold uppercase tracking-wider leading-none truncate w-full">{mode.label}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       <StatsPanel
                         distance={distance}
@@ -2244,6 +2259,7 @@ export function Sidebar({
                         descent={descent}
                         useImperial={useImperial}
                         points={points}
+                        routingProfile={routingProfile}
                       />
                       
                       <button

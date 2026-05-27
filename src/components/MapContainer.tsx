@@ -14,7 +14,11 @@ import {
   calculatePolygonPerimeter,
   calculateSlope,
   getColorForSlope,
-  getColorForElevation
+  getColorForElevation,
+  getColorForHeartRate,
+  getColorForCadence,
+  getColorForPower,
+  getColorForSpeed
 } from "../utils/geoUtils";
 
 interface MapContainerProps {
@@ -66,7 +70,7 @@ interface MapContainerProps {
   onInsertIntermediatePoint: (trackId: string, lat: number, lng: number) => void;
 
   // Dynamic statistics & selection props
-  trackColorMode: "solid" | "slope" | "elevation";
+  trackColorMode: "solid" | "slope" | "elevation" | "heartRate" | "cadence" | "power" | "speed";
   selectedRange: [number, number] | null;
   isStreetViewActive: boolean;
   streetViewCoords: { lat: number; lng: number } | null;
@@ -457,7 +461,8 @@ export function MapContainer({
         delete polylinesRef.current[track.id];
       }
 
-      const isDynamicMode = isActive && (trackColorMode === "slope" || trackColorMode === "elevation") && track.points.length > 1;
+      const isBiometricMode = trackColorMode === "heartRate" || trackColorMode === "cadence" || trackColorMode === "power" || trackColorMode === "speed";
+      const isDynamicMode = isActive && (trackColorMode === "slope" || trackColorMode === "elevation" || isBiometricMode) && track.points.length > 1;
 
       if (isDynamicMode) {
         let minElev = Infinity;
@@ -483,6 +488,14 @@ export function MapContainer({
           } else if (trackColorMode === "elevation") {
             const avgElev = (p1.elevation + p2.elevation) / 2;
             segmentColor = getColorForElevation(avgElev, minElev, maxElev);
+          } else if (trackColorMode === "heartRate" && p1.heartRate !== undefined) {
+            segmentColor = getColorForHeartRate(p1.heartRate);
+          } else if (trackColorMode === "cadence" && p1.cadence !== undefined) {
+            segmentColor = getColorForCadence(p1.cadence);
+          } else if (trackColorMode === "power" && p1.power !== undefined) {
+            segmentColor = getColorForPower(p1.power);
+          } else if (trackColorMode === "speed" && p1.speed !== undefined) {
+            segmentColor = getColorForSpeed(p1.speed);
           }
 
           const segmentOpts = {

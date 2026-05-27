@@ -413,7 +413,7 @@ function AppContent() {
   const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
 
   // Dynamic statistics & selection states
-  const [trackColorMode, setTrackColorMode] = useState<"solid" | "slope" | "elevation">("solid");
+  const [trackColorMode, setTrackColorMode] = useState<"solid" | "slope" | "elevation" | "heartRate" | "cadence" | "power" | "speed">("solid");
   const [selectedRange, setSelectedRange] = useState<[number, number] | null>(null);
 
   const activeTrackForPrint = useMemo(() => {
