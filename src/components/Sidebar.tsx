@@ -1980,11 +1980,11 @@ export function Sidebar({
                   </div>
               </div>
 
-              {/* SECTION 2: ROUTE EDIT PANEL (floating, fixed position) */}
+              {/* SECTION 2: ROUTE EDIT PANEL (popup card below tabs) */}
               {isRouteEditPanelOpen && activeTrackId && (
                 <div
-                  className="fixed top-0 h-full w-[340px] bg-[#0b120e] border-l border-[#1b3d2b] shadow-2xl z-[9996] flex flex-col overflow-hidden"
-                  style={{ left: isCollapsed ? 64 : 380 }}
+                  className="fixed w-[360px] max-h-[calc(100vh-210px)] bg-[#0b120e] border border-[#1b3d2b] shadow-[0_8px_40px_rgba(0,0,0,0.7)] z-[9996] flex flex-col overflow-hidden rounded-tr-2xl rounded-b-2xl animate-fade-in"
+                  style={{ top: 200, left: isCollapsed ? 64 : 380 }}
                 >
                   {/* Panel Header */}
                   <div className="p-4 border-b border-[#1b3d2b] flex items-center justify-between shrink-0 bg-[#080e0a]">
