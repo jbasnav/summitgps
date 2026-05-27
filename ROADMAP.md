@@ -113,7 +113,7 @@ Marcar con `[x]` cuando la característica esté completamente implementada.
 - [x] Panel de estadísticas flotante del track activo
 
 #### ⛰️ Inspiradas en Gaia GPS (Rendimiento de Ruta)
-- [ ] Tiempo estimado de recorrido según perfil de actividad (fórmula de Naismith/tobler)
+- [x] Tiempo estimado de recorrido según perfil de actividad (fórmula de Naismith/tobler)
 
 #### 💻 Inspiradas en gpx.studio (Análisis Geométrico)
 - [x] Tabla de Splits detallada (ritmo, velocidad y desnivel por kilómetro)
@@ -213,8 +213,8 @@ Marcar con `[x]` cuando la característica esté completamente implementada.
 
 #### 💻 Inspiradas en gpx.studio (Edición Temporal)
 - [ ] Editar y ajustar marcas de tiempo (timestamps) de un GPX (añadir velocidad virtual, desfasar hora)
-- [ ] Cálculo dinámico de velocidad y ritmo por segmento de track
-- [ ] Lectura y renderizado de sensores: frecuencia cardíaca (HR), cadencia, potencia y temperatura
+- [x] Cálculo dinámico de velocidad y ritmo por segmento de track
+- [x] Lectura y renderizado de sensores: frecuencia cardíaca (HR), cadencia, potencia y temperatura
 
 ---
 
@@ -237,6 +237,6 @@ Marcar con `[x]` cuando la característica esté completamente implementada.
 15. **✅ Fase 14:** ~~Herramientas de Edición Fina (Trim, Round-Trip, Arrastre de Vértices y Waypoints)~~ — COMPLETADA
 16. **⏳ Fase 15:** Limpieza Avanzada (Outliers, Suavizado y Elevación Online de GPX)
 17. **⏳ Fase 16:** Exportaciones y Nube (GPX en lote, KML/GeoJSON, Cloud Storage y Drag & Drop)
-18. **📍 Fase 17 (Actual):** Biometría y Datos Temporales (Timestamps, ritmos, sensor de FC/cadencia/potencia, y tiempo estimado Naismith)
-19. **⏳ Fase 18:** Cartografía Dinámica y Clima (Radar de lluvia, Mapillary, cotos, riesgo de aludes y Proyección de Waypoints)
+18. **✅ Fase 17:** ~~Biometría y Datos Temporales (Timestamps, ritmos, sensor de FC/cadencia/potencia, y tiempo estimado Naismith)~~ — COMPLETADA
+19. **📍 Fase 18 (Actual):** Cartografía Dinámica y Clima (Radar de lluvia, Mapillary, cotos, riesgo de aludes y Proyección de Waypoints)
 20. **⏳ Fase 19:** Comunidad y Perfiles (Perfil con avatar, rutas compartidas de la comunidad, onboarding interactivo, custom SVG para waypoints y multi-ruta simultánea)
