@@ -33,7 +33,7 @@ import {
   Palette,
   Trees,
 } from "lucide-react";
-import { LayerSelector, type BaseLayerId } from "./LayerSelector";
+import { LayerSelector, type BaseLayerId, type CustomLayer } from "./LayerSelector";
 import { StatsPanel } from "./StatsPanel";
 import { parseGPX, exportToGPX } from "../utils/gpxExporter";
 import { parseGeoJSON, exportToGeoJSON } from "../utils/geojsonParser";
@@ -168,6 +168,17 @@ interface SidebarProps {
   onToggleShortcutsModal: () => void;
   isStreetViewActive: boolean;
   onToggleStreetView: () => void;
+
+  // Custom layers and slope shading props (Fase 13)
+  customLayers?: CustomLayer[];
+  onAddCustomLayer?: (layer: Omit<CustomLayer, "id" | "visible" | "opacity">) => void;
+  onDeleteCustomLayer?: (id: string) => void;
+  onToggleCustomLayer?: (id: string) => void;
+  onUpdateCustomLayerOpacity?: (id: string, opacity: number) => void;
+  showSlopeShading?: boolean;
+  onToggleSlopeShading?: () => void;
+  slopeShadingOpacity?: number;
+  onChangeSlopeShadingOpacity?: (opacity: number) => void;
 }
 
 type TabId = "search" | "layers" | "route" | "waypoints" | "settings";
@@ -276,6 +287,15 @@ export function Sidebar({
   onToggleShortcutsModal,
   isStreetViewActive,
   onToggleStreetView,
+  customLayers = [],
+  onAddCustomLayer,
+  onDeleteCustomLayer,
+  onToggleCustomLayer,
+  onUpdateCustomLayerOpacity,
+  showSlopeShading = false,
+  onToggleSlopeShading,
+  slopeShadingOpacity = 0.6,
+  onChangeSlopeShadingOpacity,
 }: SidebarProps) {
   const { customAlert, customConfirm, customPrompt } = useCustomDialog();
   const [activeTab, setActiveTab] = useState<TabId>("route");
@@ -2458,6 +2478,15 @@ export function Sidebar({
                 onChangeOverlayOpacity={onChangeOverlayOpacity}
                 showContours={showContours}
                 onToggleContours={onToggleContours}
+                customLayers={customLayers}
+                onAddCustomLayer={onAddCustomLayer}
+                onDeleteCustomLayer={onDeleteCustomLayer}
+                onToggleCustomLayer={onToggleCustomLayer}
+                onUpdateCustomLayerOpacity={onUpdateCustomLayerOpacity}
+                showSlopeShading={showSlopeShading}
+                onToggleSlopeShading={onToggleSlopeShading}
+                slopeShadingOpacity={slopeShadingOpacity}
+                onChangeSlopeShadingOpacity={onChangeSlopeShadingOpacity}
               />
             </div>
           )}

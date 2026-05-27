@@ -4,7 +4,7 @@ import { MapContainer } from "./components/MapContainer";
 import { ElevationProfile } from "./components/ElevationProfile";
 import { WaypointModal } from "./components/WaypointModal";
 import { useRoutePlanner, type Waypoint, type RoutePoint } from "./hooks/useRoutePlanner";
-import type { BaseLayerId } from "./components/LayerSelector";
+import type { BaseLayerId, CustomLayer } from "./components/LayerSelector";
 import { ChevronDown, ChevronUp, Search, X, Compass, Loader, MapPin, Route, Square, Upload, Download, Printer, Scissors, ArrowLeftRight, RefreshCw, Edit2, Redo2, Undo2 } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "./utils/supabaseClient";
 import { AuthScreen } from "./components/AuthScreen";
@@ -110,6 +110,66 @@ function AppContent() {
   const [showGridLabels, setShowGridLabels] = useState<boolean>(() => {
     return localStorage.getItem("showGridLabels") !== "false"; // Default to true
   });
+
+  // Custom layers and slope shading states (Fase 13)
+  const [customLayers, setCustomLayers] = useState<CustomLayer[]>(() => {
+    try {
+      const saved = localStorage.getItem("summit_custom_layers");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [showSlopeShading, setShowSlopeShading] = useState<boolean>(() => {
+    return localStorage.getItem("summit_show_slope_shading") === "true";
+  });
+
+  const [slopeShadingOpacity, setSlopeShadingOpacity] = useState<number>(() => {
+    const saved = localStorage.getItem("summit_slope_shading_opacity");
+    return saved ? parseFloat(saved) : 0.6;
+  });
+
+  // Persist custom layers & slope shading
+  useEffect(() => {
+    localStorage.setItem("summit_custom_layers", JSON.stringify(customLayers));
+  }, [customLayers]);
+
+  useEffect(() => {
+    localStorage.setItem("summit_show_slope_shading", String(showSlopeShading));
+  }, [showSlopeShading]);
+
+  useEffect(() => {
+    localStorage.setItem("summit_slope_shading_opacity", String(slopeShadingOpacity));
+  }, [slopeShadingOpacity]);
+
+  // CRUD Handlers for custom layers
+  const handleAddCustomLayer = useCallback((layer: Omit<CustomLayer, "id" | "visible" | "opacity">) => {
+    const newLayer: CustomLayer = {
+      ...layer,
+      id: `custom-layer-${Date.now()}`,
+      visible: !layer.isBase, // bases are active via activeBaseLayer; overlays start visible
+      opacity: 0.75,
+    };
+    setCustomLayers((prev) => [...prev, newLayer]);
+  }, []);
+
+  const handleDeleteCustomLayer = useCallback((id: string) => {
+    setCustomLayers((prev) => prev.filter((l) => l.id !== id));
+    setActiveBaseLayer((prev) => (prev === id ? "osm" : prev));
+  }, []);
+
+  const handleToggleCustomLayer = useCallback((id: string) => {
+    setCustomLayers((prev) =>
+      prev.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l))
+    );
+  }, []);
+
+  const handleUpdateCustomLayerOpacity = useCallback((id: string, opacity: number) => {
+    setCustomLayers((prev) =>
+      prev.map((l) => (l.id === id ? { ...l, opacity } : l))
+    );
+  }, []);
 
   // Persist settings
   useEffect(() => {
@@ -938,6 +998,15 @@ function AppContent() {
             return next;
           });
         }, [streetViewCoords, mapInstance])}
+        customLayers={customLayers}
+        onAddCustomLayer={handleAddCustomLayer}
+        onDeleteCustomLayer={handleDeleteCustomLayer}
+        onToggleCustomLayer={handleToggleCustomLayer}
+        onUpdateCustomLayerOpacity={handleUpdateCustomLayerOpacity}
+        showSlopeShading={showSlopeShading}
+        onToggleSlopeShading={useCallback(() => setShowSlopeShading(prev => !prev), [])}
+        slopeShadingOpacity={slopeShadingOpacity}
+        onChangeSlopeShadingOpacity={setSlopeShadingOpacity}
       />
 
       {/* Point Info Drawer expanding the Sidebar */}
@@ -1311,6 +1380,9 @@ function AppContent() {
             onStreetViewCoordsChange={useCallback((lat: number, lng: number) => {
               setStreetViewCoords({ lat, lng });
             }, [])}
+            customLayers={customLayers}
+            showSlopeShading={showSlopeShading}
+            slopeShadingOpacity={slopeShadingOpacity}
           />
 
           {/* Floating vertical Tools toolbar overlaying the map on the left */}

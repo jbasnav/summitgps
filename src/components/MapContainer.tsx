@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import type { BaseLayerId } from "./LayerSelector";
+import type { BaseLayerId, CustomLayer } from "./LayerSelector";
 import type { Track, RoutePoint, Waypoint, WaypointGroup, Area } from "../hooks/useRoutePlanner";
 import { Plus, Scissors } from "lucide-react";
 import { useCustomDialog } from "./CustomDialog";
@@ -71,6 +71,9 @@ interface MapContainerProps {
   isStreetViewActive: boolean;
   streetViewCoords: { lat: number; lng: number } | null;
   onStreetViewCoordsChange: (lat: number, lng: number) => void;
+  customLayers?: CustomLayer[];
+  showSlopeShading?: boolean;
+  slopeShadingOpacity?: number;
 }
 
 // Map Tile Providers
@@ -131,6 +134,9 @@ export function MapContainer({
   isStreetViewActive,
   streetViewCoords,
   onStreetViewCoordsChange,
+  customLayers = [],
+  showSlopeShading = false,
+  slopeShadingOpacity = 0.6,
 }: MapContainerProps) {
   const { customConfirm } = useCustomDialog();
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -138,8 +144,10 @@ export function MapContainer({
   const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
   
   // Ref maps to manage layers dynamically
-  const tileLayerRef = useRef<L.TileLayer | null>(null);
+  const tileLayerRef = useRef<L.TileLayer | L.TileLayer.WMS | null>(null);
   const hillshadeLayerRef = useRef<L.TileLayer | null>(null);
+  const slopeShadingLayerRef = useRef<L.TileLayer.WMS | null>(null);
+  const customLayersRef = useRef<Record<string, L.TileLayer | L.TileLayer.WMS>>({});
   const polylinesRef = useRef<Record<string, L.Layer>>({});
   const highlightPolyRef = useRef<L.Polyline | null>(null);
   const controlMarkersRef = useRef<L.CircleMarker[]>([]);
@@ -178,8 +186,33 @@ export function MapContainer({
     
     L.control.zoom({ position: "bottomright" }).addTo(map);
 
-    // Initial base layer (low zIndex so it stays underneath overlays)
-    const baseLayer = L.tileLayer(TILE_LAYERS[activeBaseLayer], { maxZoom: 19, zIndex: 1 }).addTo(map);
+    // Initial base layer (low zIndex so it stays underneath overlays) (supporting custom base layers)
+    const customBase = customLayers.find(l => l.isBase && l.id === activeBaseLayer);
+    let baseLayer: L.TileLayer | L.TileLayer.WMS;
+    
+    if (customBase) {
+      if (customBase.type === "wms") {
+        baseLayer = L.tileLayer.wms(customBase.url, {
+          layers: customBase.wmsLayers || "",
+          format: "image/png",
+          transparent: true,
+          maxZoom: 19,
+          zIndex: 1,
+          attribution: customBase.attribution,
+        });
+      } else {
+        baseLayer = L.tileLayer(customBase.url, {
+          maxZoom: 19,
+          zIndex: 1,
+          attribution: customBase.attribution,
+        });
+      }
+    } else {
+      const url = TILE_LAYERS[activeBaseLayer as keyof typeof TILE_LAYERS] || TILE_LAYERS.osm;
+      baseLayer = L.tileLayer(url, { maxZoom: 19, zIndex: 1 });
+    }
+
+    baseLayer.addTo(map);
     tileLayerRef.current = baseLayer;
 
     // Hillshading overlay layer (high zIndex so it always stays on top of base layers)
@@ -215,14 +248,40 @@ export function MapContainer({
     };
   }, []);
 
-  // Update Base Layer
+  // Update Base Layer (supporting custom base layers)
   useEffect(() => {
     if (!mapInstance || !tileLayerRef.current) return;
 
     mapInstance.removeLayer(tileLayerRef.current);
-    const newBaseLayer = L.tileLayer(TILE_LAYERS[activeBaseLayer], { maxZoom: 19, zIndex: 1 }).addTo(mapInstance);
+
+    const customBase = customLayers.find(l => l.isBase && l.id === activeBaseLayer);
+    let newBaseLayer: L.TileLayer | L.TileLayer.WMS;
+    
+    if (customBase) {
+      if (customBase.type === "wms") {
+        newBaseLayer = L.tileLayer.wms(customBase.url, {
+          layers: customBase.wmsLayers || "",
+          format: "image/png",
+          transparent: true,
+          maxZoom: 19,
+          zIndex: 1,
+          attribution: customBase.attribution,
+        });
+      } else {
+        newBaseLayer = L.tileLayer(customBase.url, {
+          maxZoom: 19,
+          zIndex: 1,
+          attribution: customBase.attribution,
+        });
+      }
+    } else {
+      const url = TILE_LAYERS[activeBaseLayer as keyof typeof TILE_LAYERS] || TILE_LAYERS.osm;
+      newBaseLayer = L.tileLayer(url, { maxZoom: 19, zIndex: 1 });
+    }
+
+    newBaseLayer.addTo(mapInstance);
     tileLayerRef.current = newBaseLayer;
-  }, [mapInstance, activeBaseLayer]);
+  }, [mapInstance, activeBaseLayer, customLayers]);
 
   // Update Hillshade Overlay
   useEffect(() => {
@@ -240,6 +299,88 @@ export function MapContainer({
       }
     }
   }, [mapInstance, showContours, overlayOpacity]);
+
+  // Update Custom Overlays
+  useEffect(() => {
+    if (!mapInstance) return;
+
+    const currentOverlays = customLayers.filter(l => !l.isBase);
+    const currentOverlayIds = new Set(currentOverlays.filter(l => l.visible).map(l => l.id));
+
+    // Remove overlays that are no longer visible or deleted
+    Object.keys(customLayersRef.current).forEach((id) => {
+      if (!currentOverlayIds.has(id)) {
+        mapInstance.removeLayer(customLayersRef.current[id]);
+        delete customLayersRef.current[id];
+      }
+    });
+
+    // Add or update visible overlays
+    currentOverlays.forEach((layer) => {
+      if (!layer.visible) return;
+
+      let mapLayer = customLayersRef.current[layer.id];
+      if (mapLayer) {
+        // Update opacity
+        mapLayer.setOpacity(layer.opacity);
+      } else {
+        // Create new overlay layer
+        if (layer.type === "wms") {
+          mapLayer = L.tileLayer.wms(layer.url, {
+            layers: layer.wmsLayers || "",
+            format: "image/png",
+            transparent: true,
+            maxZoom: 19,
+            zIndex: 6,
+            opacity: layer.opacity,
+            attribution: layer.attribution,
+          });
+        } else {
+          mapLayer = L.tileLayer(layer.url, {
+            maxZoom: 19,
+            zIndex: 6,
+            opacity: layer.opacity,
+            attribution: layer.attribution,
+          });
+        }
+        mapLayer.addTo(mapInstance);
+        customLayersRef.current[layer.id] = mapLayer;
+      }
+    });
+  }, [mapInstance, customLayers]);
+
+  // Update Slope Angle Shading (IGN España WMS)
+  useEffect(() => {
+    if (!mapInstance) return;
+
+    if (showSlopeShading) {
+      if (slopeShadingLayerRef.current) {
+        slopeShadingLayerRef.current.setOpacity(slopeShadingOpacity);
+        if (!mapInstance.hasLayer(slopeShadingLayerRef.current)) {
+          slopeShadingLayerRef.current.addTo(mapInstance);
+        }
+      } else {
+        const slopeLayer = L.tileLayer.wms("https://wms-pendientes.idee.es/pendientes", {
+          layers: "pendientes",
+          format: "image/png",
+          transparent: true,
+          maxZoom: 19,
+          zIndex: 8,
+          opacity: slopeShadingOpacity,
+          attribution: 'Modelo de Pendientes MDP05 &copy; Instituto Geográfico Nacional de España',
+        });
+        slopeLayer.addTo(mapInstance);
+        slopeShadingLayerRef.current = slopeLayer;
+      }
+    } else {
+      if (slopeShadingLayerRef.current) {
+        slopeShadingLayerRef.current.setOpacity(0);
+        if (mapInstance.hasLayer(slopeShadingLayerRef.current)) {
+          mapInstance.removeLayer(slopeShadingLayerRef.current);
+        }
+      }
+    }
+  }, [mapInstance, showSlopeShading, slopeShadingOpacity]);
 
   // Handle map drawing clicks & right clicks
   useEffect(() => {
