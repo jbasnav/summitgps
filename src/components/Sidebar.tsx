@@ -375,6 +375,7 @@ export function Sidebar({
   const [osmRouteSearchDone, setOsmRouteSearchDone] = useState(false);
   const [osmRouteImportingId, setOsmRouteImportingId] = useState<string | null>(null);
   const [groupSearchQueries, setGroupSearchQueries] = useState<Record<string, string>>({});
+  const [isRouteEditPanelOpen, setIsRouteEditPanelOpen] = useState(false);
 
   // Automatically clear OSM POIs from the map when search widget is closed or tab is changed
   React.useEffect(() => {
@@ -994,8 +995,8 @@ export function Sidebar({
         <div className="w-[64px] h-full bg-[#0c120f]/95 border-r border-[#1b3d2b] flex flex-col items-center justify-between py-5 text-slate-400 select-none z-10">
           <div className="flex flex-col items-center gap-6 w-full">
             {/* Logo */}
-            <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center shadow-md">
-              <img src="/logo.png" alt="SUMMIT" className="w-full h-full object-cover" />
+            <div className="w-8 h-8 rounded-lg bg-[#0d1a12] border border-emerald-500/20 flex items-center justify-center shadow-md shrink-0">
+              <Compass className="w-4 h-4 text-emerald-400" />
             </div>
 
             {/* Vertical Icons */}
@@ -1756,16 +1757,17 @@ export function Sidebar({
                                             <button
                                               onClick={() => {
                                                 setActiveTrackId(track.id);
+                                                setIsRouteEditPanelOpen(true);
                                                 if (track.points.length > 0) {
                                                   onFlyToCoords(track.points[0].lat, track.points[0].lng);
                                                 }
                                               }}
                                               className={`p-1 rounded transition-colors cursor-pointer ${
-                                                isActive
+                                                isActive && isRouteEditPanelOpen
                                                   ? "bg-emerald-500/10 text-emerald-300"
                                                   : "text-slate-500 hover:text-slate-300 hover:bg-white/5"
                                               }`}
-                                              title="Habilitar edición de esta ruta"
+                                              title="Editar ruta"
                                             >
                                               <Edit2 className="w-2.5 h-2.5" />
                                             </button>
@@ -1971,48 +1973,47 @@ export function Sidebar({
                   </div>
               </div>
 
-              {/* SECTION 2: EDITING CONTROLS FOR ACTIVE ROUTE */}
-              {activeTrackId ? (
-                <div className="border-t border-[#1b3d2b]/40 pt-4 space-y-4 animate-fade-in">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                      Ruta Activa Seleccionada
-                    </h4>
-                    
-                    {/* Visual Undo/Redo quick-access mouse buttons */}
-                    <div className="flex items-center gap-1 bg-[#0b100d] border border-[#1b3d2b]/40 rounded-xl p-0.5 shadow-md">
+              {/* SECTION 2: ROUTE EDIT PANEL (floating, fixed position) */}
+              {isRouteEditPanelOpen && activeTrackId && (
+                <div
+                  className="fixed top-0 h-full w-[340px] bg-[#0b120e] border-l border-[#1b3d2b] shadow-2xl z-[9996] flex flex-col overflow-hidden"
+                  style={{ left: isCollapsed ? 64 : 380 }}
+                >
+                  {/* Panel Header */}
+                  <div className="p-4 border-b border-[#1b3d2b] flex items-center justify-between shrink-0 bg-[#080e0a]">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+                        <Edit2 className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="text-xs font-bold text-slate-200">Editar Ruta</h3>
+                        <p className="text-[10px] text-slate-500 truncate max-w-[160px]">
+                          {tracks.find(t => t.id === activeTrackId)?.name ?? 'Sin nombre'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <div className="flex items-center gap-0.5 bg-[#0b100d] border border-[#1b3d2b]/40 rounded-lg p-0.5">
+                        <button type="button" onClick={onUndo} disabled={!canUndo} title="Deshacer (Ctrl+Z)"
+                          className={`p-1 rounded transition-all ${canUndo ? 'text-slate-300 hover:text-emerald-400 hover:bg-emerald-500/10 cursor-pointer' : 'text-slate-600 opacity-40 cursor-not-allowed'}`}>
+                          <Undo2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button type="button" onClick={onRedo} disabled={!canRedo} title="Rehacer (Ctrl+Y)"
+                          className={`p-1 rounded transition-all ${canRedo ? 'text-slate-300 hover:text-emerald-400 hover:bg-emerald-500/10 cursor-pointer' : 'text-slate-600 opacity-40 cursor-not-allowed'}`}>
+                          <Redo2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                       <button
-                        type="button"
-                        onClick={onUndo}
-                        disabled={!canUndo}
-                        title="Deshacer (Ctrl+Z)"
-                        className={`p-1.5 rounded-lg transition-all ${
-                          canUndo 
-                            ? "text-slate-300 hover:text-emerald-400 hover:bg-emerald-500/10 cursor-pointer" 
-                            : "text-slate-600 opacity-40 cursor-not-allowed"
-                        }`}
+                        onClick={() => { setIsRouteEditPanelOpen(false); setIsDrawing(false); setIsEditingRoute(false); setIsSplitting(false); }}
+                        className="w-7 h-7 rounded-lg bg-[#111c16] hover:bg-[#182a20] border border-white/5 text-slate-400 hover:text-slate-200 transition-all flex items-center justify-center cursor-pointer"
                       >
-                        <Undo2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={onRedo}
-                        disabled={!canRedo}
-                        title="Rehacer (Ctrl+Y)"
-                        className={`p-1.5 rounded-lg transition-all ${
-                          canRedo 
-                            ? "text-slate-300 hover:text-emerald-400 hover:bg-emerald-500/10 cursor-pointer" 
-                            : "text-slate-600 opacity-40 cursor-not-allowed"
-                        }`}
-                      >
-                        <Redo2 className="w-3.5 h-3.5" />
+                        <X className="w-3.5 h-3.5" />
                       </button>
                     </div>
-
-                    <span className="text-[9px] bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-full font-bold">
-                      ACTIVA
-                    </span>
                   </div>
+
+                  {/* Scrollable content */}
+                  <div className="flex-1 overflow-y-auto p-4 space-y-4">
 
                   {/* Route Name Input */}
                   <div className="space-y-1.5">
@@ -2542,12 +2543,7 @@ export function Sidebar({
                     </div>
                   </div>
                 </div>
-              ) : (
-                <div className="border-t border-[#1b3d2b]/40 pt-5 text-center p-4 rounded-xl bg-[#0c120f]/50 border border-[#1b3d2b]/20">
-                  <p className="text-xs text-slate-500 leading-relaxed">
-                    Selecciona una ruta en el lápiz 📝 o crea una "Nueva Ruta" para ver sus métricas, iniciar dibujo o exportarla a GPX.
-                  </p>
-                </div>
+              </div>
               )}
 
               {/* Import Upload Widget (Always Visible) */}
