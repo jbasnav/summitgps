@@ -50,6 +50,7 @@ export interface Waypoint {
   completed?: boolean;  // Challenge milestone completed status
   image?: string;       // Picture URL (optional)
   link?: string;        // Information URL (optional)
+  elevation?: number;   // Auto altitude (optional)
 }
 
 export interface WaypointGroup {

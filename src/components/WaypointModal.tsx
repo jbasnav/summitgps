@@ -1,6 +1,7 @@
 import React, { useState } from "react";
-import { X, MapPin, Tent, Camera, AlertTriangle, Info, Droplet, Upload, Trash2, Trophy, Trees, Waves, Flame, Binoculars, Home, Car, Heart } from "lucide-react";
+import { X, MapPin, Upload, Trash2, Camera } from "lucide-react";
 import { useCustomDialog } from "./CustomDialog";
+import { WAYPOINT_CATEGORIES } from "../utils/iconLibrary";
 
 // Coordinate converter helpers
 function latLngToDms(lat: number, lng: number) {
@@ -84,28 +85,14 @@ interface WaypointModalProps {
     image?: string; 
     link?: string; 
     imageFile?: File | null;
+    elevation?: number;
   }) => void;
-  initialData?: { name: string; icon: string; note: string; color: string; groupId?: string; completed?: boolean; image?: string; link?: string; lat?: number; lng?: number };
+  initialData?: { name: string; icon: string; note: string; color: string; groupId?: string; completed?: boolean; image?: string; link?: string; lat?: number; lng?: number; elevation?: number };
   onDelete?: () => void;
   groups: any[]; // Renders available WaypointGroups
 }
 
-const ICONS = [
-  { value: "mountain", label: "Pico / Cima", icon: MapPin },
-  { value: "camp", label: "Campamento", icon: Tent },
-  { value: "camera", label: "Fotografía", icon: Camera },
-  { value: "danger", label: "Peligro", icon: AlertTriangle },
-  { value: "info", label: "Información", icon: Info },
-  { value: "water", label: "Agua / Fuente", icon: Droplet },
-  { value: "trophy", label: "Reto / Meta", icon: Trophy },
-  { value: "forest", label: "Bosque", icon: Trees },
-  { value: "lake", label: "Lago / Río", icon: Waves },
-  { value: "fire", label: "Fogata / Vivac", icon: Flame },
-  { value: "binoculars", label: "Avistamiento", icon: Binoculars },
-  { value: "home", label: "Refugio", icon: Home },
-  { value: "car", label: "Parking", icon: Car },
-  { value: "favorite", label: "Favorito", icon: Heart },
-];
+
 
 const COLORS = [
   { value: "#10b981", name: "Esmeralda" }, // Emerald
@@ -139,8 +126,9 @@ export function WaypointModal({
   const [imagePreview, setImagePreview] = useState<string | null>(initialData?.image || null);
 
   // Elevation states
-  const [elevation, setElevation] = useState<number | null>(null);
+  const [elevation, setElevation] = useState<number | null>(initialData?.elevation !== undefined ? initialData.elevation : null);
   const [fetchingElevation, setFetchingElevation] = useState(false);
+  const [activeCategory, setActiveCategory] = useState("basic");
 
   React.useEffect(() => {
     if (isOpen) {
@@ -154,10 +142,11 @@ export function WaypointModal({
       setLink(initialData?.link || "");
       setImageFile(null);
       setImagePreview(initialData?.image || null);
-      setElevation(null);
+      setElevation(initialData?.elevation !== undefined ? initialData.elevation : null);
+      setActiveCategory("basic");
 
-      // Fetch elevation from Open-Meteo if coordinates are present
-      if (initialData?.lat !== undefined && initialData?.lng !== undefined) {
+      // Fetch elevation from Open-Meteo if coordinates are present AND elevation is not already provided
+      if (initialData?.lat !== undefined && initialData?.lng !== undefined && initialData?.elevation === undefined) {
         setFetchingElevation(true);
         fetch(`https://api.open-meteo.com/v1/elevation?latitude=${initialData.lat}&longitude=${initialData.lng}`)
           .then((res) => res.json())
@@ -218,7 +207,8 @@ export function WaypointModal({
       completed, 
       image: imageFile ? undefined : (image || undefined), 
       link, 
-      imageFile 
+      imageFile,
+      elevation: elevation !== null ? elevation : undefined
     });
     onClose();
   };
@@ -257,31 +247,56 @@ export function WaypointModal({
             />
           </div>
 
-          {/* Icon Selector */}
-          <div className="space-y-2">
-            <label className="text-xs font-semibold text-emerald-400/80 tracking-wider uppercase">
-              Categoría e Icono
-            </label>
-            <div className="grid grid-cols-4 gap-2">
-              {ICONS.map((item) => {
-                const IconComponent = item.icon;
-                const isSelected = icon === item.value;
-                return (
+          {/* Icon Selector (Categorized Tabs) */}
+          <div className="space-y-3.5 border border-[#1b3d2b]/30 p-4 rounded-2xl bg-[#0c120f]/50">
+            <div className="space-y-1 shrink-0 select-none">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                Filtrar por Categoría
+              </span>
+              <div className="flex gap-1 overflow-x-auto pb-1.5 scrollbar-thin scrollbar-thumb-emerald-500/20">
+                {WAYPOINT_CATEGORIES.map((cat) => (
                   <button
-                    key={item.value}
+                    key={cat.id}
                     type="button"
-                    onClick={() => setIcon(item.value)}
-                    className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
-                      isSelected
-                        ? "bg-emerald-500/10 border-emerald-400 text-emerald-300 font-medium"
-                        : "bg-[#0a0f0d]/50 border-white/5 text-slate-400 hover:text-slate-200 hover:bg-[#0c120f]/80"
+                    onClick={() => setActiveCategory(cat.id)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all border shrink-0 cursor-pointer flex items-center gap-1 ${
+                      activeCategory === cat.id
+                        ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.15)]"
+                        : "bg-[#0b100d] border-white/5 text-slate-400 hover:text-slate-200"
                     }`}
                   >
-                    <IconComponent className={`w-5 h-5 mb-1 ${isSelected ? "text-emerald-400" : "text-slate-400"}`} />
-                    <span className="text-[10px] leading-tight">{item.label}</span>
+                    <span>{cat.emoji}</span>
+                    <span>{cat.name}</span>
                   </button>
-                );
-              })}
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+                Selecciona el Icono
+              </span>
+              <div className="grid grid-cols-4 gap-2 max-h-[170px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-emerald-500/20">
+                {WAYPOINT_CATEGORIES.find((c) => c.id === activeCategory)?.icons.map((item) => {
+                  const IconComponent = item.icon;
+                  const isSelected = icon === item.value;
+                  return (
+                    <button
+                      key={item.value}
+                      type="button"
+                      onClick={() => setIcon(item.value)}
+                      className={`flex flex-col items-center justify-center p-2 rounded-xl border text-center transition-all cursor-pointer ${
+                        isSelected
+                          ? "bg-emerald-500/10 border-emerald-400 text-emerald-300 font-medium scale-95"
+                          : "bg-[#0a0f0d]/50 border-white/5 text-slate-400 hover:text-slate-200 hover:bg-[#0c120f]/80"
+                      }`}
+                    >
+                      <IconComponent className={`w-5 h-5 mb-1 ${isSelected ? "text-emerald-400" : "text-slate-400"}`} />
+                      <span className="text-[9px] leading-tight truncate w-full text-center">{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 

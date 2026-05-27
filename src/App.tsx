@@ -724,6 +724,7 @@ function AppContent() {
       image?: string; 
       link?: string; 
       imageFile?: File | null;
+      elevation?: number;
     }) => {
       let imageUrl = data.image;
 
@@ -764,6 +765,7 @@ function AppContent() {
           completed: data.completed,
           link: data.link,
           image: imageUrl,
+          elevation: data.elevation,
         });
       } else {
         const coords = editingWaypoint?.id.startsWith("temp-")
@@ -782,6 +784,7 @@ function AppContent() {
             completed: data.completed,
             image: imageUrl,
             link: data.link,
+            elevation: data.elevation,
           });
         }
       }
@@ -1791,6 +1794,7 @@ function AppContent() {
                 completed: editingWaypoint.completed,
                 lat: editingWaypoint.lat,
                 lng: editingWaypoint.lng,
+                elevation: editingWaypoint.elevation,
               }
             : newWptCoords
             ? {

@@ -13,11 +13,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader,
-  Tent,
-  Camera,
-  AlertTriangle,
-  Info,
-  Droplet,
   Eye,
   EyeOff,
   Plus,
@@ -37,12 +32,6 @@ import {
   Hexagon,
   Palette,
   Trees,
-  Waves,
-  Flame,
-  Binoculars,
-  Home,
-  Car,
-  Heart,
 } from "lucide-react";
 import { LayerSelector, type BaseLayerId } from "./LayerSelector";
 import { StatsPanel } from "./StatsPanel";
@@ -53,6 +42,7 @@ import { parseFIT } from "../utils/fitParser";
 import { LANDSCAPE_IMAGES, type Track, type RouteCollection, type RoutingProfile, type Area } from "../hooks/useRoutePlanner";
 import { formatArea, calculatePolygonPerimeter } from "../utils/geoUtils";
 import { useCustomDialog } from "./CustomDialog";
+import { WPT_ICONS } from "../utils/iconLibrary";
 
 
 
@@ -182,22 +172,7 @@ interface SidebarProps {
 
 type TabId = "search" | "layers" | "route" | "waypoints" | "settings";
 
-const WPT_ICONS: Record<string, any> = {
-  mountain: MapPin,
-  camp: Tent,
-  camera: Camera,
-  danger: AlertTriangle,
-  info: Info,
-  water: Droplet,
-  trophy: Trophy,
-  forest: Trees,
-  lake: Waves,
-  fire: Flame,
-  binoculars: Binoculars,
-  home: Home,
-  car: Car,
-  favorite: Heart,
-};
+
 
 const DEFAULT_TRACK_COLORS = ["#10b981", "#3b82f6", "#ef4444", "#f59e0b", "#8b5cf6", "#ec4899"];
 
@@ -1627,6 +1602,11 @@ export function Sidebar({
                                             <span className={`truncate hover:underline text-slate-300 ${isCompleted ? 'line-through opacity-50' : ''}`}>
                                               {wpt.name}
                                             </span>
+                                            {wpt.elevation !== undefined && (
+                                              <span className="text-[8px] font-extrabold font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1 py-0.2 rounded shrink-0 select-none">
+                                                🏔️ {useImperial ? `${Math.round(wpt.elevation * 3.28084)} ft` : `${wpt.elevation} m`}
+                                              </span>
+                                            )}
                                           </div>
                                           <div className="flex items-center gap-1.5 shrink-0">
                                             <button
@@ -3273,13 +3253,20 @@ export function Sidebar({
                                         {/* Waypoint details */}
                                         <div className="flex-1 min-w-0 space-y-0.5">
                                           <div className="flex items-center justify-between">
-                                            <span
-                                              className={`text-xs font-bold truncate group-hover:text-emerald-300 transition-colors ${
-                                                isCompleted ? "line-through text-slate-500" : "text-slate-300"
-                                              }`}
-                                            >
-                                              {wpt.name}
-                                            </span>
+                                            <div className="flex items-center gap-1.5 min-w-0">
+                                              <span
+                                                className={`text-xs font-bold truncate group-hover:text-emerald-300 transition-colors ${
+                                                  isCompleted ? "line-through text-slate-500" : "text-slate-300"
+                                                }`}
+                                              >
+                                                {wpt.name}
+                                              </span>
+                                              {wpt.elevation !== undefined && (
+                                                <span className="text-[8px] font-extrabold font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1 py-0.2 rounded shrink-0 select-none">
+                                                  🏔️ {useImperial ? `${Math.round(wpt.elevation * 3.28084)} ft` : `${wpt.elevation} m`}
+                                                </span>
+                                              )}
+                                            </div>
 
                                             <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                                               <button
