@@ -5,7 +5,7 @@ import { ElevationProfile } from "./components/ElevationProfile";
 import { WaypointModal } from "./components/WaypointModal";
 import { useRoutePlanner, type Waypoint, type RoutePoint } from "./hooks/useRoutePlanner";
 import type { BaseLayerId, CustomLayer } from "./components/LayerSelector";
-import { ChevronDown, ChevronUp, Search, X, Compass, Loader, MapPin, Route, Square, Upload, Download, Printer, Scissors, ArrowLeftRight, RefreshCw, Edit2, Redo2, Undo2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Search, X, Compass, Loader, MapPin, Route, Square, Upload, Download, Printer, Scissors, ArrowLeftRight, RefreshCw, Edit2, Redo2, Undo2, Trees } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "./utils/supabaseClient";
 import { AuthScreen } from "./components/AuthScreen";
 import PrintMapModal from "./components/PrintMapModal";
@@ -381,6 +381,10 @@ function AppContent() {
   const [isDrawingArea, setIsDrawingArea] = useState<boolean>(false); // Area drawing mode
   const [isEditingRoute, setIsEditingRoute] = useState<boolean>(false); // Advanced Route Edit mode
   const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState<boolean>(false); // Keyboard shortcuts modal
+  // Route edit panel & sub-panels (lifted from Sidebar so toolbar can control them)
+  const [isRouteEditPanelOpen, setIsRouteEditPanelOpen] = useState<boolean>(false);
+  const [showTrimPanel, setShowTrimPanel] = useState<boolean>(false);
+  const [showSimplifyPanel, setShowSimplifyPanel] = useState<boolean>(false);
   const [isStreetViewActive, setIsStreetViewActive] = useState<boolean>(false); // Street View active mode
   const [streetViewCoords, setStreetViewCoords] = useState<{ lat: number; lng: number } | null>(null); // Coordinates for Pegman
   const [streetViewAddress, setStreetViewAddress] = useState<string>(""); // Geocoded address for Street View
@@ -1014,6 +1018,12 @@ function AppContent() {
         onToggleSlopeShading={useCallback(() => setShowSlopeShading(prev => !prev), [])}
         slopeShadingOpacity={slopeShadingOpacity}
         onChangeSlopeShadingOpacity={setSlopeShadingOpacity}
+        isRouteEditPanelOpen={isRouteEditPanelOpen}
+        setIsRouteEditPanelOpen={setIsRouteEditPanelOpen}
+        showTrimPanel={showTrimPanel}
+        setShowTrimPanel={setShowTrimPanel}
+        showSimplifyPanel={showSimplifyPanel}
+        setShowSimplifyPanel={setShowSimplifyPanel}
       />
 
       {/* Point Info Drawer expanding the Sidebar */}
@@ -1730,7 +1740,49 @@ function AppContent() {
                 </button>
               )}
 
-              {/* Help Keyboard Shortcuts button */}
+              {/* Simplify Track */}
+              {points.length > 2 && !isDrawing && (
+                <button
+                  onClick={() => {
+                    setIsRouteEditPanelOpen(true);
+                    setShowSimplifyPanel(true);
+                    setShowTrimPanel(false);
+                  }}
+                  title={showSimplifyPanel ? "Cerrar Simplificación" : "Simplificar Puntos GPS (reducir tamaño)"}
+                  className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer transition-all border ${
+                    showSimplifyPanel
+                      ? "bg-amber-500/20 border-amber-500/40 text-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.3)] animate-pulse"
+                      : "bg-[#131b17]/95 border-[#1b3d2b] hover:border-amber-500/30 text-slate-300 hover:text-amber-400"
+                  }`}
+                >
+                  <Trees className="w-[18px] h-[18px]" />
+                </button>
+              )}
+
+              {/* Trim/Crop Track */}
+              {points.length > 2 && !isDrawing && (
+                <button
+                  onClick={() => {
+                    setIsRouteEditPanelOpen(true);
+                    setShowTrimPanel(true);
+                    setShowSimplifyPanel(false);
+                  }}
+                  title={showTrimPanel ? "Cerrar Recorte" : "Recortar Inicio/Fin de Ruta (Trim)"}
+                  className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer transition-all border ${
+                    showTrimPanel
+                      ? "bg-rose-500/20 border-rose-500/40 text-rose-400 shadow-[0_0_12px_rgba(244,63,94,0.3)] animate-pulse"
+                      : "bg-[#131b17]/95 border-[#1b3d2b] hover:border-rose-500/30 text-slate-300 hover:text-rose-400"
+                  }`}
+                >
+                  {/* Crop/Trim icon */}
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22V12h10"/><path d="M12 12L3 3"/><path d="M16 12l6 6"/></svg>
+                </button>
+              )}
+
+              {/* Separador — atajos de teclado en grupo separado */}
+              <div className="w-6 h-[1px] bg-[#1b3d2b]/40 self-center my-0.5" />
+
+              {/* Keyboard Shortcuts */}
               <button
                 onClick={() => setIsShortcutsModalOpen(true)}
                 title="Ayuda y Atajos de Teclado (?)"

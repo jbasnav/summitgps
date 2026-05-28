@@ -171,6 +171,14 @@ interface SidebarProps {
   isStreetViewActive: boolean;
   onToggleStreetView: () => void;
 
+  // Route edit panel & sub-panel state (lifted to App.tsx)
+  isRouteEditPanelOpen: boolean;
+  setIsRouteEditPanelOpen: (open: boolean) => void;
+  showTrimPanel: boolean;
+  setShowTrimPanel: (show: boolean) => void;
+  showSimplifyPanel: boolean;
+  setShowSimplifyPanel: (show: boolean) => void;
+
   // Custom layers and slope shading props (Fase 13)
   customLayers?: CustomLayer[];
   onAddCustomLayer?: (layer: Omit<CustomLayer, "id" | "visible" | "opacity">) => void;
@@ -299,6 +307,12 @@ export function Sidebar({
   onToggleSlopeShading,
   slopeShadingOpacity = 0.6,
   onChangeSlopeShadingOpacity,
+  isRouteEditPanelOpen,
+  setIsRouteEditPanelOpen,
+  showTrimPanel,
+  setShowTrimPanel,
+  showSimplifyPanel,
+  setShowSimplifyPanel,
 }: SidebarProps) {
   const { customAlert, customConfirm, customPrompt } = useCustomDialog();
   const [activeTab, setActiveTab] = useState<TabId>("route");
@@ -318,9 +332,7 @@ export function Sidebar({
   ];
   const [heroImage] = useState(() => HERO_IMAGES[Math.floor(Math.random() * HERO_IMAGES.length)]);
   
-  // Local states for Trim/Crop Track
-  const [showTrimPanel, setShowTrimPanel] = useState(false);
-  const [showSimplifyPanel, setShowSimplifyPanel] = useState(false);
+  // Local states for Trim/Crop Track (showTrimPanel/showSimplifyPanel come from props)
   const [simplifyTolerance, setSimplifyTolerance] = useState(5);
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(0);
@@ -376,7 +388,6 @@ export function Sidebar({
   const [osmRouteSearchDone, setOsmRouteSearchDone] = useState(false);
   const [osmRouteImportingId, setOsmRouteImportingId] = useState<string | null>(null);
   const [groupSearchQueries, setGroupSearchQueries] = useState<Record<string, string>>({});
-  const [isRouteEditPanelOpen, setIsRouteEditPanelOpen] = useState(false);
 
   // Automatically clear OSM POIs from the map when search widget is closed or tab is changed
   React.useEffect(() => {
@@ -2105,21 +2116,17 @@ export function Sidebar({
                       <button
                         onClick={() => {
                           setIsDrawing(!isDrawing);
-                          if (isSplitting) setIsSplitting(false); // turn off split mode
-                          if (isEditingRoute) setIsEditingRoute(false); // turn off edit mode
+                          if (isSplitting) setIsSplitting(false);
+                          if (isEditingRoute) setIsEditingRoute(false);
                         }}
-                        className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl text-xs font-bold transition-all shadow-lg ${
+                        title={isDrawing ? "Finalizar Dibujo" : "Dibujar en Ruta (K)"}
+                        className={`px-3.5 border rounded-xl transition-all flex items-center justify-center ${
                           isDrawing
-                            ? "bg-red-500/20 text-red-300 border border-red-500/40 shadow-red-500/5 hover:bg-red-500/25"
-                            : "bg-emerald-400 text-[#0c120f] hover:bg-emerald-300 shadow-emerald-400/10"
+                            ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 shadow-[0_0_10px_rgba(16,185,129,0.25)] animate-pulse"
+                            : "bg-[#18231e] border-[#1b3d2b] text-slate-300 hover:text-emerald-400 hover:border-emerald-500/30"
                         }`}
                       >
-                        {loading ? (
-                          <Loader className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Route className="w-4 h-4" />
-                        )}
-                        {isDrawing ? "Finalizar Dibujo" : "Dibujar en Ruta"}
+                        {loading ? <Loader className="w-4 h-4 animate-spin" /> : <Route className="w-4 h-4" />}
                       </button>
 
                       {/* Split tool button */}
