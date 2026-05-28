@@ -1,3 +1,4 @@
+import React from "react";
 import type { RoutePoint } from "../hooks/useRoutePlanner";
 import { calculateSplits, formatElevation } from "../utils/geoUtils";
 import { Activity, Clock, ArrowUpRight, ArrowDownRight } from "lucide-react";
@@ -5,9 +6,16 @@ import { Activity, Clock, ArrowUpRight, ArrowDownRight } from "lucide-react";
 interface SplitsTableProps {
   points: RoutePoint[];
   useImperial: boolean;
+  selectedSplit?: number | null;
+  onSelectSplit?: (n: number | null) => void;
 }
 
-export const SplitsTable: React.FC<SplitsTableProps> = ({ points, useImperial }) => {
+export const SplitsTable: React.FC<SplitsTableProps> = ({
+  points,
+  useImperial,
+  selectedSplit,
+  onSelectSplit,
+}) => {
   const splits = calculateSplits(points, useImperial);
 
   const formatTime = (seconds: number): string => {
@@ -36,6 +44,14 @@ export const SplitsTable: React.FC<SplitsTableProps> = ({ points, useImperial })
           <Activity className="w-3.5 h-3.5 text-emerald-400" />
           Análisis de Tramos ({useImperial ? "Millas" : "Kilómetros"})
         </span>
+        {selectedSplit != null && onSelectSplit && (
+          <button
+            onClick={() => onSelectSplit(null)}
+            className="text-[9px] text-amber-400 hover:text-amber-300 font-bold uppercase tracking-wider transition-colors cursor-pointer"
+          >
+            ✕ Deseleccionar
+          </button>
+        )}
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-[#1b3d2b]/20 bg-[#0c120f]/80 shadow-[0_4px_20px_rgba(0,0,0,0.4)]">
@@ -52,45 +68,65 @@ export const SplitsTable: React.FC<SplitsTableProps> = ({ points, useImperial })
             </tr>
           </thead>
           <tbody className="divide-y divide-[#1b3d2b]/15 text-xs font-mono">
-            {splits.map((split) => (
-              <tr 
-                key={split.number} 
-                className="hover:bg-emerald-500/5 transition-colors group"
-              >
-                <td className="py-2.5 px-3 font-semibold text-slate-200 group-hover:text-emerald-400 transition-colors">
-                  #{split.number}
-                </td>
-                <td className="py-2.5 px-3 text-slate-300">
-                  {split.distance.toFixed(2)} {useImperial ? "mi" : "km"}
-                </td>
-                <td className="py-2.5 px-3 text-slate-300">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-emerald-400 font-semibold flex items-center text-[10px]">
-                      <ArrowUpRight className="w-2.5 h-2.5 mr-0.5 shrink-0" />
-                      +{formatElevation(split.ascent, useImperial)}
+            {splits.map((split) => {
+              const isSelected = selectedSplit === split.number;
+              return (
+                <tr
+                  key={split.number}
+                  onClick={() => onSelectSplit?.(isSelected ? null : split.number)}
+                  className={`transition-colors group ${
+                    onSelectSplit ? "cursor-pointer" : ""
+                  } ${
+                    isSelected
+                      ? "bg-amber-500/15 border-l-2 border-l-amber-400"
+                      : "hover:bg-emerald-500/5"
+                  }`}
+                >
+                  <td className={`py-2.5 px-3 font-semibold transition-colors ${
+                    isSelected ? "text-amber-300" : "text-slate-200 group-hover:text-emerald-400"
+                  }`}>
+                    {isSelected ? (
+                      <span className="flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 animate-pulse" />
+                        #{split.number}
+                      </span>
+                    ) : (
+                      `#${split.number}`
+                    )}
+                  </td>
+                  <td className="py-2.5 px-3 text-slate-300">
+                    {split.distance.toFixed(2)} {useImperial ? "mi" : "km"}
+                  </td>
+                  <td className="py-2.5 px-3 text-slate-300">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-emerald-400 font-semibold flex items-center text-[10px]">
+                        <ArrowUpRight className="w-2.5 h-2.5 mr-0.5 shrink-0" />
+                        +{formatElevation(split.ascent, useImperial)}
+                      </span>
+                      <span className="text-rose-400 font-semibold flex items-center text-[10px]">
+                        <ArrowDownRight className="w-2.5 h-2.5 mr-0.5 shrink-0" />
+                        -{formatElevation(split.descent, useImperial)}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="py-2.5 px-3 text-slate-400 text-[11px]">
+                    {formatElevation(split.avgElevation, useImperial)}
+                  </td>
+                  <td className="py-2.5 px-3 text-emerald-300/90 font-semibold text-[11px]">
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-emerald-500/80" />
+                      {formatTime(split.timeSeconds)}
                     </span>
-                    <span className="text-rose-400 font-semibold flex items-center text-[10px]">
-                      <ArrowDownRight className="w-2.5 h-2.5 mr-0.5 shrink-0" />
-                      -{formatElevation(split.descent, useImperial)}
-                    </span>
-                  </div>
-                </td>
-                <td className="py-2.5 px-3 text-slate-400 text-[11px]">
-                  {formatElevation(split.avgElevation, useImperial)}
-                </td>
-                <td className="py-2.5 px-3 text-emerald-300/90 font-semibold text-[11px]">
-                  <span className="flex items-center gap-1">
-                    <Clock className="w-3 h-3 text-emerald-500/80" />
-                    {formatTime(split.timeSeconds)}
-                  </span>
-                </td>
-              </tr>
-            ))}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
       <p className="text-[9px] text-slate-500 leading-normal">
         * El ritmo estimado se calcula utilizando la regla de Naismith (4 km/h base + 10 minutos por cada 100 metros de desnivel positivo).
+        {onSelectSplit && " Haz clic en un tramo para resaltarlo en el mapa."}
       </p>
     </div>
   );

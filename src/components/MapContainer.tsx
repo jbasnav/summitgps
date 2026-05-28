@@ -72,6 +72,7 @@ interface MapContainerProps {
   // Dynamic statistics & selection props
   trackColorMode: "solid" | "slope" | "elevation" | "heartRate" | "cadence" | "power" | "speed";
   selectedRange: [number, number] | null;
+  selectedSplitNumber?: number | null;
   isStreetViewActive: boolean;
   streetViewCoords: { lat: number; lng: number } | null;
   onStreetViewCoordsChange: (lat: number, lng: number) => void;
@@ -137,6 +138,7 @@ export function MapContainer({
   onInsertIntermediatePoint,
   trackColorMode,
   selectedRange,
+  selectedSplitNumber,
   isStreetViewActive,
   streetViewCoords,
   onStreetViewCoordsChange,
@@ -158,6 +160,7 @@ export function MapContainer({
   const customLayersRef = useRef<Record<string, L.TileLayer | L.TileLayer.WMS>>({});
   const polylinesRef = useRef<Record<string, L.Layer>>({});
   const highlightPolyRef = useRef<L.Polyline | null>(null);
+  const splitHighlightRef = useRef<L.Polyline | null>(null);
   const controlMarkersRef = useRef<L.CircleMarker[]>([]);
   const waypointMarkersRef = useRef<Record<string, L.Marker>>({});
   const osmPoiMarkersRef = useRef<Record<string, L.Marker>>({});
@@ -566,6 +569,61 @@ export function MapContainer({
       }
     };
   }, [mapInstance, selectedRange, activeTrackId, tracks]);
+
+  // Render Split Highlight (km/mile segment selected in SplitsTable)
+  useEffect(() => {
+    if (!mapInstance) return;
+
+    // Remove existing split highlight
+    if (splitHighlightRef.current) {
+      mapInstance.removeLayer(splitHighlightRef.current);
+      splitHighlightRef.current = null;
+    }
+
+    if (selectedSplitNumber == null || !activeTrackId) return;
+
+    const activeTrack = tracks.find((t) => t.id === activeTrackId);
+    if (!activeTrack || activeTrack.points.length < 2) return;
+
+    // Each split is 1 unit (km or mile). Convert back to km for comparison.
+    const unitFactor = useImperial ? 0.621371 : 1.0;
+    const startDistKm = (selectedSplitNumber - 1) / unitFactor;
+    const endDistKm = selectedSplitNumber / unitFactor;
+
+    // Filter points that belong to this split segment
+    const segmentPoints = activeTrack.points.filter(
+      (p) => p.distance >= startDistKm - 0.001 && p.distance <= endDistKm + 0.001
+    );
+
+    if (segmentPoints.length < 2) return;
+
+    const latlngs = segmentPoints.map((p) => L.latLng(p.lat, p.lng));
+
+    splitHighlightRef.current = L.polyline(latlngs, {
+      color: "#f59e0b",
+      weight: 7,
+      opacity: 0.9,
+      lineCap: "round" as const,
+      lineJoin: "round" as const,
+    }).addTo(mapInstance);
+
+    splitHighlightRef.current.bringToFront();
+
+    // Fly to the segment
+    try {
+      const bounds = L.latLngBounds(latlngs);
+      mapInstance.fitBounds(bounds, { padding: [60, 60], maxZoom: 15 });
+    } catch {
+      // ignore
+    }
+
+    return () => {
+      if (splitHighlightRef.current && mapInstance) {
+        mapInstance.removeLayer(splitHighlightRef.current);
+        splitHighlightRef.current = null;
+      }
+    };
+  }, [mapInstance, selectedSplitNumber, activeTrackId, tracks, useImperial]);
 
   // Render Active Track Control Points & Splitting Vertices
   useEffect(() => {

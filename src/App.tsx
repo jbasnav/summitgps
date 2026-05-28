@@ -408,6 +408,8 @@ function AppContent() {
   const [isRouteEditPanelOpen, setIsRouteEditPanelOpen] = useState<boolean>(false);
   const [showTrimPanel, setShowTrimPanel] = useState<boolean>(false);
   const [showSimplifyPanel, setShowSimplifyPanel] = useState<boolean>(false);
+  // Splits highlight — which km/mile segment is selected in the SplitsTable
+  const [selectedSplitNumber, setSelectedSplitNumber] = useState<number | null>(null);
   const [isStreetViewActive, setIsStreetViewActive] = useState<boolean>(false); // Street View active mode
   const [streetViewCoords, setStreetViewCoords] = useState<{ lat: number; lng: number } | null>(null); // Coordinates for Pegman
   const [streetViewAddress, setStreetViewAddress] = useState<string>(""); // Geocoded address for Street View
@@ -1057,6 +1059,8 @@ function AppContent() {
         onAddLibraryImage={addLibraryImage}
         onDeleteLibraryImage={deleteLibraryImage}
         onRenameLibraryImage={renameLibraryImage}
+        selectedSplitNumber={selectedSplitNumber}
+        onSelectSplit={setSelectedSplitNumber}
       />
 
       {/* Point Info Drawer expanding the Sidebar */}
@@ -1443,6 +1447,7 @@ function AppContent() {
             onInsertIntermediatePoint={insertIntermediatePoint}
             trackColorMode={trackColorMode}
             selectedRange={selectedRange}
+            selectedSplitNumber={selectedSplitNumber}
             isStreetViewActive={isStreetViewActive}
             streetViewCoords={streetViewCoords}
             onStreetViewCoordsChange={useCallback((lat: number, lng: number) => {
@@ -1453,75 +1458,150 @@ function AppContent() {
             slopeShadingOpacity={slopeShadingOpacity}
           />
 
-          {/* Floating vertical Tools toolbar overlaying the map on the left */}
-          {isDrawing && (
-            <div className="absolute top-20 left-6 z-[2000] flex flex-col items-center rounded-2xl border border-[#1b3d2b] bg-[#131b17]/95 shadow-2xl backdrop-blur-md overflow-hidden animate-fade-in p-2 w-14">
-              <div className="text-[9px] font-extrabold text-emerald-400/80 uppercase tracking-widest text-center mt-1 pb-2 border-b border-[#1b3d2b]/40 w-full select-none font-sans">
-                Tools
-              </div>
-              
-              <div className="flex flex-col gap-3.5 mt-4 w-full">
-                {/* Tool 1: Map Pin (Add Waypoint at center) */}
-                <button
-                  onClick={() => {
-                    if (mapCenter) {
-                      handleRightClickMap(mapCenter[0], mapCenter[1]);
-                    }
-                  }}
-                  title="Añadir Marca en el Centro del Mapa"
-                  className="w-10 h-10 rounded-xl bg-transparent hover:bg-emerald-500/10 text-slate-300 hover:text-emerald-400 transition-all flex items-center justify-center cursor-pointer border border-transparent hover:border-emerald-500/20"
-                >
-                  <MapPin className="w-5 h-5" />
-                </button>
+          {/* ── Unified right-side vertical button group ── */}
+          <div className="absolute top-4 right-4 z-[4000] pointer-events-auto flex flex-col gap-2">
 
-                {/* Tool 2: Draw Path (Active State indicator/toggle) */}
-                <button
-                  onClick={() => {
-                    setIsDrawing(!isDrawing);
-                  }}
-                  title="Dibujar Ruta (Activo)"
-                  className="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 transition-all flex items-center justify-center cursor-pointer shadow-[0_0_12px_rgba(16,185,129,0.2)] animate-pulse"
-                >
-                  <Route className="w-5 h-5" />
-                </button>
-
-                {/* Tool 3: Box Area Selection (Toggle area selection) */}
-                <button
-                  onClick={() => {
-                    setIsSelectingArea((prev) => !prev);
-                  }}
-                  title="Selección por Área (Arrastrar en el Mapa)"
-                  className={`w-10 h-10 rounded-xl transition-all flex items-center justify-center cursor-pointer border ${
-                    isSelectingArea
-                      ? "bg-blue-500/20 border-blue-500/40 text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.3)] animate-pulse"
-                      : "bg-transparent hover:bg-emerald-500/10 text-slate-300 hover:text-emerald-400 border-transparent hover:border-emerald-500/20"
-                  }`}
-                >
-                  <Square className="w-5 h-5 border-dashed border-2 rounded-sm border-current p-0.5" />
-                </button>
-
-                {/* Tool 4: Import GPX */}
-                <button
-                  onClick={() => {
-                    document.getElementById("gpx-upload-input")?.click();
-                  }}
-                  title="Importar GPX"
-                  className="w-10 h-10 rounded-xl bg-transparent hover:bg-emerald-500/10 text-slate-300 hover:text-emerald-400 transition-all flex items-center justify-center cursor-pointer border border-transparent hover:border-emerald-500/20"
-                >
-                  <Upload className="w-5 h-5" />
-                </button>
-
-                {/* Tool 5: Export GPX */}
-                <button
-                  onClick={handleExportGpxDirect}
-                  title="Exportar Ruta Activa a GPX"
-                  className="w-10 h-10 rounded-xl bg-transparent hover:bg-emerald-500/10 text-slate-300 hover:text-emerald-400 transition-all flex items-center justify-center cursor-pointer border border-transparent hover:border-emerald-500/20"
-                >
-                  <Download className="w-5 h-5" />
-                </button>
-              </div>
+            {/* Printer */}
+            <div className="relative group">
+              <button
+                onClick={() => setIsPrintModalOpen(true)}
+                title="Imprimir Mapa"
+                className="w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer bg-[#131b17]/95 hover:bg-[#182a20] border border-[#1b3d2b] hover:border-emerald-500/50 text-emerald-400 hover:text-emerald-300 transition-all"
+              >
+                <Printer className="w-[18px] h-[18px]" />
+              </button>
+              <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
+                Imprimir Mapa
+              </span>
             </div>
-          )}
+
+            {/* Street View */}
+            <div className="relative group">
+              <button
+                onClick={() => {
+                  setIsStreetViewActive((prev) => {
+                    const next = !prev;
+                    if (next) {
+                      setIsDrawing(false);
+                      setIsDrawingArea(false);
+                      setIsSplitting(false);
+                      setIsEditingRoute(false);
+                      setIsCleaningArea(false);
+                      if (!streetViewCoords && mapInstance) {
+                        const center = mapInstance.getCenter();
+                        setStreetViewCoords({ lat: center.lat, lng: center.lng });
+                      }
+                    }
+                    return next;
+                  });
+                }}
+                title={isStreetViewActive ? "Desactivar Vista de Calle" : "Activar Vista de Calle"}
+                className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer border transition-all ${
+                  isStreetViewActive
+                    ? "bg-yellow-500/20 border-yellow-500/50 text-yellow-400 shadow-[0_0_12px_rgba(234,179,8,0.3)] animate-pulse"
+                    : "bg-[#131b17]/95 border-[#1b3d2b] hover:border-yellow-500/30 text-slate-300 hover:text-yellow-400"
+                }`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 fill-current" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                  <circle cx="12" cy="4" r="2"/>
+                  <path d="M12 6c-1.1 0-2 .9-2 2v5h1v7h2v-7h1V8c0-1.1-.9-2-2-2z"/>
+                </svg>
+              </button>
+              <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
+                Vista de Calle (Street View)
+              </span>
+            </div>
+
+            {/* Keyboard Shortcuts */}
+            <div className="relative group">
+              <button
+                onClick={() => setIsShortcutsModalOpen(true)}
+                title="Atajos de Teclado (?)"
+                className="w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer bg-[#131b17]/95 border border-[#1b3d2b] hover:border-white/20 text-slate-400 hover:text-emerald-400 transition-all"
+              >
+                <Compass className="w-[18px] h-[18px]" />
+              </button>
+              <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
+                Atajos de Teclado (?)
+              </span>
+            </div>
+
+            {/* Tools sub-panel — only when drawing is active */}
+            {isDrawing && (
+              <>
+                <div className="h-[1px] bg-[#1b3d2b]/60 mx-1 my-0.5" />
+
+                {/* Add Waypoint at center */}
+                <div className="relative group">
+                  <button
+                    onClick={() => { if (mapCenter) handleRightClickMap(mapCenter[0], mapCenter[1]); }}
+                    className="w-10 h-10 rounded-xl bg-[#131b17]/95 border border-[#1b3d2b] hover:border-emerald-500/30 text-slate-300 hover:text-emerald-400 transition-all flex items-center justify-center cursor-pointer"
+                  >
+                    <MapPin className="w-[18px] h-[18px]" />
+                  </button>
+                  <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
+                    Añadir Marca en Centro
+                  </span>
+                </div>
+
+                {/* Drawing active indicator */}
+                <div className="relative group">
+                  <button
+                    onClick={() => setIsDrawing(false)}
+                    className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.2)] animate-pulse flex items-center justify-center cursor-pointer"
+                  >
+                    <Route className="w-[18px] h-[18px]" />
+                  </button>
+                  <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
+                    Dibujo activo — clic para finalizar
+                  </span>
+                </div>
+
+                {/* Area selection */}
+                <div className="relative group">
+                  <button
+                    onClick={() => setIsSelectingArea((prev) => !prev)}
+                    className={`w-10 h-10 rounded-xl border transition-all flex items-center justify-center cursor-pointer ${
+                      isSelectingArea
+                        ? "bg-blue-500/20 border-blue-500/40 text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.3)] animate-pulse"
+                        : "bg-[#131b17]/95 border-[#1b3d2b] hover:border-blue-500/30 text-slate-300 hover:text-blue-400"
+                    }`}
+                  >
+                    <Square className="w-[16px] h-[16px] border-dashed border border-current rounded-sm" />
+                  </button>
+                  <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
+                    Selección por Área
+                  </span>
+                </div>
+
+                {/* Import GPX */}
+                <div className="relative group">
+                  <button
+                    onClick={() => document.getElementById("gpx-upload-input")?.click()}
+                    className="w-10 h-10 rounded-xl bg-[#131b17]/95 border border-[#1b3d2b] hover:border-emerald-500/30 text-slate-300 hover:text-emerald-400 transition-all flex items-center justify-center cursor-pointer"
+                  >
+                    <Upload className="w-[18px] h-[18px]" />
+                  </button>
+                  <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
+                    Importar GPX / KML
+                  </span>
+                </div>
+
+                {/* Export GPX */}
+                <div className="relative group">
+                  <button
+                    onClick={handleExportGpxDirect}
+                    className="w-10 h-10 rounded-xl bg-[#131b17]/95 border border-[#1b3d2b] hover:border-emerald-500/30 text-slate-300 hover:text-emerald-400 transition-all flex items-center justify-center cursor-pointer"
+                  >
+                    <Download className="w-[18px] h-[18px]" />
+                  </button>
+                  <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
+                    Exportar GPX
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
 
 
 
@@ -1616,56 +1696,17 @@ function AppContent() {
             )}
           </div>
 
-          {/* Floating Street View Toggle Button */}
-          <div className="absolute top-4 right-16 z-[4000] pointer-events-auto">
-            <button
-              onClick={() => {
-                setIsStreetViewActive((prev) => {
-                  const next = !prev;
-                  if (next) {
-                    // Turn off other drawing/edit modes
-                    setIsDrawing(false);
-                    setIsDrawingArea(false);
-                    setIsSplitting(false);
-                    setIsEditingRoute(false);
-                    setIsCleaningArea(false);
-                    // Set coordinates
-                    if (!streetViewCoords && mapInstance) {
-                      const center = mapInstance.getCenter();
-                      setStreetViewCoords({ lat: center.lat, lng: center.lng });
-                    }
-                  }
-                  return next;
-                });
-              }}
-              title={isStreetViewActive ? "Desactivar Vista de Calle (Pegman)" : "Activar Vista de Calle / Street View"}
-              className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer border transition-all ${
-                isStreetViewActive
-                  ? "bg-yellow-500/20 border-yellow-500/50 text-yellow-400 shadow-[0_0_12px_rgba(234,179,8,0.3)] animate-pulse"
-                  : "bg-[#131b17]/95 border-[#1b3d2b] hover:border-yellow-500/30 text-slate-300 hover:text-yellow-400"
-              }`}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 fill-current" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
-                <circle cx="12" cy="4" r="2"/>
-                <path d="M12 6c-1.1 0-2 .9-2 2v5h1v7h2v-7h1V8c0-1.1-.9-2-2-2z"/>
-              </svg>
-            </button>
-          </div>
-
-          {/* Floating Cartographic Print Button */}
-          <div className="absolute top-4 right-4 z-[4000] pointer-events-auto">
-            <button
-              onClick={() => setIsPrintModalOpen(true)}
-              title="Imprimir Mapa (Composición Cartográfica)"
-              className="w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer bg-[#131b17]/95 hover:bg-[#182a20] border border-[#1b3d2b] hover:border-emerald-500/50 text-emerald-400 hover:text-emerald-300 transition-all shadow-[0_4px_12px_rgba(0,0,0,0.4)]"
-            >
-              <Printer className="w-[18px] h-[18px]" />
-            </button>
-          </div>
-
-          {/* Floating Route Edit Toolbar (top center, horizontal) */}
+          {/* Floating Route Edit Toolbar (top center, horizontal)
+              When the route-edit portal is open it overlays the left 380px of the map div,
+              so we shift the center to the midpoint of the remaining visible area. */}
           {activeTrackId && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[4000] pointer-events-auto select-none animate-fade-in">
+            <div
+              className="absolute top-4 z-[4000] pointer-events-auto select-none animate-fade-in"
+              style={{
+                left: isRouteEditPanelOpen ? 'calc(190px + 50%)' : '50%',
+                transform: 'translateX(-50%)',
+              }}
+            >
               <div className="flex flex-row items-center gap-0.5 bg-[#131b17]/95 border border-[#1b3d2b] rounded-2xl px-2 py-1.5 shadow-2xl backdrop-blur-md">
 
                 {/* Undo */}
@@ -1681,7 +1722,7 @@ function AppContent() {
                   >
                     <Undo2 className="w-[17px] h-[17px]" />
                   </button>
-                  <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
+                  <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
                     Deshacer (Ctrl+Z)
                   </span>
                 </div>
@@ -1699,7 +1740,7 @@ function AppContent() {
                   >
                     <Redo2 className="w-[17px] h-[17px]" />
                   </button>
-                  <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
+                  <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
                     Rehacer (Ctrl+Y)
                   </span>
                 </div>
@@ -1724,7 +1765,7 @@ function AppContent() {
                   >
                     {loading ? <Loader className="w-4 h-4 animate-spin" /> : <Route className="w-[17px] h-[17px]" />}
                   </button>
-                  <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
+                  <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
                     {isDrawing ? "Finalizar Dibujo" : "Dibujar Ruta (K)"}
                   </span>
                 </div>
@@ -1746,7 +1787,7 @@ function AppContent() {
                     >
                       <Scissors className="w-[17px] h-[17px]" />
                     </button>
-                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
+                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
                       {isSplitting ? "Cancelar División" : "Dividir Ruta"}
                     </span>
                   </div>
@@ -1761,7 +1802,7 @@ function AppContent() {
                     >
                       <ArrowLeftRight className="w-[17px] h-[17px]" />
                     </button>
-                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
+                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
                       Invertir Ruta
                     </span>
                   </div>
@@ -1776,7 +1817,7 @@ function AppContent() {
                     >
                       <RefreshCw className="w-[17px] h-[17px]" />
                     </button>
-                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
+                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
                       Ida y Vuelta (Bucle)
                     </span>
                   </div>
@@ -1798,7 +1839,7 @@ function AppContent() {
                     >
                       <Edit2 className="w-[17px] h-[17px]" />
                     </button>
-                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
+                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
                       {isEditingRoute ? "Finalizar Edición" : "Editar Vértices (E)"}
                     </span>
                   </div>
@@ -1817,7 +1858,7 @@ function AppContent() {
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" className="w-[17px] h-[17px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
                     </button>
-                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
+                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
                       {isCleaningArea ? "Cancelar Limpieza" : "Limpiar por Rectángulo"}
                     </span>
                   </div>
@@ -1840,7 +1881,7 @@ function AppContent() {
                     >
                       <Trees className="w-[17px] h-[17px]" />
                     </button>
-                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
+                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
                       Simplificar Puntos GPS
                     </span>
                   </div>
@@ -1863,27 +1904,12 @@ function AppContent() {
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" className="w-[17px] h-[17px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22V12h10"/><path d="M12 12L3 3"/><path d="M16 12l6 6"/></svg>
                     </button>
-                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
+                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
                       Recortar Inicio/Fin
                     </span>
                   </div>
                 )}
 
-                {/* Separator before shortcuts */}
-                <div className="h-5 w-[1px] bg-[#1b3d2b]/70 mx-1 self-center" />
-
-                {/* Keyboard Shortcuts */}
-                <div className="relative group">
-                  <button
-                    onClick={() => setIsShortcutsModalOpen(true)}
-                    className="w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer border border-transparent hover:bg-white/5 hover:border-white/10 text-slate-400 hover:text-emerald-400 transition-all"
-                  >
-                    <Compass className="w-[17px] h-[17px]" />
-                  </button>
-                  <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
-                    Atajos de Teclado (?)
-                  </span>
-                </div>
 
               </div>
             </div>

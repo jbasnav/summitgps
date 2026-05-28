@@ -11,9 +11,11 @@ interface StatsPanelProps {
   useImperial: boolean;
   points?: RoutePoint[];
   routingProfile?: 'hike' | 'cycle' | 'drive' | 'straight';
+  selectedSplit?: number | null;
+  onSelectSplit?: (n: number | null) => void;
 }
 
-export function StatsPanel({ distance, ascent, descent, useImperial, points = [], routingProfile = 'hike' }: StatsPanelProps) {
+export function StatsPanel({ distance, ascent, descent, useImperial, points = [], routingProfile = 'hike', selectedSplit, onSelectSplit }: StatsPanelProps) {
   const [showSplits, setShowSplits] = useState(false);
   const timeStr = estimateActivityTime(distance, ascent, descent, routingProfile);
   const difficulty = calculateDifficulty(distance, ascent);
@@ -148,7 +150,12 @@ export function StatsPanel({ distance, ascent, descent, useImperial, points = []
           
           {showSplits && (
             <div className="pt-2 animate-fade-in">
-              <SplitsTable points={points} useImperial={useImperial} />
+              <SplitsTable
+                points={points}
+                useImperial={useImperial}
+                selectedSplit={selectedSplit}
+                onSelectSplit={onSelectSplit}
+              />
             </div>
           )}
         </div>
