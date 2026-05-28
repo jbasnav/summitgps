@@ -1066,7 +1066,10 @@ function AppContent() {
       {/* Point Info Drawer expanding the Sidebar */}
       {/* Point Info Drawer expanding the Sidebar */}
       {!isSidebarCollapsed && markedLocation && (
-        <div className="w-[340px] md:w-[380px] h-full border-r border-[#1b3d2b] bg-[#131b17]/95 shadow-2xl backdrop-blur-md overflow-hidden flex flex-col z-[9998] animate-slide-in-left pointer-events-auto">
+        <div
+          className="w-[340px] md:w-[380px] self-start border-r border-[#1b3d2b] bg-[#131b17]/95 shadow-2xl backdrop-blur-md overflow-hidden flex flex-col z-[9998] animate-slide-in-left pointer-events-auto"
+          style={{ marginTop: 144, height: 'calc(100vh - 144px)' }}
+        >
           {/* Panel Header (Styled like GaiaGPS Premium Card) */}
           <div className="flex items-center justify-between p-5 border-b border-[#1b3d2b]/40 bg-[#0c120f]/60 select-none">
             <div className="flex items-center gap-3 min-w-0">
