@@ -4,6 +4,7 @@ import { MapContainer } from "./components/MapContainer";
 import { ElevationProfile } from "./components/ElevationProfile";
 import { WaypointModal } from "./components/WaypointModal";
 import { useRoutePlanner, type Waypoint, type RoutePoint } from "./hooks/useRoutePlanner";
+import { useImageLibrary } from "./hooks/useImageLibrary";
 import type { BaseLayerId, CustomLayer } from "./components/LayerSelector";
 import { ChevronDown, ChevronUp, Search, X, Compass, Loader, MapPin, Route, Square, Upload, Download, Printer, Scissors, ArrowLeftRight, RefreshCw, Edit2, Redo2, Undo2, Trees } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "./utils/supabaseClient";
@@ -19,6 +20,9 @@ function AppContent() {
   const [user, setUser] = useState<any | null>(null);
   const [showAuthScreen, setShowAuthScreen] = useState<boolean>(true); // Start as true to show login screen first
   const [authChecking, setAuthChecking] = useState<boolean>(isSupabaseConfigured); // Check session if Supabase is configured
+
+  // Image library (custom cover images for groups/collections/retos)
+  const { images: libraryImages, uploading: libraryUploading, addImage: addLibraryImage, deleteImage: deleteLibraryImage, renameImage: renameLibraryImage } = useImageLibrary(user?.id ?? null);
 
   const { customAlert } = useCustomDialog();
 
@@ -1024,6 +1028,11 @@ function AppContent() {
         setShowTrimPanel={setShowTrimPanel}
         showSimplifyPanel={showSimplifyPanel}
         setShowSimplifyPanel={setShowSimplifyPanel}
+        libraryImages={libraryImages}
+        libraryUploading={libraryUploading}
+        onAddLibraryImage={addLibraryImage}
+        onDeleteLibraryImage={deleteLibraryImage}
+        onRenameLibraryImage={renameLibraryImage}
       />
 
       {/* Point Info Drawer expanding the Sidebar */}

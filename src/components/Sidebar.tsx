@@ -41,6 +41,7 @@ import { parseGeoJSON, exportToGeoJSON } from "../utils/geojsonParser";
 import { parseKML, exportToKML } from "../utils/kmlParser";
 import { parseFIT } from "../utils/fitParser";
 import { LANDSCAPE_IMAGES, type Track, type RouteCollection, type RoutingProfile, type Area } from "../hooks/useRoutePlanner";
+import type { LibraryImage } from "../hooks/useImageLibrary";
 import { formatArea, calculatePolygonPerimeter } from "../utils/geoUtils";
 import { useCustomDialog } from "./CustomDialog";
 import { WPT_ICONS } from "../utils/iconLibrary";
@@ -179,6 +180,13 @@ interface SidebarProps {
   showSimplifyPanel: boolean;
   setShowSimplifyPanel: (show: boolean) => void;
 
+  // Image library props
+  libraryImages: LibraryImage[];
+  libraryUploading: boolean;
+  onAddLibraryImage: (file: File, name: string) => Promise<LibraryImage | null>;
+  onDeleteLibraryImage: (id: string) => void;
+  onRenameLibraryImage: (id: string, newName: string) => void;
+
   // Custom layers and slope shading props (Fase 13)
   customLayers?: CustomLayer[];
   onAddCustomLayer?: (layer: Omit<CustomLayer, "id" | "visible" | "opacity">) => void;
@@ -313,6 +321,11 @@ export function Sidebar({
   setShowTrimPanel,
   showSimplifyPanel,
   setShowSimplifyPanel,
+  libraryImages,
+  libraryUploading,
+  onAddLibraryImage,
+  onDeleteLibraryImage,
+  onRenameLibraryImage,
 }: SidebarProps) {
   const { customAlert, customConfirm, customPrompt } = useCustomDialog();
   const [activeTab, setActiveTab] = useState<TabId>("route");
@@ -334,6 +347,10 @@ export function Sidebar({
   
   // Local states for Trim/Crop Track (showTrimPanel/showSimplifyPanel come from props)
   const [simplifyTolerance, setSimplifyTolerance] = useState(5);
+  // Image library upload form state
+  const [libUploadName, setLibUploadName] = useState("");
+  const [libEditingId, setLibEditingId] = useState<string | null>(null);
+  const [libEditingName, setLibEditingName] = useState("");
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(0);
 
@@ -1438,27 +1455,40 @@ export function Sidebar({
                       <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
                         Imagen de Portada (Paisaje)
                       </label>
-                      <div className="grid grid-cols-4 gap-1.5 max-h-[85px] overflow-y-auto pr-1">
+                      <div className="grid grid-cols-4 gap-1.5 max-h-[130px] overflow-y-auto pr-1">
+                        {/* Preset images */}
                         {LANDSCAPE_IMAGES.map((img) => {
                           const isSelected = newCollectionImage === img.url;
                           return (
-                            <button
-                              key={img.id}
-                              type="button"
-                              onClick={() => setNewCollectionImage(img.url)}
-                              title={img.name}
-                              className={`relative h-10 rounded-lg overflow-hidden border transition-all hover:scale-105 active:scale-95 flex items-center justify-center cursor-pointer ${
-                                isSelected ? "border-emerald-400 ring-2 ring-emerald-400/40" : "border-white/5"
-                              }`}
-                            >
+                            <button key={img.id} type="button" onClick={() => setNewCollectionImage(img.url)} title={img.name}
+                              className={`relative h-10 rounded-lg overflow-hidden border transition-all hover:scale-105 active:scale-95 cursor-pointer ${isSelected ? "border-emerald-400 ring-2 ring-emerald-400/40" : "border-white/5"}`}>
                               <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
                               <div className="absolute inset-0 bg-black/40 hover:bg-black/20 transition-colors" />
-                              <span className="absolute bottom-0.5 left-0.5 right-0.5 text-[7px] leading-tight text-center truncate font-bold text-white bg-black/50 rounded py-0.5 font-sans">
-                                {img.name}
-                              </span>
+                              <span className="absolute bottom-0.5 left-0.5 right-0.5 text-[7px] leading-tight text-center truncate font-bold text-white bg-black/50 rounded py-0.5 font-sans">{img.name}</span>
                             </button>
                           );
                         })}
+                        {/* Library images */}
+                        {libraryImages.length > 0 && (
+                          <>
+                            <div className="col-span-4 flex items-center gap-1.5 mt-1">
+                              <div className="flex-1 h-[1px] bg-[#1b3d2b]/40" />
+                              <span className="text-[8px] text-slate-500 uppercase tracking-wider font-bold shrink-0">Mi Biblioteca</span>
+                              <div className="flex-1 h-[1px] bg-[#1b3d2b]/40" />
+                            </div>
+                            {libraryImages.map((img) => {
+                              const isSelected = newCollectionImage === img.url;
+                              return (
+                                <button key={img.id} type="button" onClick={() => setNewCollectionImage(img.url)} title={img.name}
+                                  className={`relative h-10 rounded-lg overflow-hidden border transition-all hover:scale-105 active:scale-95 cursor-pointer ${isSelected ? "border-emerald-400 ring-2 ring-emerald-400/40" : "border-emerald-500/20"}`}>
+                                  <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
+                                  <div className="absolute inset-0 bg-black/40 hover:bg-black/20 transition-colors" />
+                                  <span className="absolute bottom-0.5 left-0.5 right-0.5 text-[7px] leading-tight text-center truncate font-bold text-white bg-black/50 rounded py-0.5 font-sans">{img.name}</span>
+                                </button>
+                              );
+                            })}
+                          </>
+                        )}
                       </div>
                     </div>
 
@@ -3112,27 +3142,40 @@ export function Sidebar({
                       <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
                         Imagen de Portada (Paisaje)
                       </label>
-                      <div className="grid grid-cols-4 gap-1.5 max-h-[85px] overflow-y-auto pr-1">
+                      <div className="grid grid-cols-4 gap-1.5 max-h-[130px] overflow-y-auto pr-1">
+                        {/* Preset images */}
                         {LANDSCAPE_IMAGES.map((img) => {
                           const isSelected = newGroupImage === img.url;
                           return (
-                            <button
-                              key={img.id}
-                              type="button"
-                              onClick={() => setNewGroupImage(img.url)}
-                              title={img.name}
-                              className={`relative h-10 rounded-lg overflow-hidden border transition-all hover:scale-105 active:scale-95 flex items-center justify-center cursor-pointer ${
-                                isSelected ? "border-emerald-400 ring-2 ring-emerald-400/40" : "border-white/5"
-                              }`}
-                            >
+                            <button key={img.id} type="button" onClick={() => setNewGroupImage(img.url)} title={img.name}
+                              className={`relative h-10 rounded-lg overflow-hidden border transition-all hover:scale-105 active:scale-95 cursor-pointer ${isSelected ? "border-emerald-400 ring-2 ring-emerald-400/40" : "border-white/5"}`}>
                               <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
                               <div className="absolute inset-0 bg-black/40 hover:bg-black/20 transition-colors" />
-                              <span className="absolute bottom-0.5 left-0.5 right-0.5 text-[7px] leading-tight text-center truncate font-bold text-white bg-black/50 rounded py-0.5 font-sans">
-                                {img.name}
-                              </span>
+                              <span className="absolute bottom-0.5 left-0.5 right-0.5 text-[7px] leading-tight text-center truncate font-bold text-white bg-black/50 rounded py-0.5 font-sans">{img.name}</span>
                             </button>
                           );
                         })}
+                        {/* Library images */}
+                        {libraryImages.length > 0 && (
+                          <>
+                            <div className="col-span-4 flex items-center gap-1.5 mt-1">
+                              <div className="flex-1 h-[1px] bg-[#1b3d2b]/40" />
+                              <span className="text-[8px] text-slate-500 uppercase tracking-wider font-bold shrink-0">Mi Biblioteca</span>
+                              <div className="flex-1 h-[1px] bg-[#1b3d2b]/40" />
+                            </div>
+                            {libraryImages.map((img) => {
+                              const isSelected = newGroupImage === img.url;
+                              return (
+                                <button key={img.id} type="button" onClick={() => setNewGroupImage(img.url)} title={img.name}
+                                  className={`relative h-10 rounded-lg overflow-hidden border transition-all hover:scale-105 active:scale-95 cursor-pointer ${isSelected ? "border-emerald-400 ring-2 ring-emerald-400/40" : "border-emerald-500/20"}`}>
+                                  <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
+                                  <div className="absolute inset-0 bg-black/40 hover:bg-black/20 transition-colors" />
+                                  <span className="absolute bottom-0.5 left-0.5 right-0.5 text-[7px] leading-tight text-center truncate font-bold text-white bg-black/50 rounded py-0.5 font-sans">{img.name}</span>
+                                </button>
+                              );
+                            })}
+                          </>
+                        )}
                       </div>
                     </div>
 
@@ -3965,6 +4008,122 @@ export function Sidebar({
                   </svg>
                   {isStreetViewActive ? "Desactivar Vista de Calle" : "Activar Vista de Calle"}
                 </button>
+              </div>
+
+              {/* ── Biblioteca de Portadas ── */}
+              <div className="space-y-4 bg-[#0c120f]/60 p-4 rounded-xl border border-[#1b3d2b]/25 shadow-lg">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Palette className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-300 font-sans">Biblioteca de Portadas</span>
+                  </div>
+                  <span className="text-[9px] text-slate-500 font-mono">{libraryImages.length} / 20</span>
+                </div>
+                <p className="text-[10px] text-slate-500 leading-normal">
+                  Sube tus propias imágenes para usar como portada en Retos, Colecciones de Rutas y grupos de Marcas.
+                </p>
+
+                {/* Upload area */}
+                {libraryImages.length < 20 && (
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      placeholder="Nombre de la imagen (opcional)"
+                      value={libUploadName}
+                      onChange={(e) => setLibUploadName(e.target.value)}
+                      className="w-full bg-[#0a0f0d]/80 border border-[#1b3d2b] rounded-xl px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 transition-colors"
+                    />
+                    <label className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border cursor-pointer transition-all text-xs font-bold select-none ${
+                      libraryUploading
+                        ? "border-slate-700 text-slate-600 cursor-wait"
+                        : "border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/15 text-emerald-400 hover:text-emerald-300"
+                    }`}>
+                      {libraryUploading
+                        ? <><Loader className="w-3.5 h-3.5 animate-spin" /> Subiendo...</>
+                        : <><Upload className="w-3.5 h-3.5" /> Subir imagen (JPG, PNG, WEBP)</>}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        className="hidden"
+                        disabled={libraryUploading}
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          if (file.size > 5 * 1024 * 1024) {
+                            await customAlert("La imagen supera el límite de 5 MB. Por favor usa una imagen más pequeña.");
+                            return;
+                          }
+                          const result = await onAddLibraryImage(file, libUploadName);
+                          if (result) setLibUploadName("");
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                  </div>
+                )}
+                {libraryImages.length >= 20 && (
+                  <p className="text-[10px] text-amber-400/80 bg-amber-500/5 border border-amber-500/10 rounded-lg p-2 text-center">
+                    Has alcanzado el límite de 20 imágenes. Borra alguna para añadir más.
+                  </p>
+                )}
+
+                {/* Image grid */}
+                {libraryImages.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2 max-h-[260px] overflow-y-auto pr-1">
+                    {libraryImages.map((img) => (
+                      <div key={img.id} className="relative group rounded-xl overflow-hidden border border-white/5 hover:border-emerald-500/30 transition-all">
+                        <img src={img.url} alt={img.name} className="w-full h-16 object-cover" />
+                        <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-colors" />
+
+                        {/* Name / edit inline */}
+                        {libEditingId === img.id ? (
+                          <div className="absolute inset-x-0 bottom-0 bg-[#0a0f0d]/95 p-1 flex gap-1">
+                            <input
+                              autoFocus
+                              value={libEditingName}
+                              onChange={(e) => setLibEditingName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") { onRenameLibraryImage(img.id, libEditingName); setLibEditingId(null); }
+                                if (e.key === "Escape") setLibEditingId(null);
+                              }}
+                              className="flex-1 min-w-0 bg-transparent border-b border-emerald-400 text-[9px] text-slate-100 outline-none"
+                            />
+                            <button onClick={() => { onRenameLibraryImage(img.id, libEditingName); setLibEditingId(null); }}
+                              className="text-emerald-400 hover:text-emerald-300 cursor-pointer">
+                              <Check className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ) : (
+                          <span
+                            className="absolute bottom-0.5 left-0.5 right-6 text-[7px] leading-tight font-bold text-white bg-black/50 rounded py-0.5 px-1 truncate cursor-pointer"
+                            title="Haz clic para renombrar"
+                            onClick={() => { setLibEditingId(img.id); setLibEditingName(img.name); }}
+                          >
+                            {img.name}
+                          </span>
+                        )}
+
+                        {/* Delete button */}
+                        <button
+                          onClick={async () => {
+                            if (await customConfirm(`¿Eliminar "${img.name}" de la biblioteca?`)) {
+                              onDeleteLibraryImage(img.id);
+                            }
+                          }}
+                          className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 hover:bg-red-500/80 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+                        >
+                          <X className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {libraryImages.length === 0 && (
+                  <div className="text-center py-4 text-slate-600 text-[10px]">
+                    No hay imágenes en la biblioteca todavía.
+                  </div>
+                )}
               </div>
 
               {/* Keyboard Shortcuts Section */}
