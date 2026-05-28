@@ -254,7 +254,7 @@ export function MapContainer({
 
   // Update Base Layer (supporting custom base layers)
   useEffect(() => {
-    if (!mapInstance || !tileLayerRef.current) return;
+    if (!mapInstance) return; // tileLayerRef.current may be null when coming from "none" — that's fine
 
     if (tileLayerRef.current) {
       mapInstance.removeLayer(tileLayerRef.current);

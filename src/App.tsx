@@ -1623,182 +1623,229 @@ function AppContent() {
             </button>
           </div>
 
-          {/* Floating Route Edit Toolbar (on the right side, like the printer) */}
+          {/* Floating Route Edit Toolbar (top center, horizontal) */}
           {activeTrackId && (
-            <div className="absolute top-16 right-4 z-[4000] pointer-events-auto flex flex-col gap-2 select-none animate-fade-in">
-              {/* Undo Button */}
-              <button
-                onClick={undo}
-                disabled={!canUndo}
-                title="Deshacer última acción (Ctrl+Z)"
-                className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center transition-all border ${
-                  canUndo
-                    ? "bg-[#131b17]/95 border-[#1b3d2b] hover:border-emerald-500/50 text-slate-300 hover:text-emerald-400 cursor-pointer"
-                    : "bg-[#0c120f]/60 border-white/5 text-slate-600 opacity-40 cursor-not-allowed"
-                }`}
-              >
-                <Undo2 className="w-[18px] h-[18px]" />
-              </button>
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[4000] pointer-events-auto select-none animate-fade-in">
+              <div className="flex flex-row items-center gap-0.5 bg-[#131b17]/95 border border-[#1b3d2b] rounded-2xl px-2 py-1.5 shadow-2xl backdrop-blur-md">
 
-              {/* Redo Button */}
-              <button
-                onClick={redo}
-                disabled={!canRedo}
-                title="Rehacer última acción deshecha (Ctrl+Y)"
-                className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center transition-all border ${
-                  canRedo
-                    ? "bg-[#131b17]/95 border-[#1b3d2b] hover:border-emerald-500/50 text-slate-300 hover:text-emerald-400 cursor-pointer"
-                    : "bg-[#0c120f]/60 border-white/5 text-slate-600 opacity-40 cursor-not-allowed"
-                }`}
-              >
-                <Redo2 className="w-[18px] h-[18px]" />
-              </button>
+                {/* Undo */}
+                <div className="relative group">
+                  <button
+                    onClick={undo}
+                    disabled={!canUndo}
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all border ${
+                      canUndo
+                        ? "border-transparent hover:bg-white/5 hover:border-white/10 text-slate-300 hover:text-emerald-400 cursor-pointer"
+                        : "border-transparent text-slate-600 opacity-30 cursor-not-allowed"
+                    }`}
+                  >
+                    <Undo2 className="w-[17px] h-[17px]" />
+                  </button>
+                  <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
+                    Deshacer (Ctrl+Z)
+                  </span>
+                </div>
 
-              {/* Separador sutil */}
-              <div className="w-6 h-[1px] bg-[#1b3d2b]/40 self-center my-0.5" />
+                {/* Redo */}
+                <div className="relative group">
+                  <button
+                    onClick={redo}
+                    disabled={!canRedo}
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all border ${
+                      canRedo
+                        ? "border-transparent hover:bg-white/5 hover:border-white/10 text-slate-300 hover:text-emerald-400 cursor-pointer"
+                        : "border-transparent text-slate-600 opacity-30 cursor-not-allowed"
+                    }`}
+                  >
+                    <Redo2 className="w-[17px] h-[17px]" />
+                  </button>
+                  <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
+                    Rehacer (Ctrl+Y)
+                  </span>
+                </div>
 
-              {/* Draw Route Toggle */}
-              <button
-                onClick={() => {
-                  setIsDrawing(!isDrawing);
-                  if (isSplitting) setIsSplitting(false);
-                  if (isEditingRoute) setIsEditingRoute(false);
-                  if (isCleaningArea) setIsCleaningArea(false);
-                }}
-                title={isDrawing ? "Finalizar Dibujo de Ruta" : "Dibujar en Ruta (K o D)"}
-                className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer transition-all border ${
-                  isDrawing
-                    ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.3)] animate-pulse"
-                    : "bg-[#131b17]/95 border-[#1b3d2b] hover:border-emerald-500/50 text-slate-300 hover:text-emerald-400"
-                }`}
-              >
-                {loading ? <Loader className="w-4 h-4 animate-spin" /> : <Route className="w-[18px] h-[18px]" />}
-              </button>
+                {/* Separator */}
+                <div className="h-5 w-[1px] bg-[#1b3d2b]/70 mx-1 self-center" />
 
-              {/* Split Track (only if points.length > 3) */}
-              {points.length > 3 && (
-                <button
-                  onClick={() => {
-                    setIsSplitting(!isSplitting);
-                    if (isDrawing) setIsDrawing(false);
-                    if (isEditingRoute) setIsEditingRoute(false);
-                  }}
-                  title={isSplitting ? "Cancelar División" : "Dividir Ruta (Split)"}
-                  className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer transition-all border ${
-                    isSplitting
-                      ? "bg-orange-500/20 border-orange-500/40 text-orange-400 shadow-[0_0_12px_rgba(249,115,22,0.3)]"
-                      : "bg-[#131b17]/95 border-[#1b3d2b] hover:border-orange-500/30 text-slate-300 hover:text-orange-400"
-                  }`}
-                >
-                  <Scissors className="w-[18px] h-[18px]" />
-                </button>
-              )}
+                {/* Draw Route */}
+                <div className="relative group">
+                  <button
+                    onClick={() => {
+                      setIsDrawing(!isDrawing);
+                      if (isSplitting) setIsSplitting(false);
+                      if (isEditingRoute) setIsEditingRoute(false);
+                      if (isCleaningArea) setIsCleaningArea(false);
+                    }}
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-all border ${
+                      isDrawing
+                        ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.25)] animate-pulse"
+                        : "border-transparent hover:bg-emerald-500/10 hover:border-emerald-500/20 text-slate-300 hover:text-emerald-400"
+                    }`}
+                  >
+                    {loading ? <Loader className="w-4 h-4 animate-spin" /> : <Route className="w-[17px] h-[17px]" />}
+                  </button>
+                  <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
+                    {isDrawing ? "Finalizar Dibujo" : "Dibujar Ruta (K)"}
+                  </span>
+                </div>
 
-              {/* Reverse Track (only if points.length > 1) */}
-              {points.length > 1 && (
-                <button
-                  onClick={() => reverseTrack(activeTrackId)}
-                  title="Invertir Dirección de Ruta"
-                  className="w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer bg-[#131b17]/95 border border-[#1b3d2b] hover:border-cyan-500/30 text-slate-300 hover:text-cyan-400 transition-all"
-                >
-                  <ArrowLeftRight className="w-[18px] h-[18px]" />
-                </button>
-              )}
+                {/* Split Track */}
+                {points.length > 3 && (
+                  <div className="relative group">
+                    <button
+                      onClick={() => {
+                        setIsSplitting(!isSplitting);
+                        if (isDrawing) setIsDrawing(false);
+                        if (isEditingRoute) setIsEditingRoute(false);
+                      }}
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-all border ${
+                        isSplitting
+                          ? "bg-orange-500/20 border-orange-500/40 text-orange-400 shadow-[0_0_10px_rgba(249,115,22,0.25)]"
+                          : "border-transparent hover:bg-orange-500/10 hover:border-orange-500/20 text-slate-300 hover:text-orange-400"
+                      }`}
+                    >
+                      <Scissors className="w-[17px] h-[17px]" />
+                    </button>
+                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
+                      {isSplitting ? "Cancelar División" : "Dividir Ruta"}
+                    </span>
+                  </div>
+                )}
 
-              {/* Round Trip / Bucle (only if points.length > 1) */}
-              {points.length > 1 && !isDrawing && (
-                <button
-                  onClick={() => roundTripTrack(activeTrackId)}
-                  title="Ida y Vuelta (Cerrar Bucle)"
-                  className="w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer bg-[#131b17]/95 border border-[#1b3d2b] hover:border-emerald-500/30 text-slate-300 hover:text-emerald-400 transition-all"
-                >
-                  <RefreshCw className="w-[18px] h-[18px]" />
-                </button>
-              )}
+                {/* Reverse Track */}
+                {points.length > 1 && (
+                  <div className="relative group">
+                    <button
+                      onClick={() => reverseTrack(activeTrackId)}
+                      className="w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer border border-transparent hover:bg-cyan-500/10 hover:border-cyan-500/20 text-slate-300 hover:text-cyan-400 transition-all"
+                    >
+                      <ArrowLeftRight className="w-[17px] h-[17px]" />
+                    </button>
+                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
+                      Invertir Ruta
+                    </span>
+                  </div>
+                )}
 
-              {/* Edit Route Vertices */}
-              {points.length > 0 && !isDrawing && (
-                <button
-                  onClick={() => {
-                    setIsEditingRoute(!isEditingRoute);
-                    if (isSplitting) setIsSplitting(false);
-                  }}
-                  title={isEditingRoute ? "Finalizar Edición Geométrica" : "Edición Geométrica (Arrastrar Vértices) (E)"}
-                  className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer transition-all border ${
-                    isEditingRoute
-                      ? "bg-violet-500/20 border-violet-500/40 text-violet-400 shadow-[0_0_12px_rgba(139,92,246,0.3)]"
-                      : "bg-[#131b17]/95 border-[#1b3d2b] hover:border-violet-500/30 text-slate-300 hover:text-violet-400"
-                  }`}
-                >
-                  <Edit2 className="w-[18px] h-[18px]" />
-                </button>
-              )}
+                {/* Round Trip */}
+                {points.length > 1 && !isDrawing && (
+                  <div className="relative group">
+                    <button
+                      onClick={() => roundTripTrack(activeTrackId)}
+                      className="w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer border border-transparent hover:bg-emerald-500/10 hover:border-emerald-500/20 text-slate-300 hover:text-emerald-400 transition-all"
+                    >
+                      <RefreshCw className="w-[17px] h-[17px]" />
+                    </button>
+                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
+                      Ida y Vuelta (Bucle)
+                    </span>
+                  </div>
+                )}
 
-              {/* Clean Area / Borrar por rectangulo */}
-              {points.length > 2 && !isDrawing && (
-                <button
-                  onClick={() => setIsCleaningArea(!isCleaningArea)}
-                  title={isCleaningArea ? "Cancelar Limpieza" : "Limpiar Track por Rectángulo"}
-                  className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer transition-all border ${
-                    isCleaningArea
-                      ? "bg-red-500/20 border-red-500/40 text-red-400 shadow-[0_0_12px_rgba(239,68,68,0.3)] animate-pulse"
-                      : "bg-[#131b17]/95 border-[#1b3d2b] hover:border-red-500/30 text-slate-300 hover:text-red-400"
-                  }`}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
-                </button>
-              )}
+                {/* Edit Route Vertices */}
+                {points.length > 0 && !isDrawing && (
+                  <div className="relative group">
+                    <button
+                      onClick={() => {
+                        setIsEditingRoute(!isEditingRoute);
+                        if (isSplitting) setIsSplitting(false);
+                      }}
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-all border ${
+                        isEditingRoute
+                          ? "bg-violet-500/20 border-violet-500/40 text-violet-400 shadow-[0_0_10px_rgba(139,92,246,0.25)]"
+                          : "border-transparent hover:bg-violet-500/10 hover:border-violet-500/20 text-slate-300 hover:text-violet-400"
+                      }`}
+                    >
+                      <Edit2 className="w-[17px] h-[17px]" />
+                    </button>
+                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
+                      {isEditingRoute ? "Finalizar Edición" : "Editar Vértices (E)"}
+                    </span>
+                  </div>
+                )}
 
-              {/* Simplify Track */}
-              {points.length > 2 && !isDrawing && (
-                <button
-                  onClick={() => {
-                    setIsRouteEditPanelOpen(true);
-                    setShowSimplifyPanel(true);
-                    setShowTrimPanel(false);
-                  }}
-                  title={showSimplifyPanel ? "Cerrar Simplificación" : "Simplificar Puntos GPS (reducir tamaño)"}
-                  className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer transition-all border ${
-                    showSimplifyPanel
-                      ? "bg-amber-500/20 border-amber-500/40 text-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.3)] animate-pulse"
-                      : "bg-[#131b17]/95 border-[#1b3d2b] hover:border-amber-500/30 text-slate-300 hover:text-amber-400"
-                  }`}
-                >
-                  <Trees className="w-[18px] h-[18px]" />
-                </button>
-              )}
+                {/* Clean Area */}
+                {points.length > 2 && !isDrawing && (
+                  <div className="relative group">
+                    <button
+                      onClick={() => setIsCleaningArea(!isCleaningArea)}
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-all border ${
+                        isCleaningArea
+                          ? "bg-red-500/20 border-red-500/40 text-red-400 shadow-[0_0_10px_rgba(239,68,68,0.25)] animate-pulse"
+                          : "border-transparent hover:bg-red-500/10 hover:border-red-500/20 text-slate-300 hover:text-red-400"
+                      }`}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-[17px] h-[17px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+                    </button>
+                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
+                      {isCleaningArea ? "Cancelar Limpieza" : "Limpiar por Rectángulo"}
+                    </span>
+                  </div>
+                )}
 
-              {/* Trim/Crop Track */}
-              {points.length > 2 && !isDrawing && (
-                <button
-                  onClick={() => {
-                    setIsRouteEditPanelOpen(true);
-                    setShowTrimPanel(true);
-                    setShowSimplifyPanel(false);
-                  }}
-                  title={showTrimPanel ? "Cerrar Recorte" : "Recortar Inicio/Fin de Ruta (Trim)"}
-                  className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer transition-all border ${
-                    showTrimPanel
-                      ? "bg-rose-500/20 border-rose-500/40 text-rose-400 shadow-[0_0_12px_rgba(244,63,94,0.3)] animate-pulse"
-                      : "bg-[#131b17]/95 border-[#1b3d2b] hover:border-rose-500/30 text-slate-300 hover:text-rose-400"
-                  }`}
-                >
-                  {/* Crop/Trim icon */}
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22V12h10"/><path d="M12 12L3 3"/><path d="M16 12l6 6"/></svg>
-                </button>
-              )}
+                {/* Simplify Track */}
+                {points.length > 2 && !isDrawing && (
+                  <div className="relative group">
+                    <button
+                      onClick={() => {
+                        setIsRouteEditPanelOpen(true);
+                        setShowSimplifyPanel(true);
+                        setShowTrimPanel(false);
+                      }}
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-all border ${
+                        showSimplifyPanel
+                          ? "bg-amber-500/20 border-amber-500/40 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.25)] animate-pulse"
+                          : "border-transparent hover:bg-amber-500/10 hover:border-amber-500/20 text-slate-300 hover:text-amber-400"
+                      }`}
+                    >
+                      <Trees className="w-[17px] h-[17px]" />
+                    </button>
+                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
+                      Simplificar Puntos GPS
+                    </span>
+                  </div>
+                )}
 
-              {/* Separador — atajos de teclado en grupo separado */}
-              <div className="w-6 h-[1px] bg-[#1b3d2b]/40 self-center my-0.5" />
+                {/* Trim/Crop Track */}
+                {points.length > 2 && !isDrawing && (
+                  <div className="relative group">
+                    <button
+                      onClick={() => {
+                        setIsRouteEditPanelOpen(true);
+                        setShowTrimPanel(true);
+                        setShowSimplifyPanel(false);
+                      }}
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-all border ${
+                        showTrimPanel
+                          ? "bg-rose-500/20 border-rose-500/40 text-rose-400 shadow-[0_0_10px_rgba(244,63,94,0.25)] animate-pulse"
+                          : "border-transparent hover:bg-rose-500/10 hover:border-rose-500/20 text-slate-300 hover:text-rose-400"
+                      }`}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-[17px] h-[17px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22V12h10"/><path d="M12 12L3 3"/><path d="M16 12l6 6"/></svg>
+                    </button>
+                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
+                      Recortar Inicio/Fin
+                    </span>
+                  </div>
+                )}
 
-              {/* Keyboard Shortcuts */}
-              <button
-                onClick={() => setIsShortcutsModalOpen(true)}
-                title="Ayuda y Atajos de Teclado (?)"
-                className="w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer bg-[#131b17]/95 border border-[#1b3d2b] hover:border-emerald-500/30 text-slate-400 hover:text-emerald-400 transition-all"
-              >
-                <Compass className="w-[18px] h-[18px]" />
-              </button>
+                {/* Separator before shortcuts */}
+                <div className="h-5 w-[1px] bg-[#1b3d2b]/70 mx-1 self-center" />
+
+                {/* Keyboard Shortcuts */}
+                <div className="relative group">
+                  <button
+                    onClick={() => setIsShortcutsModalOpen(true)}
+                    className="w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer border border-transparent hover:bg-white/5 hover:border-white/10 text-slate-400 hover:text-emerald-400 transition-all"
+                  >
+                    <Compass className="w-[17px] h-[17px]" />
+                  </button>
+                  <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
+                    Atajos de Teclado (?)
+                  </span>
+                </div>
+
+              </div>
             </div>
           )}
           </div>
