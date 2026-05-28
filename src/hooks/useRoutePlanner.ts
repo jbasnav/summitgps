@@ -852,6 +852,7 @@ export function useRoutePlanner(user: any | null = null) {
       if (!isDrawing) return;
 
       let currentActiveId = activeTrackId;
+      const isNewTrack = !currentActiveId;
       if (!currentActiveId) {
         currentActiveId = createNewTrack();
       }
@@ -880,8 +881,19 @@ export function useRoutePlanner(user: any | null = null) {
           }));
 
           if (user && isSupabaseConfigured) {
-            supabase.from("tracks").update({ points: [newPoint] }).eq("id", currentActiveId).then(({ error }) => {
-              if (error) console.error("Failed to sync first point to Supabase:", error);
+            // Use upsert to handle the race condition where createNewTrack's INSERT
+            // might not have completed yet when we try to update the points.
+            const trackColor = DEFAULT_TRACK_COLORS[tracks.length % DEFAULT_TRACK_COLORS.length];
+            supabase.from("tracks").upsert({
+              id: currentActiveId,
+              user_id: user.id,
+              name: isNewTrack ? "Nueva Ruta de Aventura" : (currentTrack?.name ?? "Nueva Ruta de Aventura"),
+              points: [newPoint],
+              visible: true,
+              color: currentTrack?.color ?? trackColor,
+              collection_id: currentTrack?.collectionId ?? "default",
+            }, { onConflict: "id" }).then(({ error }) => {
+              if (error) console.error("Failed to upsert first point to Supabase:", error);
             });
           }
         } else {

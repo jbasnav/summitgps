@@ -18,7 +18,11 @@ import { CustomDialogProvider, useCustomDialog } from "./components/CustomDialog
 function AppContent() {
   // Authentication States
   const [user, setUser] = useState<any | null>(null);
-  const [showAuthScreen, setShowAuthScreen] = useState<boolean>(true); // Start as true to show login screen first
+  // If the user previously chose "Skip" (guest mode), don't show the auth screen again on reload.
+  const [showAuthScreen, setShowAuthScreen] = useState<boolean>(() => {
+    if (localStorage.getItem("summit_guest_mode") === "1") return false;
+    return true;
+  });
   const [authChecking, setAuthChecking] = useState<boolean>(isSupabaseConfigured); // Check session if Supabase is configured
 
   // Image library (custom cover images for groups/collections/retos)
@@ -229,9 +233,12 @@ function AppContent() {
         winddirectionDominant: number[];
       } | null;
     } | null;
-    address: string | null;
+    address: string | null;       // full display_name
+    osmName: string | null;       // specific feature name (peak, restaurant, etc.)
+    osmClass: string | null;      // OSM class (natural, amenity, tourism…)
+    osmType: string | null;       // OSM type (peak, restaurant, viewpoint…)
     loading: boolean;
-  }>({ elevation: null, weather: null, address: null, loading: false });
+  }>({ elevation: null, weather: null, address: null, osmName: null, osmClass: null, osmType: null, loading: false });
 
   // Sidebar collapse state
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
@@ -246,7 +253,7 @@ function AppContent() {
   // Fetch location details (elevation, weather, reverse geocoding)
   useEffect(() => {
     if (!markedLocation) {
-      setMarkedLocationDetails({ elevation: null, weather: null, address: null, loading: false });
+      setMarkedLocationDetails({ elevation: null, weather: null, address: null, osmName: null, osmClass: null, osmType: null, loading: false });
       return;
     }
 
@@ -344,21 +351,33 @@ function AppContent() {
           })
           .catch(() => null);
 
-        // 3. Fetch Reverse Geocoding Address
-        const geoPromise = fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=14`, {
-          headers: { 'Accept-Language': 'es' }
-        })
+        // 3. Fetch Reverse Geocoding — zoom=18 to get specific POIs
+        const geoPromise = fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
+          { headers: { 'Accept-Language': 'es' } }
+        )
           .then(r => r.json())
-          .then(data => data.display_name ?? null)
-          .catch(() => null);
+          .then((data): { address: string | null; osmName: string | null; osmClass: string | null; osmType: string | null } => {
+            if (!data || data.error) return { address: null, osmName: null, osmClass: null, osmType: null };
+            return {
+              address: data.display_name ?? null,
+              osmName: data.name || data.namedetails?.name || null,
+              osmClass: data.class || null,
+              osmType: data.type || null,
+            };
+          })
+          .catch(() => ({ address: null, osmName: null, osmClass: null, osmType: null }));
 
-        const [elevation, weather, address] = await Promise.all([elevPromise, weatherPromise, geoPromise]);
+        const [elevation, weather, geoResult] = await Promise.all([elevPromise, weatherPromise, geoPromise]);
 
         if (isMounted) {
           setMarkedLocationDetails({
             elevation,
             weather,
-            address,
+            address: geoResult.address,
+            osmName: geoResult.osmName,
+            osmClass: geoResult.osmClass,
+            osmType: geoResult.osmType,
             loading: false,
           });
         }
@@ -556,7 +575,7 @@ function AppContent() {
 
     const delayDebounceFn = setTimeout(() => {
       fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${streetViewCoords.lat}&lon=${streetViewCoords.lng}&zoom=14`,
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${streetViewCoords.lat}&lon=${streetViewCoords.lng}&zoom=18`,
         { headers: { "Accept-Language": "es" } }
       )
         .then((res) => res.json())
@@ -688,6 +707,7 @@ function AppContent() {
       if (session?.user) {
         setUser(session.user);
         setShowAuthScreen(false);
+        localStorage.removeItem("summit_guest_mode"); // user is authenticated
       }
       setAuthChecking(false);
     }).catch(() => {
@@ -717,11 +737,15 @@ function AppContent() {
   const handleSkipAuth = useCallback(() => {
     setShowAuthScreen(false);
     setUser(null);
+    // Remember the guest preference so we don't show the auth screen again on reload
+    localStorage.setItem("summit_guest_mode", "1");
   }, []);
 
   const handleAuthSuccess = useCallback((authedUser: any) => {
     setUser(authedUser);
     setShowAuthScreen(false);
+    // Clear guest flag — user is now authenticated
+    localStorage.removeItem("summit_guest_mode");
   }, []);
 
   // Handle right-click on map to drop waypoint
@@ -1049,12 +1073,20 @@ function AppContent() {
               </div>
               <div className="min-w-0">
                 <h3 className="text-sm font-black text-slate-100 tracking-wide truncate">
-                  {markedLocationDetails.loading ? "Buscando..." : (markedLocationDetails.address?.split(',')?.[0] || "Ubicación Marcada")}
+                  {markedLocationDetails.loading
+                    ? "Buscando..."
+                    : (markedLocationDetails.osmName || markedLocationDetails.address?.split(',')?.[0] || "Ubicación Marcada")}
                 </h3>
+                {/* OSM type badge */}
+                {!markedLocationDetails.loading && (markedLocationDetails.osmClass || markedLocationDetails.osmType) && (
+                  <span className="inline-block mt-0.5 text-[8.5px] font-bold uppercase tracking-wider text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2 py-0.5">
+                    {getOsmTypeLabel(markedLocationDetails.osmClass, markedLocationDetails.osmType) ?? `${markedLocationDetails.osmClass} · ${markedLocationDetails.osmType}`}
+                  </span>
+                )}
                 <p className="text-[10.5px] text-slate-400 font-mono mt-0.5 select-all leading-none">
                   {markedLocation.lat.toFixed(5)}, {markedLocation.lng.toFixed(5)}
                   {markedLocationDetails.elevation !== null && (
-                    <span className="text-emerald-400/90 font-sans font-semibold"> • Altitud: {useImperial ? `${Math.round(markedLocationDetails.elevation * 3.28084)} ft` : `${Math.round(markedLocationDetails.elevation)} m`}</span>
+                    <span className="text-emerald-400/90 font-sans font-semibold"> • {useImperial ? `${Math.round(markedLocationDetails.elevation * 3.28084)} ft` : `${Math.round(markedLocationDetails.elevation)} m`}</span>
                   )}
                 </p>
               </div>
@@ -1076,10 +1108,18 @@ function AppContent() {
               </div>
             ) : (
               <>
-                {/* Clean Location Context */}
+                {/* Clean Location Context — skip leading POI name since it's in the header */}
                 {markedLocationDetails.address && (
                   <div className="text-[11px] text-slate-400 bg-[#0c120f]/20 border border-[#1b3d2b]/15 px-3.5 py-2.5 rounded-lg leading-relaxed select-text flex items-center justify-between gap-2">
-                    <span className="truncate">{markedLocationDetails.address.split(',').slice(1).join(',').trim() || "Área de montaña"}</span>
+                    <span className="truncate">
+                      {(() => {
+                        const parts = markedLocationDetails.address.split(',');
+                        // If osmName matches the first segment, skip it to avoid duplication
+                        const firstPart = parts[0]?.trim();
+                        const skip = markedLocationDetails.osmName && firstPart?.toLowerCase() === markedLocationDetails.osmName.toLowerCase();
+                        return (skip ? parts.slice(1) : parts).join(',').trim() || "Área de montaña";
+                      })()}
+                    </span>
                     <button
                       onClick={() => {
                         const coordStr = formatCoordinatesByFormat(markedLocation.lat, markedLocation.lng, coordinateFormat);
@@ -2179,4 +2219,93 @@ function getWindDirectionCardinal(degrees: number): string {
   const directions = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
   const index = Math.round(((degrees % 360) / 22.5)) % 16;
   return directions[index];
+}
+
+/** Spanish label + emoji for an OSM class:type pair */
+function getOsmTypeLabel(osmClass: string | null, osmType: string | null): string | null {
+  if (!osmClass || !osmType) return null;
+  const key = `${osmClass}:${osmType}`;
+  const labels: Record<string, string> = {
+    "natural:peak": "🏔️ Cima / Cumbre",
+    "natural:saddle": "⛰️ Collado / Puerto de Montaña",
+    "natural:cliff": "🪨 Acantilado",
+    "natural:spring": "💧 Manantial / Fuente",
+    "natural:water": "🏞️ Lago / Embalse",
+    "natural:wetland": "🌿 Humedal",
+    "natural:wood": "🌲 Bosque / Arboleda",
+    "natural:grassland": "🌿 Pradera / Pastizal",
+    "natural:scrub": "🌿 Matorral",
+    "natural:scree": "🪨 Zona de Pedregal",
+    "natural:cave_entrance": "🕳️ Entrada de Cueva",
+    "natural:glacier": "🧊 Glaciar",
+    "natural:beach": "🏖️ Playa",
+    "natural:coastline": "🌊 Línea de Costa",
+    "natural:volcano": "🌋 Volcán",
+    "natural:ridge": "⛰️ Cresta de Montaña",
+    "natural:valley": "🏔️ Valle",
+    "amenity:restaurant": "🍽️ Restaurante",
+    "amenity:cafe": "☕ Cafetería",
+    "amenity:bar": "🍺 Bar",
+    "amenity:fast_food": "🍔 Comida Rápida",
+    "amenity:parking": "🅿️ Aparcamiento",
+    "amenity:fuel": "⛽ Gasolinera",
+    "amenity:hospital": "🏥 Hospital",
+    "amenity:pharmacy": "💊 Farmacia",
+    "amenity:school": "🏫 Colegio",
+    "amenity:place_of_worship": "⛪ Iglesia / Lugar de Culto",
+    "amenity:shelter": "🛖 Refugio / Cobertizo",
+    "amenity:toilets": "🚻 Aseos Públicos",
+    "amenity:drinking_water": "💧 Fuente de Agua Potable",
+    "amenity:bicycle_rental": "🚲 Alquiler de Bicis",
+    "amenity:bench": "🪑 Banco",
+    "amenity:picnic_site": "🧺 Área de Picnic",
+    "tourism:viewpoint": "👁️ Mirador / Punto de Vista",
+    "tourism:hotel": "🏨 Hotel",
+    "tourism:hostel": "🏠 Albergue / Hostal",
+    "tourism:campsite": "⛺ Zona de Camping",
+    "tourism:attraction": "🎯 Atracción Turística",
+    "tourism:museum": "🏛️ Museo",
+    "tourism:information": "ℹ️ Centro de Información",
+    "tourism:alpine_hut": "🏔️ Refugio de Montaña",
+    "tourism:wilderness_hut": "🏕️ Refugio Rústico",
+    "tourism:caravan_site": "🚐 Área de Autocaravanas",
+    "historic:castle": "🏰 Castillo",
+    "historic:ruins": "🏚️ Ruinas Históricas",
+    "historic:monument": "🗽 Monumento",
+    "historic:church": "⛪ Iglesia Histórica",
+    "historic:archaeological_site": "⚱️ Yacimiento Arqueológico",
+    "historic:fort": "🏰 Fortaleza",
+    "historic:boundary_stone": "🪨 Mojón Histórico",
+    "highway:footway": "🚶 Sendero Peatonal",
+    "highway:path": "🥾 Camino / Senda",
+    "highway:track": "🛤️ Pista Forestal / Rural",
+    "highway:cycleway": "🚴 Carril Bici",
+    "highway:residential": "🏘️ Calle Residencial",
+    "highway:primary": "🛣️ Carretera Principal",
+    "highway:secondary": "🛣️ Carretera Secundaria",
+    "highway:tertiary": "🛣️ Carretera Terciaria",
+    "highway:service": "🛣️ Vía de Servicio",
+    "leisure:park": "🌳 Parque",
+    "leisure:sports_centre": "🏃 Centro Deportivo",
+    "leisure:pitch": "⚽ Campo Deportivo",
+    "leisure:garden": "🌸 Jardín Público",
+    "leisure:golf_course": "⛳ Campo de Golf",
+    "waterway:river": "🌊 Río",
+    "waterway:stream": "💧 Arroyo",
+    "waterway:canal": "🚢 Canal",
+    "waterway:waterfall": "💧 Cascada / Salto de Agua",
+    "place:village": "🏘️ Pueblo",
+    "place:town": "🏙️ Localidad",
+    "place:city": "🏙️ Ciudad",
+    "place:hamlet": "🏡 Aldea",
+    "place:neighbourhood": "🏘️ Barrio",
+    "place:suburb": "🏘️ Barrio / Distrito",
+    "landuse:forest": "🌲 Zona Forestal",
+    "landuse:farmland": "🌾 Terreno Agrícola",
+    "landuse:meadow": "🌿 Pradera",
+    "landuse:vineyard": "🍇 Viñedo",
+    "landuse:orchard": "🍎 Huerto / Frutales",
+    "mountain_pass:pass": "⛰️ Puerto de Montaña",
+  };
+  return labels[key] ?? null;
 }
