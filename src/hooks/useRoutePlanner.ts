@@ -2,6 +2,7 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { calculateHaversineDistance, calculateElevationGainLoss } from "../utils/geoUtils";
 import { simplifyTrack } from "../utils/simplify";
+import { smoothTrackPoints, removeTrackOutliers } from "../utils/trackCleaner";
 import { supabase, isSupabaseConfigured } from "../utils/supabaseClient";
 
 export type RoutingProfile = 'hike' | 'cycle' | 'drive' | 'straight';
@@ -66,7 +67,9 @@ export interface WaypointGroup {
   description: string;
   color: string;
   visible: boolean;
-  image?: string; // Cover photo URL
+  image?: string;
+  type?: "folder" | "challenge";
+  isPublic?: boolean;
 }
 
 export const LANDSCAPE_IMAGES = [
@@ -113,6 +116,7 @@ export interface Track {
   visible: boolean;
   color: string;
   collectionId?: string;
+  isPublic?: boolean;
 }
 
 export interface HistoryState {
@@ -306,6 +310,24 @@ export function useRoutePlanner(user: any | null = null) {
     localStorage.setItem('summit_routing_profile', routingProfile);
   }, [routingProfile]);
 
+  // Flush all data to localStorage synchronously before the page unloads (covers Vite HMR and tab close)
+  useEffect(() => {
+    const flush = () => {
+      if (user) return;
+      try {
+        localStorage.setItem("summit_tracks", JSON.stringify(tracks));
+        localStorage.setItem("summit_areas", JSON.stringify(areas));
+        localStorage.setItem("summit_active_track_id", JSON.stringify(activeTrackId));
+        localStorage.setItem("summit_route_collections", JSON.stringify(routeCollections));
+        localStorage.setItem("summit_waypoint_groups", JSON.stringify(waypointGroups));
+      } catch (e) {
+        console.error("Failed to flush data on unload:", e);
+      }
+    };
+    window.addEventListener("beforeunload", flush);
+    return () => window.removeEventListener("beforeunload", flush);
+  }, [user, tracks, areas, activeTrackId, routeCollections, waypointGroups]);
+
   // Load data reactively when user changes (Cloud or Guest Mode)
   useEffect(() => {
     let active = true;
@@ -388,103 +410,93 @@ export function useRoutePlanner(user: any | null = null) {
 
       setLoading(true);
       try {
+        // Helper: fetch with fallback on error
+        const safeFetch = async (table: string) => {
+          const { data, error } = await supabase
+            .from(table)
+            .select("*")
+            .eq("user_id", user.id)
+            .order("id", { ascending: true });
+          if (error) console.error(`Supabase fetch ${table} error:`, error);
+          return data || [];
+        };
+
+        // Helper: try localStorage fallback before seeding defaults
+        const fromLocalStorage = (key: string) => {
+          try {
+            const saved = localStorage.getItem(key);
+            return saved ? JSON.parse(saved) : [];
+          } catch { return []; }
+        };
+
         // 0. Fetch route collections
-        const { data: dbCollections, error: collectionsError } = await supabase
-          .from("route_collections")
-          .select("*")
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: true });
-
-        if (collectionsError) throw collectionsError;
-
-        let collections = dbCollections || [];
-
-        // Seed default collection in DB if user has none
+        let collections = await safeFetch("route_collections");
         if (collections.length === 0) {
-          const defaultCollection = {
-            id: "default",
-            user_id: user.id,
-            name: "Mis Rutas",
-            description: "Colección principal para tus rutas trazadas y subidas.",
-            color: "#10b981",
-            visible: true,
-            image: "https://images.unsplash.com/photo-1486873249359-2731bd6dafc7?auto=format&fit=crop&w=400&q=80",
-          };
-          const { error: insertErr } = await supabase
-            .from("route_collections")
-            .insert(defaultCollection);
-
-          if (!insertErr) {
-            collections = [defaultCollection];
+          // Try localStorage before seeding
+          const lsCollections = fromLocalStorage("summit_route_collections");
+          if (lsCollections.length > 0) {
+            // Sync localStorage data to Supabase
+            for (const col of lsCollections) {
+              await supabase.from("route_collections").upsert({ ...col, user_id: user.id }).then(({ error }) => {
+                if (error) console.error("Failed to sync collection:", error);
+              });
+            }
+            collections = lsCollections;
           } else {
-            console.error("Failed to seed default collection in Supabase:", insertErr);
+            const defaultCollection = {
+              id: "default",
+              user_id: user.id,
+              name: "Mis Rutas",
+              description: "Colección principal para tus rutas trazadas y subidas.",
+              color: "#10b981",
+              visible: true,
+              image: "https://images.unsplash.com/photo-1486873249359-2731bd6dafc7?auto=format&fit=crop&w=400&q=80",
+            };
+            const { error: insertErr } = await supabase.from("route_collections").insert(defaultCollection);
+            if (!insertErr) collections = [defaultCollection];
+            else console.error("Failed to seed default collection:", insertErr);
           }
         }
 
         // 1. Fetch waypoint groups
-        const { data: dbGroups, error: groupsError } = await supabase
-          .from("waypoint_groups")
-          .select("*")
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: true });
-
-        if (groupsError) throw groupsError;
-
-        let groups = dbGroups || [];
-
-        // Seed default folder in DB if user has none
+        let groups = await safeFetch("waypoint_groups");
         if (groups.length === 0) {
-          const defaultGroup = {
-            id: "default",
-            user_id: user.id,
-            name: "Mis Marcadores",
-            description: "Marcadores generales y marcas personales del mapa.",
-            color: "#10b981",
-            visible: true,
-            image: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=400&q=80",
-          };
-          const { error: insertErr } = await supabase
-            .from("waypoint_groups")
-            .insert(defaultGroup);
-
-          if (!insertErr) {
-            groups = [defaultGroup];
+          const lsGroups = fromLocalStorage("summit_waypoint_groups");
+          if (lsGroups.length > 0) {
+            for (const g of lsGroups) {
+              await supabase.from("waypoint_groups").upsert({ ...g, user_id: user.id }).then(({ error }) => {
+                if (error) console.error("Failed to sync group:", error);
+              });
+            }
+            groups = lsGroups;
           } else {
-            console.error("Failed to seed default group in Supabase:", insertErr);
+            const defaultGroup = {
+              id: "default",
+              user_id: user.id,
+              name: "Mis Marcadores",
+              description: "Marcadores generales y marcas personales del mapa.",
+              color: "#10b981",
+              visible: true,
+              image: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=400&q=80",
+            };
+            const { error: insertErr } = await supabase.from("waypoint_groups").insert(defaultGroup);
+            if (!insertErr) groups = [defaultGroup];
+            else console.error("Failed to seed default waypoint group:", insertErr);
           }
         }
 
         // 2. Fetch tracks
-        const { data: dbTracks, error: tracksError } = await supabase
-          .from("tracks")
-          .select("*")
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: true });
-
-        if (tracksError) throw tracksError;
+        const dbTracks = await safeFetch("tracks");
 
         // 3. Fetch waypoints
-        const { data: dbWaypoints, error: waypointsError } = await supabase
-          .from("waypoints")
-          .select("*")
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: true });
+        const dbWaypoints = await safeFetch("waypoints");
 
-        if (waypointsError) throw waypointsError;
-
-        // 4. Fetch areas
+        // 4. Fetch areas (table may not exist yet — safe fallback)
         let dbAreas: any[] = [];
         try {
-          const { data, error: areasError } = await supabase
-            .from("areas")
-            .select("*")
-            .eq("user_id", user.id)
-            .order("created_at", { ascending: true });
-          if (!areasError && data) {
-            dbAreas = data;
-          }
+          dbAreas = await safeFetch("areas");
         } catch (err) {
-          console.warn("Could not load areas from Supabase (table might not exist yet):", err);
+          console.warn("Could not load areas from Supabase:", err);
         }
 
         if (!active) return;
@@ -519,7 +531,7 @@ export function useRoutePlanner(user: any | null = null) {
           image: c.image || undefined,
         }));
 
-        // Map waypoints into tracks
+        // Map waypoint groups
         const mappedGroups: WaypointGroup[] = groups.map((g: any) => ({
           id: g.id,
           name: g.name,
@@ -527,6 +539,8 @@ export function useRoutePlanner(user: any | null = null) {
           color: g.color,
           visible: g.visible !== false,
           image: g.image || undefined,
+          type: (g.type as "folder" | "challenge") || "challenge",
+          isPublic: g.is_public || false,
         }));
 
         const mappedTracks: Track[] = (dbTracks || []).map((t: any) => {
@@ -554,6 +568,7 @@ export function useRoutePlanner(user: any | null = null) {
             visible: t.visible !== false,
             color: t.color,
             collectionId: t.collection_id || "default",
+            isPublic: t.is_public || false,
           };
         });
 
@@ -613,8 +628,7 @@ export function useRoutePlanner(user: any | null = null) {
         if (parsedActiveId && mappedTracks.some((t) => t.id === parsedActiveId && t.id !== "waypoints-global-track")) {
           setActiveTrackId(parsedActiveId);
         } else {
-          const firstRealTrack = mappedTracks.find((t) => t.id !== "waypoints-global-track");
-          setActiveTrackId(firstRealTrack ? firstRealTrack.id : null);
+          setActiveTrackId(null);
         }
 
         // Clear click segments for DB tracks
@@ -707,35 +721,116 @@ export function useRoutePlanner(user: any | null = null) {
     [routingProfile]
   );
 
+  // --- BRouter routing (fallback #1) ---
+  const fetchBRouterRoute = useCallback(
+    async (start: [number, number], end: [number, number]): Promise<[number, number, number?, string?][]> => {
+      const brouterProfileMap: Record<string, string> = { hike: 'hiking-mountain', cycle: 'trekking', drive: 'car-fast' };
+      const brouterProfile = brouterProfileMap[routingProfile] || 'hiking-mountain';
+      const url = `https://brouter.de/brouter?lonlats=${start[1]},${start[0]}|${end[1]},${end[0]}&profile=${brouterProfile}&alternativeidx=0&format=geojson`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error("BRouter network error");
+      const data = await response.json();
+
+      if (data.features && data.features.length > 0) {
+        const coords = data.features[0].geometry.coordinates;
+        const messages = data.features[0].properties?.messages || [];
+        
+        const routeCoords: [number, number, number?, string?][] = coords.map((c: number[], idx: number) => {
+          const msgLine = messages[idx + 1] || "";
+          const surface = extractSurfaceFromTags(msgLine);
+          return [c[1], c[0], c[2] || 0, surface];
+        });
+        return routeCoords;
+      }
+      throw new Error("BRouter returned no features");
+    },
+    [routingProfile]
+  );
+
+  // --- GraphHopper routing (primary engine — used by gpx.studio) ---
+  const fetchGraphHopperRoute = useCallback(
+    async (start: [number, number], end: [number, number]): Promise<[number, number, number?, string?][]> => {
+      // GraphHopper API key: env var or localStorage
+      const ghKey = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GRAPHHOPPER_KEY)
+        || localStorage.getItem('graphhopper_api_key')
+        || '';
+
+      if (!ghKey) throw new Error("No GraphHopper API key configured");
+
+      const ghProfileMap: Record<string, string> = { hike: 'foot', cycle: 'bike', drive: 'car' };
+      const ghProfile = ghProfileMap[routingProfile] || 'foot';
+
+      const url = `https://graphhopper.com/api/1/route`
+        + `?point=${start[0]},${start[1]}`
+        + `&point=${end[0]},${end[1]}`
+        + `&profile=${ghProfile}`
+        + `&points_encoded=false`
+        + `&elevation=true`
+        + `&instructions=false`
+        + `&locale=es`
+        + `&key=${ghKey}`;
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        const errBody = await response.text().catch(() => "");
+        throw new Error(`GraphHopper error ${response.status}: ${errBody}`);
+      }
+      const data = await response.json();
+
+      if (data.paths && data.paths.length > 0) {
+        const path = data.paths[0];
+        const coords = path.points?.coordinates;
+        if (!coords || coords.length === 0) throw new Error("GraphHopper returned empty coordinates");
+
+        // Sanity check: reject absurd detours
+        const routeDistKm = (path.distance || 0) / 1000;
+        const straightDist = calculateHaversineDistance(start, end);
+        if (routeDistKm > straightDist * 3) {
+          throw new Error("GraphHopper route suspiciously long, trying fallback");
+        }
+
+        const routeCoords: [number, number, number?, string?][] = coords.map((c: number[]) => {
+          // GraphHopper returns [lon, lat, elevation?]
+          return [c[1], c[0], c[2] || 0, undefined];
+        });
+        return routeCoords;
+      }
+      throw new Error("GraphHopper returned no paths");
+    },
+    [routingProfile]
+  );
+
+  // --- Main routing chain: GraphHopper → BRouter → OSRM → straight line ---
   const fetchHikingRoute = useCallback(
     async (start: [number, number], end: [number, number]): Promise<[number, number, number?, string?][]> => {
+      // 1) Try GraphHopper first (best trail detection, used by gpx.studio)
       try {
-        const brouterProfileMap: Record<string, string> = { hike: 'Hiking-Alpine-SAC6', cycle: 'trekking', drive: 'car-fast' };
-        const brouterProfile = brouterProfileMap[routingProfile] || 'Hiking-Alpine-SAC6';
-        const url = `https://brouter.de/brouter?lonlats=${start[1]},${start[0]}|${end[1]},${end[0]}&profile=${brouterProfile}&alternativeidx=0&format=geojson`;
-        const response = await fetch(url);
-        if (!response.ok) throw new Error("Brouter network error");
-        const data = await response.json();
-
-        if (data.features && data.features.length > 0) {
-          const coords = data.features[0].geometry.coordinates;
-          const messages = data.features[0].properties?.messages || [];
-          
-          const routeCoords: [number, number, number?, string?][] = coords.map((c: number[], idx: number) => {
-            // Skips header, gets corresponding line
-            const msgLine = messages[idx + 1] || "";
-            const surface = extractSurfaceFromTags(msgLine);
-            return [c[1], c[0], c[2] || 0, surface];
-          });
-          return routeCoords;
-        }
-        return fetchOSRMRoute(start, end);
-      } catch (error) {
-        console.warn("Brouter routing failed, trying OSRM fallback:", error);
-        return fetchOSRMRoute(start, end);
+        const result = await fetchGraphHopperRoute(start, end);
+        if (result.length > 1) return result;
+      } catch (err) {
+        console.warn("GraphHopper routing failed, trying BRouter fallback:", err);
       }
+
+      // 2) Fallback to BRouter (free, no API key, good hiking profiles)
+      try {
+        const result = await fetchBRouterRoute(start, end);
+        if (result.length > 1) return result;
+      } catch (err) {
+        console.warn("BRouter routing failed, trying OSRM fallback:", err);
+      }
+
+      // 3) Last resort: OSRM (basic foot routing, always available)
+      try {
+        const result = await fetchOSRMRoute(start, end);
+        return result;
+      } catch (err) {
+        console.warn("OSRM routing also failed, falling back to straight line:", err);
+      }
+
+      // 4) Final fallback: straight line
+      return [start, end];
     },
-    [fetchOSRMRoute, routingProfile]
+    [fetchGraphHopperRoute, fetchBRouterRoute, fetchOSRMRoute]
   );
 
   // 5. Track Management Core operations
@@ -832,6 +927,30 @@ export function useRoutePlanner(user: any | null = null) {
       }
     }
   }, [tracks, user, areas, pushToHistory]);
+
+  const toggleTrackPublic = useCallback((id: string) => {
+    const target = tracks.find((t) => t.id === id);
+    if (!target) return;
+    const newVal = !target.isPublic;
+    setTracks((prev) => prev.map((t) => (t.id === id ? { ...t, isPublic: newVal } : t)));
+    if (user && isSupabaseConfigured) {
+      supabase.from("tracks").update({ is_public: newVal }).eq("id", id).then(({ error }) => {
+        if (error) console.error("Failed to toggle track public in Supabase:", error);
+      });
+    }
+  }, [tracks, user]);
+
+  const toggleGroupPublic = useCallback((id: string) => {
+    const target = waypointGroups.find((g) => g.id === id);
+    if (!target) return;
+    const newVal = !target.isPublic;
+    setWaypointGroups((prev) => prev.map((g) => (g.id === id ? { ...g, isPublic: newVal } : g)));
+    if (user && isSupabaseConfigured) {
+      supabase.from("waypoint_groups").update({ is_public: newVal }).eq("id", id).then(({ error }) => {
+        if (error) console.error("Failed to toggle group public in Supabase:", error);
+      });
+    }
+  }, [waypointGroups, user]);
 
   const setTrackColor = useCallback((id: string, color: string) => {
     pushToHistory(tracks, areas);
@@ -1058,6 +1177,40 @@ export function useRoutePlanner(user: any | null = null) {
     }
   }, [activeTrackId, user, tracks, areas, pushToHistory]);
 
+  const addWaypointToMarkers = useCallback((wpt: Omit<Waypoint, "id">) => {
+    const newWpt: Waypoint = {
+      ...wpt,
+      groupId: wpt.groupId || "default",
+      completed: wpt.completed || false,
+      id: `wpt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    };
+    pushToHistory(tracks, areas);
+    setTracks((prev) =>
+      prev.map((t) =>
+        t.id === "waypoints-global-track" ? { ...t, waypoints: [...t.waypoints, newWpt] } : t
+      )
+    );
+    if (user && isSupabaseConfigured) {
+      supabase.from("waypoints").insert({
+        id: newWpt.id,
+        user_id: user.id,
+        track_id: "waypoints-global-track",
+        name: newWpt.name,
+        lat: newWpt.lat,
+        lng: newWpt.lng,
+        icon: newWpt.icon,
+        note: newWpt.note,
+        color: newWpt.color,
+        group_id: newWpt.groupId === "default" ? null : newWpt.groupId,
+        completed: newWpt.completed,
+        image: newWpt.image || null,
+        link: newWpt.link || null,
+      }).then(({ error }) => {
+        if (error) console.error("Failed to insert waypoint into Supabase:", error);
+      });
+    }
+  }, [user, tracks, areas, pushToHistory]);
+
   const addMultipleWaypoints = useCallback((wpts: Omit<Waypoint, "id">[], _trackName?: string) => {
     const currentActiveId = "waypoints-global-track";
 
@@ -1148,6 +1301,41 @@ export function useRoutePlanner(user: any | null = null) {
     }
   }, [user, tracks, areas, pushToHistory]);
 
+  const addWaypointToTrack = useCallback((trackId: string, wpt: Omit<Waypoint, "id">) => {
+    const newWpt: Waypoint = {
+      ...wpt,
+      id: `wpt-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      groupId: wpt.groupId || "default",
+      completed: wpt.completed || false,
+    };
+    pushToHistory(tracks, areas);
+    setTracks((prev) =>
+      prev.map((t) =>
+        t.id === trackId ? { ...t, waypoints: [...t.waypoints, newWpt] } : t
+      )
+    );
+    if (user && isSupabaseConfigured) {
+      supabase.from("waypoints").insert({
+        id: newWpt.id,
+        name: newWpt.name,
+        lat: newWpt.lat,
+        lng: newWpt.lng,
+        icon: newWpt.icon,
+        note: newWpt.note || "",
+        color: newWpt.color,
+        group_id: newWpt.groupId === "default" ? null : newWpt.groupId,
+        completed: newWpt.completed,
+        elevation: (newWpt as any).elevation || null,
+        link: newWpt.link || null,
+        image: newWpt.image || null,
+        track_id: trackId,
+        user_id: user.id,
+      }).then(({ error }) => {
+        if (error) console.error("Failed to insert waypoint into track in Supabase:", error);
+      });
+    }
+  }, [user, tracks, areas, pushToHistory]);
+
   const removeWaypoint = useCallback((id: string) => {
     pushToHistory(tracks, areas);
     setTracks((prev) =>
@@ -1161,6 +1349,27 @@ export function useRoutePlanner(user: any | null = null) {
       supabase.from("waypoints").delete().eq("id", id).then(({ error }) => {
         if (error) console.error("Failed to delete waypoint from Supabase:", error);
       });
+    }
+  }, [user, tracks, areas, pushToHistory]);
+
+  const removeWaypoints = useCallback(async (ids: string[]) => {
+    if (ids.length === 0) return;
+    pushToHistory(tracks, areas);
+    const idSet = new Set(ids);
+    setTracks((prev) =>
+      prev.map((t) => ({
+        ...t,
+        waypoints: t.waypoints.filter((w) => !idSet.has(w.id)),
+      }))
+    );
+    if (user && isSupabaseConfigured) {
+      // Supabase .in() silently fails on large arrays — chunk into batches of 100
+      const CHUNK = 100;
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const chunk = ids.slice(i, i + CHUNK);
+        const { error } = await supabase.from("waypoints").delete().in("id", chunk);
+        if (error) console.error(`Failed to bulk-delete waypoints chunk ${i}-${i + CHUNK}:`, error);
+      }
     }
   }, [user, tracks, areas, pushToHistory]);
 
@@ -1181,6 +1390,8 @@ export function useRoutePlanner(user: any | null = null) {
         color: newGroup.color,
         visible: newGroup.visible,
         image: newGroup.image || null,
+        type: newGroup.type || "challenge",
+        is_public: newGroup.isPublic || false,
       });
       if (error) {
         console.error("Failed to insert waypoint group into Supabase:", error);
@@ -1202,6 +1413,8 @@ export function useRoutePlanner(user: any | null = null) {
       if (fields.color !== undefined) dbFields.color = fields.color;
       if (fields.visible !== undefined) dbFields.visible = fields.visible;
       if (fields.image !== undefined) dbFields.image = fields.image || null;
+      if (fields.type !== undefined) dbFields.type = fields.type;
+      if (fields.isPublic !== undefined) dbFields.is_public = fields.isPublic;
 
       supabase.from("waypoint_groups").update(dbFields).eq("id", id).then(({ error }) => {
         if (error) console.error("Failed to update waypoint group in Supabase:", error);
@@ -1282,6 +1495,16 @@ export function useRoutePlanner(user: any | null = null) {
       });
     }
   }, [tracks, user]);
+
+  // Community content fetching
+  const fetchCommunityContent = useCallback(async () => {
+    if (!isSupabaseConfigured) return { tracks: [], groups: [] };
+    const [{ data: pubTracks }, { data: pubGroups }] = await Promise.all([
+      supabase.from("tracks").select("*, profiles:user_id(display_name, avatar_url)").eq("is_public", true).neq("id", "waypoints-global-track").order("id", { ascending: false }).limit(100),
+      supabase.from("waypoint_groups").select("*, profiles:user_id(display_name, avatar_url), waypoints(*)").eq("is_public", true).order("id", { ascending: false }).limit(100),
+    ]);
+    return { tracks: pubTracks || [], groups: pubGroups || [] };
+  }, []);
 
   // 8. Import
   const importRouteData = useCallback(
@@ -1933,51 +2156,81 @@ export function useRoutePlanner(user: any | null = null) {
     pushToHistory(tracks, areas);
     setLoading(true);
     try {
-      const [elev] = await fetchElevations([[lat, lng]]);
-      setTracks((prev) =>
-        prev.map((t) => {
-          if (t.id === trackId && index >= 0 && index < t.points.length) {
-            const updatedPoints = [...t.points];
-            updatedPoints[index] = {
-              ...updatedPoints[index],
-              lat,
-              lng,
-              elevation: elev ?? updatedPoints[index].elevation,
-            };
+      const targetTrack = tracks.find(t => t.id === trackId);
+      if (!targetTrack || index < 0 || index >= targetTrack.points.length) return;
 
-            // Recalculate cumulative distances in cascada
-            let cumulativeDist = 0;
-            const finalPoints = updatedPoints.map((pt, idx) => {
-              if (idx > 0) {
-                const prevPt = updatedPoints[idx - 1];
-                cumulativeDist += calculateHaversineDistance([prevPt.lat, prevPt.lng], [pt.lat, pt.lng]);
-              }
-              return {
-                ...pt,
-                distance: cumulativeDist,
-              };
-            });
+      const pts = targetTrack.points;
+      let finalPoints: RoutePoint[];
 
-            if (user && isSupabaseConfigured) {
-              supabase.from("tracks")
-                .update({ points: finalPoints })
-                .eq("id", trackId)
-                .then(({ error }) => {
-                  if (error) console.error("Failed to sync updated point to Supabase:", error);
-                });
-            }
+      if (routingProfile !== 'straight' && index > 0 && index < pts.length - 1) {
+        // Re-route the two segments adjacent to the dragged vertex so the track follows roads/trails
+        const prevPt = pts[index - 1];
+        const nextPt = pts[index + 1];
 
-            return { ...t, points: finalPoints };
+        const [seg1, seg2] = await Promise.all([
+          fetchHikingRoute([prevPt.lat, prevPt.lng], [lat, lng]),
+          fetchHikingRoute([lat, lng], [nextPt.lat, nextPt.lng]),
+        ]);
+
+        // seg1 goes from prevPt to newPos (inclusive). seg2 from newPos to nextPt.
+        // Combine: skip prevPt (already in pts), include everything up to (not including nextPt).
+        const newMiddleCoords = [
+          ...seg1.slice(1),        // prevPt → newPos intermediate + newPos
+          ...seg2.slice(1, -1),    // newPos → nextPt intermediate (skip newPos and nextPt)
+        ];
+
+        const newElevs = newMiddleCoords.length > 0
+          ? await fetchElevations(newMiddleCoords.map(c => [c[0], c[1]]))
+          : [];
+
+        const newMiddlePoints: RoutePoint[] = newMiddleCoords.map((c, i) => ({
+          lat: c[0],
+          lng: c[1],
+          elevation: newElevs[i] ?? (c[2] as number) ?? 0,
+          distance: 0,
+          surface: (c[3] as string) || pts[index].surface,
+        }));
+
+        const updatedPoints = [
+          ...pts.slice(0, index),      // points before dragged vertex (includes prevPt at index-1)
+          ...newMiddlePoints,           // newly routed middle section
+          ...pts.slice(index + 1),      // points after dragged vertex (includes nextPt at index+1)
+        ];
+
+        let cumDist = 0;
+        finalPoints = updatedPoints.map((pt, i) => {
+          if (i > 0) cumDist += calculateHaversineDistance([updatedPoints[i - 1].lat, updatedPoints[i - 1].lng], [pt.lat, pt.lng]);
+          return { ...pt, distance: cumDist };
+        });
+      } else {
+        // First/last point or straight-line mode: just move the vertex
+        const [elev] = await fetchElevations([[lat, lng]]);
+        const updatedPoints = [...pts];
+        updatedPoints[index] = { ...updatedPoints[index], lat, lng, elevation: elev ?? updatedPoints[index].elevation };
+
+        let cumDist = 0;
+        finalPoints = updatedPoints.map((pt, i) => {
+          if (i > 0) cumDist += calculateHaversineDistance([updatedPoints[i - 1].lat, updatedPoints[i - 1].lng], [pt.lat, pt.lng]);
+          return { ...pt, distance: cumDist };
+        });
+      }
+
+      setTracks(prev => prev.map(t => {
+        if (t.id === trackId) {
+          if (user && isSupabaseConfigured) {
+            supabase.from("tracks").update({ points: finalPoints }).eq("id", trackId)
+              .then(({ error }) => { if (error) console.error("Failed to sync updated point to Supabase:", error); });
           }
-          return t;
-        })
-      );
+          return { ...t, points: finalPoints };
+        }
+        return t;
+      }));
     } catch (error) {
       console.error("Failed to update route point coordinate:", error);
     } finally {
       setLoading(false);
     }
-  }, [fetchElevations, user, tracks, areas, pushToHistory]);
+  }, [fetchElevations, fetchHikingRoute, routingProfile, user, tracks, areas, pushToHistory]);
 
   const insertIntermediatePoint = useCallback(async (trackId: string, lat: number, lng: number) => {
     pushToHistory(tracks, areas);
@@ -2081,6 +2334,66 @@ export function useRoutePlanner(user: any | null = null) {
           if (user && isSupabaseConfigured) {
             supabase.from("tracks").update({ points: updatedPoints }).eq("id", trackId).then(({ error }) => {
               if (error) console.error("Failed to simplify track in Supabase:", error);
+            });
+          }
+          return { ...t, points: updatedPoints };
+        }
+        return t;
+      })
+    );
+  }, [user, tracks, areas, pushToHistory]);
+
+  const applySmoothTrack = useCallback((trackId: string, strength: number = 1) => {
+    pushToHistory(tracks, areas);
+    setTracks((prev) =>
+      prev.map((t) => {
+        if (t.id === trackId) {
+          if (t.points.length <= 2) return t;
+          const smoothedPoints = smoothTrackPoints(t.points, strength);
+          // Recalculate distances for the new points
+          let newDist = 0;
+          const updatedPoints = smoothedPoints.map((p, index) => {
+            if (index === 0) return { ...p, distance: 0, elevation: p.elevation ?? 0 };
+            newDist += calculateHaversineDistance(
+              [smoothedPoints[index - 1].lat, smoothedPoints[index - 1].lng],
+              [p.lat, p.lng]
+            );
+            return { ...p, distance: newDist, elevation: p.elevation ?? 0 };
+          });
+          
+          if (user && isSupabaseConfigured) {
+            supabase.from("tracks").update({ points: updatedPoints }).eq("id", trackId).then(({ error }) => {
+              if (error) console.error("Failed to smooth track in Supabase:", error);
+            });
+          }
+          return { ...t, points: updatedPoints };
+        }
+        return t;
+      })
+    );
+  }, [user, tracks, areas, pushToHistory]);
+
+  const applyRemoveOutliers = useCallback((trackId: string, speedThresholdKmh: number = 60) => {
+    pushToHistory(tracks, areas);
+    setTracks((prev) =>
+      prev.map((t) => {
+        if (t.id === trackId) {
+          if (t.points.length <= 2) return t;
+          const cleanedPoints = removeTrackOutliers(t.points, speedThresholdKmh);
+          // Recalculate distances for the new points
+          let newDist = 0;
+          const updatedPoints = cleanedPoints.map((p, index) => {
+            if (index === 0) return { ...p, distance: 0, elevation: p.elevation ?? 0 };
+            newDist += calculateHaversineDistance(
+              [cleanedPoints[index - 1].lat, cleanedPoints[index - 1].lng],
+              [p.lat, p.lng]
+            );
+            return { ...p, distance: newDist, elevation: p.elevation ?? 0 };
+          });
+          
+          if (user && isSupabaseConfigured) {
+            supabase.from("tracks").update({ points: updatedPoints }).eq("id", trackId).then(({ error }) => {
+              if (error) console.error("Failed to remove outliers from track in Supabase:", error);
             });
           }
           return { ...t, points: updatedPoints };
@@ -2379,15 +2692,19 @@ export function useRoutePlanner(user: any | null = null) {
     clearRoute,
     importRouteData,
     addWaypoint,
+    addWaypointToMarkers,
+    addWaypointToTrack,
     addMultipleWaypoints,
     updateWaypoint,
     removeWaypoint,
+    removeWaypoints,
     
     // Multi-track additions
     createNewTrack,
     deleteTrack,
     deleteMultipleTracks,
     toggleTrackVisibility,
+    toggleTrackPublic,
     setTrackColor,
     mergeTracks,
     splitTrack,
@@ -2397,6 +2714,8 @@ export function useRoutePlanner(user: any | null = null) {
     updateRoutePoint,
     insertIntermediatePoint,
     applySimplifyTrack,
+    applySmoothTrack,
+    applyRemoveOutliers,
     cleanTrackArea,
 
     // Waypoint Group additions
@@ -2406,7 +2725,9 @@ export function useRoutePlanner(user: any | null = null) {
     deleteWaypointGroup,
     updateWaypointGroup,
     toggleWaypointGroupVisibility,
+    toggleGroupPublic,
     toggleWaypointCompleted,
+    fetchCommunityContent,
 
     // Route Collection additions
     routeCollections,

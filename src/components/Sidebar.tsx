@@ -29,6 +29,27 @@ import {
   Folder,
   Hexagon,
   Palette,
+  Scissors,
+  RefreshCw,
+  ArrowLeftRight,
+  Trees,
+  TrendingUp,
+  Zap,
+  Footprints,
+  Bike,
+  Car,
+  Ruler,
+  Circle,
+  Mountain,
+  Heart,
+  RotateCw,
+  Gauge,
+  Share2,
+  Users,
+  Globe,
+  Lock,
+  Unlock,
+  Import,
 } from "lucide-react";
 import { LayerSelector, type BaseLayerId, type CustomLayer } from "./LayerSelector";
 import { StatsPanel } from "./StatsPanel";
@@ -69,14 +90,20 @@ interface SidebarProps {
   onImportRoute: (name: string, points: any[], waypoints: any[]) => void;
   onFlyToCoords: (lat: number, lng: number) => void;
   onDeleteWaypoint: (id: string) => void;
+  onDeleteWaypoints?: (ids: string[]) => void;
+  onAddWaypointToMarkers?: (wpt: Omit<any, "id">) => void;
+  onAddWaypointToTrack?: (trackId: string, wpt: Omit<any, "id">) => void;
+  allGlobalWaypoints?: any[];
   onEditWaypoint: (wpt: any) => void;
   onUpdateWaypoint?: (id: string, fields: any) => void;
-  
+  onHighlightWpt?: (id: string | null) => void;
+
   // Multi-track additions
   onCreateNewTrack: (name?: string, collectionId?: string) => string;
   onDeleteTrack: (id: string) => void;
   onDeleteMultipleTracks?: (ids: string[]) => void;
   onToggleTrackVisibility: (id: string) => void;
+  onToggleTrackPublic?: (id: string) => void;
   onSetTrackColor: (id: string, color: string) => void;
   onMergeTracks: (ids: string[], name?: string) => void;
   
@@ -106,7 +133,9 @@ interface SidebarProps {
   onDeleteWaypointGroup: (id: string) => void;
   onUpdateWaypointGroup: (id: string, group: { name?: string; description?: string; color?: string; visible?: boolean; image?: string }) => void;
   onToggleWaypointGroupVisibility: (id: string) => void;
+  onToggleGroupPublic?: (id: string) => void;
   onToggleWaypointCompleted: (id: string) => void;
+  onFetchCommunityContent?: () => Promise<{ tracks: any[]; groups: any[] }>;
 
   // Route Collections Props
   routeCollections: RouteCollection[];
@@ -191,9 +220,13 @@ interface SidebarProps {
   onToggleSlopeShading?: () => void;
   slopeShadingOpacity?: number;
   onChangeSlopeShadingOpacity?: (opacity: number) => void;
+  applySimplifyTrack?: (id: string, tolerance: number) => void;
+  trimTrack?: (id: string, startIdx: number, endIdx: number) => void;
+  applySmoothTrack?: (id: string, strength: number) => void;
+  applyRemoveOutliers?: (id: string, threshold: number) => void;
 }
 
-type TabId = "search" | "layers" | "route" | "waypoints" | "challenges" | "settings";
+type TabId = "search" | "layers" | "route" | "waypoints" | "challenges" | "community" | "settings";
 
 
 
@@ -222,12 +255,18 @@ export function Sidebar({
   onImportRoute,
   onFlyToCoords,
   onDeleteWaypoint,
+  onDeleteWaypoints,
+  onAddWaypointToMarkers,
+  onAddWaypointToTrack,
+  allGlobalWaypoints = [],
   onEditWaypoint,
   onUpdateWaypoint,
+  onHighlightWpt,
   onCreateNewTrack,
   onDeleteTrack,
   onDeleteMultipleTracks,
   onToggleTrackVisibility,
+  onToggleTrackPublic,
   onSetTrackColor,
   onMergeTracks,
   activeBaseLayer,
@@ -243,7 +282,9 @@ export function Sidebar({
   onDeleteWaypointGroup,
   onUpdateWaypointGroup,
   onToggleWaypointGroupVisibility,
+  onToggleGroupPublic,
   onToggleWaypointCompleted,
+  onFetchCommunityContent,
   routeCollections,
   onAddRouteCollection,
   onDeleteRouteCollection,
@@ -316,9 +357,31 @@ export function Sidebar({
   onRenameLibraryImage,
   selectedSplitNumber,
   onSelectSplit,
+  applySimplifyTrack,
+  trimTrack,
+  applySmoothTrack,
+  applyRemoveOutliers,
 }: SidebarProps) {
   const { customAlert, customConfirm, customPrompt } = useCustomDialog();
   const [activeTab, setActiveTab] = useState<TabId>("route");
+
+  // Routing editor local states
+  const [showSimplifyPanel, setShowSimplifyPanel] = useState<boolean>(false);
+  const [showTrimPanel, setShowTrimPanel] = useState<boolean>(false);
+  const [showSmoothPanel, setShowSmoothPanel] = useState<boolean>(false);
+  const [showOutliersPanel, setShowOutliersPanel] = useState<boolean>(false);
+  const [simplifyTolerance, setSimplifyTolerance] = useState<number>(5);
+  const [trimStart, setTrimStart] = useState<number>(0);
+  const [trimEnd, setTrimEnd] = useState<number>(0);
+  const [smoothStrength, setSmoothStrength] = useState<number>(1);
+  const [outlierThreshold, setOutlierThreshold] = useState<number>(60);
+
+  React.useEffect(() => {
+    if (points && points.length > 0) {
+      setTrimStart(0);
+      setTrimEnd(points.length - 1);
+    }
+  }, [points]);
 
   // Header hero image — rotates on each mount
   const HERO_IMAGES = [
@@ -345,9 +408,53 @@ export function Sidebar({
   // Track Library selection state for merging
   const [selectedMergeIds, setSelectedMergeIds] = useState<string[]>([]);
 
+  // Centralized editing tool select handler implementing strict mutual exclusion
+  const handleToolSelect = (tool: "draw" | "vertices" | "split" | "trim" | "simplify" | "clean" | "smooth" | "outliers" | "bucle" | "invertir") => {
+    // 1. Deactivate all tool state variables first
+    setIsDrawing(false);
+    setIsEditingRoute(false);
+    setIsSplitting(false);
+    if (_setIsCleaningArea) _setIsCleaningArea(false);
+    setShowSimplifyPanel(false);
+    setShowTrimPanel(false);
+    setShowSmoothPanel(false);
+    setShowOutliersPanel(false);
+
+    // 2. Activate the selected tool
+    if (tool === "draw") {
+      setIsDrawing(true);
+    } else if (tool === "vertices") {
+      setIsEditingRoute(true);
+    } else if (tool === "split") {
+      setIsSplitting(true);
+    } else if (tool === "trim") {
+      setShowTrimPanel(true);
+    } else if (tool === "simplify") {
+      setShowSimplifyPanel(true);
+    } else if (tool === "clean") {
+      if (_setIsCleaningArea) _setIsCleaningArea(true);
+    } else if (tool === "smooth") {
+      setShowSmoothPanel(true);
+    } else if (tool === "outliers") {
+      setShowOutliersPanel(true);
+    } else if (tool === "bucle") {
+      if (activeTrackId) {
+        _onRoundTripTrack(activeTrackId);
+        customAlert("Bucle de ruta creado (ida y vuelta).");
+      }
+    } else if (tool === "invertir") {
+      if (activeTrackId) {
+        _onReverseTrack(activeTrackId);
+        customAlert("Dirección de la ruta invertida.");
+      }
+    }
+  };
+
   // Waypoint Groups / Challenges state
   const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
+  const [wptBulkMode, setWptBulkMode] = useState(false);
+  const [wptBulkSelectedIds, setWptBulkSelectedIds] = useState<string[]>([]);
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [isOsmSearchOpen, setIsOsmSearchOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
@@ -357,6 +464,18 @@ export function Sidebar({
 
   // Route Collections state
   const [expandedCollectionId, setExpandedCollectionId] = useState<string | null>(null);
+  const [collapsedCollectionCats, setCollapsedCollectionCats] = useState<Record<string, Set<string>>>({});
+  const [expandedTrackWpts, setExpandedTrackWpts] = useState<Set<string>>(new Set());
+  const [copyWptPending, setCopyWptPending] = useState<{ wpt: any; trackName: string } | null>(null);
+  const [copyWptTargetGroupId, setCopyWptTargetGroupId] = useState<string>("");
+  const [hoveredTrackWptId, setHoveredTrackWptId] = useState<string | null>(null);
+  const toggleCollectionCat = (collId: string, cat: string) => {
+    setCollapsedCollectionCats(prev => {
+      const s = new Set(prev[collId] || []);
+      if (s.has(cat)) s.delete(cat); else s.add(cat);
+      return { ...prev, [collId]: s };
+    });
+  };
   const [isCreatingCollection, setIsCreatingCollection] = useState(false);
   const [editingCollectionId, setEditingCollectionId] = useState<string | null>(null);
   const [newCollectionName, setNewCollectionName] = useState("");
@@ -366,6 +485,19 @@ export function Sidebar({
 
   // Library Search state
   const [librarySearchQuery, setLibrarySearchQuery] = useState("");
+
+  // Community tab state
+  const [communityContent, setCommunityContent] = useState<{ tracks: any[]; groups: any[] } | null>(null);
+  const [communityLoading, setCommunityLoading] = useState(false);
+  const [communityFilter, setCommunityFilter] = useState<"all" | "tracks" | "challenges" | "marks">("all");
+  const [communitySearch, setCommunitySearch] = useState("");
+
+  React.useEffect(() => {
+    if (activeTab !== "community" || communityContent !== null) return;
+    if (!onFetchCommunityContent) return;
+    setCommunityLoading(true);
+    onFetchCommunityContent().then(result => setCommunityContent(result)).finally(() => setCommunityLoading(false));
+  }, [activeTab]);
 
   // OpenStreetMap POI Downloader states
   const [osmCategory, setOsmCategory] = useState("peak");
@@ -780,6 +912,16 @@ export function Sidebar({
           throw new Error("Formato JSON no soportado. Debe ser un reto exportado, una lista de marcas o una respuesta de Overpass API.");
         }
 
+        if (wptsToImport.length === 0) {
+          await customAlert("No se encontraron marcas válidas en el archivo.");
+          return;
+        }
+
+        const confirmed = await customConfirm(
+          `¿Importar ${wptsToImport.length} marca(s)${createdGroupName ? ` en la carpeta "${createdGroupName}"` : ""}?`
+        );
+        if (!confirmed) return;
+
         if (onAddMultipleWaypoints) {
           onAddMultipleWaypoints(wptsToImport, createdGroupName);
           importedCount = wptsToImport.length;
@@ -790,7 +932,7 @@ export function Sidebar({
           });
         }
 
-        await customAlert(`¡Importación exitosa! Se ha creado el reto "${createdGroupName}" y se han añadido ${importedCount} marcas a Summit GPS.`);
+        await customAlert(`¡Importación exitosa! Se ha creado la carpeta "${createdGroupName}" y se han añadido ${importedCount} marcas.`);
         
         if (wptsToImport.length > 0) {
           onFlyToCoords(wptsToImport[0].lat, wptsToImport[0].lng);
@@ -1013,6 +1155,7 @@ export function Sidebar({
                 { id: "route" as TabId, label: "Rutas", icon: Route },
                 { id: "waypoints" as TabId, label: "Marcas", icon: MapPin },
                 { id: "challenges" as TabId, label: "Retos", icon: Trophy },
+                { id: "community" as TabId, label: "Comunidad", icon: Users },
                 { id: "settings" as TabId, label: "Ajustes", icon: Settings },
               ].map((tab) => {
                 const Icon = tab.icon;
@@ -1065,7 +1208,7 @@ export function Sidebar({
         /* Main Sidebar Panel */
         <div className="w-full h-full bg-[#131b17]/95 border-r border-[#1b3d2b] text-slate-100 flex flex-col overflow-hidden">
         {/* Header / Brand — Hero Image */}
-        <div className="relative h-[110px] shrink-0 overflow-hidden border-b border-[#1b3d2b]">
+        <div className="relative h-[108px] shrink-0 overflow-hidden border-b border-[#1b3d2b]">
           <img
             src={heroImage}
             alt=""
@@ -1093,7 +1236,7 @@ export function Sidebar({
 
         {/* User Session Sub-Header Status Panel */}
         {user ? (
-          <div className="px-5 py-2.5 bg-[#0a0f0d] border-b border-[#1b3d2b]/60 flex items-center justify-between text-[10px] select-none">
+          <div className="h-[36px] px-5 bg-[#0a0f0d] border-b border-[#1b3d2b]/60 flex items-center justify-between text-[10px] select-none shrink-0">
             <div className="flex items-center gap-1.5 min-w-0">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
               <span className="text-slate-400 truncate font-semibold" title={user.email}>
@@ -1110,7 +1253,7 @@ export function Sidebar({
             </button>
           </div>
         ) : (
-          <div className="px-5 py-2.5 bg-[#1b231e]/20 border-b border-[#1b3d2b]/60 flex items-center justify-between text-[10px] select-none">
+          <div className="h-[36px] px-5 bg-[#1b231e]/20 border-b border-[#1b3d2b]/60 flex items-center justify-between text-[10px] select-none shrink-0">
             <div className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 animate-pulse" />
               <span className="text-slate-400 font-semibold">👤 Modo Invitado</span>
@@ -1127,12 +1270,13 @@ export function Sidebar({
         )}
 
         {/* Tab Selector */}
-        <div className="grid grid-cols-5 border-b border-[#1b3d2b] bg-[#0c120f]/50">
+        <div className="grid grid-cols-6 border-b border-[#1b3d2b] bg-[#0c120f]/50 h-14 shrink-0">
           {[
             { id: "layers" as TabId, label: "Capas", icon: LayersIcon },
             { id: "route" as TabId, label: "Rutas", icon: Route },
             { id: "waypoints" as TabId, label: "Marcas", icon: MapPin },
             { id: "challenges" as TabId, label: "Retos", icon: Trophy },
+            { id: "community" as TabId, label: "Comunidad", icon: Users },
             { id: "settings" as TabId, label: "Ajustes", icon: Settings },
           ].map((tab) => {
             const Icon = tab.icon;
@@ -1141,7 +1285,7 @@ export function Sidebar({
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex flex-col items-center justify-center py-2.5 text-[10px] font-semibold border-b-2 transition-all gap-1 ${
+                className={`flex flex-col items-center justify-center h-full text-[10px] font-semibold border-b-2 transition-all gap-1 ${
                   isActive
                     ? "border-emerald-400 text-emerald-400 bg-white/5"
                     : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/[0.02]"
@@ -1599,7 +1743,8 @@ export function Sidebar({
                         : collectionAreas.filter(a => a.name.toLowerCase().includes(librarySearchQuery.toLowerCase()));
 
                       // Automatically expand collection if search matches items inside it
-                      const isExpanded = expandedCollectionId === collection.id || (librarySearchQuery.trim() !== "" && (filteredTracks.length > 0 || filteredWaypoints.length > 0 || filteredAreas.length > 0));
+                      const isExpanded = expandedCollectionId === collection.id || (librarySearchQuery.trim() !== "" && (filteredTracks.length > 0 || filteredAreas.length > 0));
+                      const collCats = collapsedCollectionCats[collection.id] || new Set<string>();
                       
                       const totalTracksCount = collectionTracks.length;
                       
@@ -1642,12 +1787,6 @@ export function Sidebar({
                                 <span>
                                   {totalTracksCount} {totalTracksCount === 1 ? "ruta" : "rutas"}
                                 </span>
-                                {collectionWaypoints.length > 0 && (
-                                  <>
-                                    <span>•</span>
-                                    <span>{collectionWaypoints.length} {collectionWaypoints.length === 1 ? "marca" : "marcas"}</span>
-                                  </>
-                                )}
                                 {collectionAreas.length > 0 && (
                                   <>
                                     <span>•</span>
@@ -1723,199 +1862,233 @@ export function Sidebar({
 
                               {/* CATEGORY 1: ROUTES (TRACKS) */}
                               <div className="space-y-1.5">
-                                <div className="flex items-center justify-between text-[9px] font-bold text-slate-500 uppercase tracking-wider select-none px-1">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleCollectionCat(collection.id, "routes")}
+                                  className="flex items-center justify-between w-full text-[9px] font-bold text-slate-500 uppercase tracking-wider px-1 hover:text-slate-300 transition-colors cursor-pointer"
+                                >
                                   <span className="flex items-center gap-1.5">
                                     <Route className="w-3 h-3 text-emerald-500" />
                                     Rutas ({filteredTracks.length})
                                   </span>
-                                </div>
-                                <div className="space-y-1.5">
+                                  {collCats.has("routes") ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
+                                </button>
+                                {!collCats.has("routes") && (<div className="space-y-1.5">
                                   {filteredTracks.length === 0 ? (
                                     <p className="text-[9.5px] text-slate-600 italic px-2">No hay rutas en esta carpeta.</p>
                                   ) : (
                                     filteredTracks.map((track) => {
                                       const isActive = track.id === activeTrackId;
                                       const isCheckedForMerge = selectedMergeIds.includes(track.id);
+                                      const trackWpts = track.waypoints || [];
+                                      const wptsPanelOpen = expandedTrackWpts.has(track.id);
                                       return (
-                                        <div
-                                          key={track.id}
-                                          className={`flex items-center justify-between p-2 rounded-lg border text-[11px] transition-all ${
-                                            isActive
-                                              ? "bg-emerald-500/[0.04] border-emerald-400/35"
-                                              : "bg-[#0c120f] border-white/5 hover:border-white/10"
-                                          }`}
-                                        >
-                                          <div className="flex items-center gap-2 min-w-0">
-                                            <input
-                                              type="checkbox"
-                                              checked={isCheckedForMerge}
-                                              onChange={() => handleToggleMergeSelect(track.id)}
-                                              title="Seleccionar para unir"
-                                              className="w-3 h-3 accent-emerald-400 bg-black rounded border-[#1b3d2b] cursor-pointer"
-                                            />
-                                            <button
-                                              onClick={() => handleCycleColor(track.id, track.color)}
-                                              className="w-2.5 h-2.5 rounded-full shrink-0 border border-white/20 transition-transform active:scale-95 cursor-pointer"
-                                              style={{ backgroundColor: track.color }}
-                                              title="Cambiar color de ruta"
-                                            />
-                                            <button
-                                              onClick={() => onToggleTrackVisibility(track.id)}
-                                              className="text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
-                                              title={track.visible ? "Ocultar en mapa" : "Mostrar en mapa"}
-                                            >
-                                              {track.visible ? (
-                                                <Eye className="w-3 h-3 text-emerald-400" />
-                                              ) : (
-                                                <EyeOff className="w-3 h-3 text-slate-600" />
-                                              )}
-                                            </button>
-                                            <span
-                                              onClick={() => setActiveTrackId(track.id)}
-                                              className={`truncate cursor-pointer hover:underline ${
-                                                isActive ? "font-bold text-emerald-300" : "text-slate-300"
-                                              }`}
-                                            >
-                                              {track.name}
-                                            </span>
-                                          </div>
-
-                                          <div className="flex items-center gap-1.5 shrink-0">
-                                            <button
-                                              onClick={() => {
-                                                setActiveTrackId(track.id);
-                                                setIsRouteEditPanelOpen(true);
-                                                if (track.points.length > 0) {
-                                                  onFlyToCoords(track.points[0].lat, track.points[0].lng);
-                                                }
-                                              }}
-                                              className={`p-1 rounded transition-colors cursor-pointer ${
-                                                isActive && isRouteEditPanelOpen
-                                                  ? "bg-emerald-500/10 text-emerald-300"
-                                                  : "text-slate-500 hover:text-slate-300 hover:bg-white/5"
-                                              }`}
-                                              title="Editar ruta"
-                                            >
-                                              <Edit2 className="w-2.5 h-2.5" />
-                                            </button>
-
-                                            <button
-                                              onClick={async () => {
-                                                if (await customConfirm(`¿Seguro que deseas eliminar la ruta "${track.name}"?`)) {
-                                                  onDeleteTrack(track.id);
-                                                }
-                                              }}
-                                              className="text-slate-500 hover:text-red-400 p-1 rounded hover:bg-white/5 transition-colors cursor-pointer"
-                                              title="Eliminar de la biblioteca"
-                                            >
-                                              <Trash2 className="w-2.5 h-2.5" />
-                                            </button>
-                                          </div>
-                                        </div>
-                                      );
-                                    })
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* CATEGORY 2: WAYPOINTS (MARCAS) */}
-                              <div className="space-y-1.5 border-t border-[#1b3d2b]/15 pt-3">
-                                <div className="flex items-center justify-between text-[9px] font-bold text-slate-500 uppercase tracking-wider select-none px-1">
-                                  <span className="flex items-center gap-1.5">
-                                    <MapPin className="w-3 h-3 text-emerald-500" />
-                                    Marcas ({filteredWaypoints.length})
-                                  </span>
-                                </div>
-                                <div className="space-y-1.5">
-                                  {filteredWaypoints.length === 0 ? (
-                                    <p className="text-[9.5px] text-slate-600 italic px-2">No hay marcas en esta carpeta.</p>
-                                  ) : (
-                                    filteredWaypoints.map((wpt) => {
-                                      const WptIcon = WPT_ICONS[wpt.icon] || MapPin;
-                                      const isCompleted = !!wpt.completed;
-                                      return (
-                                        <div
-                                          key={wpt.id}
-                                          onClick={() => {
-                                            if (isBulkMode) {
-                                              setSelectedWptIds((prev) =>
-                                                prev.includes(wpt.id)
-                                                  ? prev.filter((id) => id !== wpt.id)
-                                                  : [...prev, wpt.id]
-                                              );
-                                            } else {
-                                              onFlyToCoords(wpt.lat, wpt.lng);
-                                            }
-                                          }}
-                                          className={`group flex items-start justify-between p-2 rounded-lg border text-[11px] transition-all cursor-pointer ${
-                                            isBulkMode && selectedWptIds.includes(wpt.id)
-                                              ? "bg-blue-500/10 border-blue-500/40 hover:border-blue-500/50"
-                                              : isCompleted
-                                              ? "bg-emerald-500/[0.01] border-emerald-500/10 hover:border-emerald-500/20"
-                                              : "bg-[#0c120f] border-white/5 hover:border-white/10"
-                                          }`}
-                                        >
-                                          <div className="flex items-center gap-2 min-w-0">
-                                            {isBulkMode && (
+                                        <div key={track.id} className="space-y-0.5">
+                                          <div
+                                            className={`flex items-center justify-between p-2 rounded-lg border text-[11px] transition-all ${
+                                              isActive
+                                                ? "bg-emerald-500/[0.04] border-emerald-400/35"
+                                                : "bg-[#0c120f] border-white/5 hover:border-white/10"
+                                            }`}
+                                          >
+                                            <div className="flex items-center gap-2 min-w-0">
                                               <input
                                                 type="checkbox"
-                                                checked={selectedWptIds.includes(wpt.id)}
-                                                onChange={() => {}} // handled by div onClick
-                                                className="w-3 h-3 accent-blue-500"
+                                                checked={isCheckedForMerge}
+                                                onChange={() => handleToggleMergeSelect(track.id)}
+                                                title="Seleccionar para unir"
+                                                className="w-3 h-3 accent-emerald-400 bg-black rounded border-[#1b3d2b] cursor-pointer"
                                               />
-                                            )}
-                                            <WptIcon className="w-3.5 h-3.5 shrink-0" style={{ color: wpt.color }} />
-                                            <span className={`truncate hover:underline text-slate-300 ${isCompleted ? 'line-through opacity-50' : ''}`}>
-                                              {wpt.name}
-                                            </span>
-                                            {wpt.elevation !== undefined && (
-                                              <span className="text-[8px] font-extrabold font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1 py-0.2 rounded shrink-0 select-none">
-                                                🏔️ {useImperial ? `${Math.round(wpt.elevation * 3.28084)} ft` : `${wpt.elevation} m`}
+                                              <button
+                                                onClick={() => handleCycleColor(track.id, track.color)}
+                                                className="w-2.5 h-2.5 rounded-full shrink-0 border border-white/20 transition-transform active:scale-95 cursor-pointer"
+                                                style={{ backgroundColor: track.color }}
+                                                title="Cambiar color de ruta"
+                                              />
+                                              <span
+                                                onClick={() => setActiveTrackId(track.id)}
+                                                className={`truncate cursor-pointer hover:underline ${
+                                                  isActive ? "font-bold text-emerald-300" : "text-slate-300"
+                                                }`}
+                                              >
+                                                {track.name}
                                               </span>
-                                            )}
+                                            </div>
+
+                                            <div className="flex items-center gap-1.5 shrink-0">
+                                              {trackWpts.length > 0 && (
+                                                <button
+                                                  onClick={() => setExpandedTrackWpts(prev => {
+                                                    const next = new Set(prev);
+                                                    if (next.has(track.id)) next.delete(track.id); else next.add(track.id);
+                                                    return next;
+                                                  })}
+                                                  className={`p-1 rounded transition-colors cursor-pointer relative ${
+                                                    wptsPanelOpen ? "text-amber-400 bg-amber-500/10" : "text-slate-500 hover:text-amber-400 hover:bg-white/5"
+                                                  }`}
+                                                  title={`${trackWpts.length} waypoints en esta ruta`}
+                                                >
+                                                  <MapPin className="w-3 h-3" />
+                                                  <span className="absolute -top-1 -right-1 text-[7px] font-bold bg-amber-500 text-black rounded-full w-3 h-3 flex items-center justify-center leading-none">
+                                                    {trackWpts.length}
+                                                  </span>
+                                                </button>
+                                              )}
+                                              <button
+                                                onClick={() => onToggleTrackVisibility(track.id)}
+                                                className="text-slate-400 hover:text-slate-200 transition-colors cursor-pointer p-1 rounded hover:bg-white/5"
+                                                title={track.visible ? "Ocultar en mapa" : "Mostrar en mapa"}
+                                              >
+                                                {track.visible ? (
+                                                  <Eye className="w-3 h-3 text-emerald-400" />
+                                                ) : (
+                                                  <EyeOff className="w-3 h-3 text-slate-600" />
+                                                )}
+                                              </button>
+                                              {onToggleTrackPublic && (
+                                              <button
+                                                onClick={(e) => { e.stopPropagation(); onToggleTrackPublic(track.id); }}
+                                                className="p-1 rounded transition-colors cursor-pointer text-slate-500 hover:text-amber-300 hover:bg-white/5"
+                                                title={track.isPublic ? "Público — clic para hacer privado" : "Privado — clic para compartir"}
+                                              >
+                                                {track.isPublic ? <Globe className="w-2.5 h-2.5 text-amber-400" /> : <Lock className="w-2.5 h-2.5" />}
+                                              </button>
+                                              )}
+                                              <button
+                                                onClick={() => {
+                                                  setActiveTrackId(track.id);
+                                                  setIsRouteEditPanelOpen(true);
+                                                }}
+                                                className={`p-1 rounded transition-colors cursor-pointer ${
+                                                  isActive && isRouteEditPanelOpen
+                                                    ? "bg-emerald-500/10 text-emerald-300"
+                                                    : "text-slate-500 hover:text-slate-300 hover:bg-white/5"
+                                                }`}
+                                                title="Editar ruta"
+                                              >
+                                                <Edit2 className="w-2.5 h-2.5" />
+                                              </button>
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  const gpxString = exportToGPX(track.name, track.points, track.waypoints);
+                                                  const blob = new Blob([gpxString], { type: "application/gpx+xml" });
+                                                  const url = URL.createObjectURL(blob);
+                                                  const link = document.createElement("a");
+                                                  link.href = url;
+                                                  link.download = `${track.name.replace(/\s+/g, "_") || "track"}.gpx`;
+                                                  document.body.appendChild(link);
+                                                  link.click();
+                                                  document.body.removeChild(link);
+                                                  URL.revokeObjectURL(url);
+                                                }}
+                                                className="text-slate-500 hover:text-emerald-400 p-1 rounded hover:bg-white/5 transition-colors cursor-pointer"
+                                                title="Exportar track como GPX"
+                                              >
+                                                <Download className="w-2.5 h-2.5" />
+                                              </button>
+                                              <button
+                                                onClick={async () => {
+                                                  if (await customConfirm(`¿Seguro que deseas eliminar la ruta "${track.name}"?`)) {
+                                                    onDeleteTrack(track.id);
+                                                  }
+                                                }}
+                                                className="text-slate-500 hover:text-red-400 p-1 rounded hover:bg-white/5 transition-colors cursor-pointer"
+                                                title="Eliminar de la biblioteca"
+                                              >
+                                                <Trash2 className="w-2.5 h-2.5" />
+                                              </button>
+                                            </div>
                                           </div>
-                                          <div className="flex items-center gap-1.5 shrink-0">
-                                            <button
-                                              type="button"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                onEditWaypoint(wpt);
-                                              }}
-                                              className="text-slate-500 hover:text-emerald-400 p-1 rounded hover:bg-white/5 transition-colors cursor-pointer"
-                                              title="Editar marca"
-                                            >
-                                              <Edit2 className="w-2.5 h-2.5" />
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={async (e) => {
-                                                e.stopPropagation();
-                                                if (await customConfirm(`¿Seguro que deseas eliminar la marca "${wpt.name}"?`)) {
-                                                  onDeleteWaypoint(wpt.id);
-                                                }
-                                              }}
-                                              className="text-slate-500 hover:text-red-400 p-1 rounded hover:bg-white/5 transition-colors cursor-pointer"
-                                              title="Eliminar marca"
-                                            >
-                                              <Trash2 className="w-2.5 h-2.5" />
-                                            </button>
-                                          </div>
+
+                                          {/* Expandable waypoints panel */}
+                                          {wptsPanelOpen && trackWpts.length > 0 && (() => {
+                                            // Sort by order of march: find nearest track point index for each wpt
+                                            const pts = track.points || [];
+                                            const sortedWpts = [...trackWpts].sort((a, b) => {
+                                              const idxA = pts.reduce((best, p, i) => {
+                                                const d = (p.lat - a.lat) ** 2 + (p.lng - a.lng) ** 2;
+                                                return d < best.d ? { d, i } : best;
+                                              }, { d: Infinity, i: 0 }).i;
+                                              const idxB = pts.reduce((best, p, i) => {
+                                                const d = (p.lat - b.lat) ** 2 + (p.lng - b.lng) ** 2;
+                                                return d < best.d ? { d, i } : best;
+                                              }, { d: Infinity, i: 0 }).i;
+                                              return idxA - idxB;
+                                            });
+                                            return (
+                                              <div className="ml-3 pl-2 border-l border-amber-500/20 space-y-1 animate-fade-in pb-1">
+                                                <p className="text-[8.5px] font-bold text-amber-400/70 uppercase tracking-wider px-1 py-0.5">
+                                                  Waypoints de la ruta — pulsa ＋ para copiar a Marcadores
+                                                </p>
+                                                {sortedWpts.map((wpt, idx) => {
+                                                  const WptIcon = WPT_ICONS[wpt.icon] || MapPin;
+                                                  const isHovered = hoveredTrackWptId === wpt.id;
+                                                  return (
+                                                    <div
+                                                      key={wpt.id}
+                                                      onMouseEnter={() => { setHoveredTrackWptId(wpt.id); onHighlightWpt?.(wpt.id); }}
+                                                      onMouseLeave={() => { setHoveredTrackWptId(null); onHighlightWpt?.(null); }}
+                                                      onClick={() => { onFlyToCoords(wpt.lat, wpt.lng); }}
+                                                      className={`flex items-center gap-1.5 p-1.5 rounded-lg border transition-all group cursor-pointer ${isHovered ? "bg-amber-500/15 border-amber-500/50 shadow-[0_0_8px_rgba(245,158,11,0.3)]" : "bg-[#0a0f0d]/60 border-white/5 hover:border-amber-500/20"}`}
+                                                    >
+                                                      <span className="text-[8px] font-bold text-amber-500/60 w-4 shrink-0 text-right">{idx + 1}</span>
+                                                      <WptIcon className="w-3 h-3 shrink-0" style={{ color: wpt.color }} />
+                                                      <span className="flex-1 min-w-0 text-[10px] text-slate-300 truncate">{wpt.name}</span>
+                                                      {wpt.elevation !== undefined && (
+                                                        <span className="text-[8px] font-mono text-emerald-400 shrink-0">{wpt.elevation}m</span>
+                                                      )}
+                                                      <button
+                                                        type="button"
+                                                        onClick={(e) => { e.stopPropagation(); onEditWaypoint(wpt); }}
+                                                        className="shrink-0 w-5 h-5 flex items-center justify-center rounded-full bg-slate-500/10 hover:bg-slate-500/20 text-slate-400 hover:text-slate-200 transition-all cursor-pointer"
+                                                        title="Editar waypoint"
+                                                      >
+                                                        <Edit2 className="w-2.5 h-2.5" />
+                                                      </button>
+                                                      <button
+                                                        type="button"
+                                                        onClick={(e) => { e.stopPropagation(); setCopyWptTargetGroupId(waypointGroups[0]?.id || "default"); setCopyWptPending({ wpt, trackName: track.name }); }}
+                                                        className="shrink-0 w-5 h-5 flex items-center justify-center rounded-full bg-amber-500/10 hover:bg-amber-500/30 text-amber-400 hover:text-amber-300 transition-all cursor-pointer"
+                                                        title="Copiar a Mis Marcadores"
+                                                      >
+                                                        <Plus className="w-3 h-3" />
+                                                      </button>
+                                                      <button
+                                                        type="button"
+                                                        onClick={async (e) => { e.stopPropagation(); if (await customConfirm(`¿Eliminar "${wpt.name}" de este track?`)) onDeleteWaypoint(wpt.id); }}
+                                                        className="shrink-0 w-5 h-5 flex items-center justify-center rounded-full bg-red-500/10 hover:bg-red-500/30 text-red-400 hover:text-red-300 transition-all cursor-pointer"
+                                                        title="Eliminar waypoint del track"
+                                                      >
+                                                        <Trash2 className="w-2.5 h-2.5" />
+                                                      </button>
+                                                    </div>
+                                                  );
+                                                })}
+                                              </div>
+                                            );
+                                          })()}
                                         </div>
                                       );
                                     })
                                   )}
-                                </div>
+                                </div>)}
                               </div>
 
-                              {/* CATEGORY 3: AREAS (POLYGONS) */}
+                              {/* CATEGORY 2: AREAS (POLYGONS) */}
                               <div className="space-y-1.5 border-t border-[#1b3d2b]/15 pt-3">
-                                <div className="flex items-center justify-between text-[9px] font-bold text-slate-500 uppercase tracking-wider select-none px-1">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleCollectionCat(collection.id, "areas")}
+                                  className="flex items-center justify-between w-full text-[9px] font-bold text-slate-500 uppercase tracking-wider px-1 hover:text-slate-300 transition-colors cursor-pointer"
+                                >
                                   <span className="flex items-center gap-1.5">
                                     <Hexagon className="w-3 h-3 text-emerald-500" />
                                     Áreas ({filteredAreas.length})
                                   </span>
-                                </div>
-                                <div className="space-y-1.5">
+                                  {collCats.has("areas") ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
+                                </button>
+                                {!collCats.has("areas") && (<div className="space-y-1.5">
                                   {filteredAreas.length === 0 ? (
                                     <p className="text-[9.5px] text-slate-600 italic px-2">No hay áreas en esta carpeta.</p>
                                   ) : (
@@ -1973,7 +2146,7 @@ export function Sidebar({
                                       );
                                     })
                                   )}
-                                </div>
+                                </div>)}
                               </div>
 
                               {/* ADD NEW ROUTE INSIDE FOLDER */}
@@ -1983,7 +2156,12 @@ export function Sidebar({
                                   onClick={async (e) => {
                                     e.stopPropagation();
                                     const name = await customPrompt("Introduce el nombre de la nueva ruta:", "Nueva Ruta");
-                                    if (name) onCreateNewTrack(name, collection.id);
+                                    if (name) {
+                                      const newTrackId = onCreateNewTrack(name, collection.id);
+                                      setActiveTrackId(newTrackId);
+                                      setIsRouteEditPanelOpen(true);
+                                      setIsDrawing(true);
+                                    }
                                   }}
                                   className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[10px] font-semibold border border-dashed border-emerald-500/20 text-slate-500 hover:text-emerald-400 hover:border-emerald-500/40 hover:bg-emerald-500/5 transition-all cursor-pointer"
                                 >
@@ -2006,8 +2184,8 @@ export function Sidebar({
                   className="fixed w-[380px] bg-[#131b17]/97 border-r border-[#1b3d2b] shadow-2xl backdrop-blur-md z-[9997] flex flex-col overflow-hidden animate-slide-in-left pointer-events-auto"
                   style={{ top: 144, left: isCollapsed ? 64 : 380, height: 'calc(100vh - 144px)' }}
                 >
-                  {/* Panel Header — same height as sidebar tab bar (py-2.5 + w-8 icon = ~52px) */}
-                  <div className="px-4 py-2.5 border-b border-[#1b3d2b] flex items-center justify-between shrink-0 bg-[#080e0a]">
+                  {/* Panel Header — same height as sidebar tab bar (h-14 = 56px) */}
+                  <div className="px-4 h-14 border-b border-[#1b3d2b] flex items-center justify-between shrink-0 bg-[#080e0a]">
                     <div className="flex items-center gap-2.5 min-w-0 flex-1">
                       <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
                         <Edit2 className="w-4 h-4" />
@@ -2085,28 +2263,453 @@ export function Sidebar({
                     </div>
                   )}
 
+                  {/* 🛠️ Herramientas de Edición Grid (5 columns, 2 rows) */}
+                  <div className="space-y-2.5 p-3 rounded-xl bg-[#0b100d] border border-white/5 select-none animate-fade-in">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Settings className="w-3.5 h-3.5 text-emerald-400" /> Herramientas de Edición
+                    </span>
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {/* 1. Dibujar */}
+                      <button
+                        type="button"
+                        onClick={() => handleToolSelect("draw")}
+                        className={`flex flex-col items-center gap-1 py-2 px-0.5 rounded-xl text-center transition-all border cursor-pointer ${
+                          isDrawing
+                            ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.15)] animate-pulse"
+                            : "bg-[#0c120f] border-white/5 text-slate-400 hover:text-slate-200 hover:border-white/10"
+                        }`}
+                        title="Dibujar Ruta: Haz clic en el mapa para añadir nuevos puntos."
+                      >
+                        <Route className="w-4 h-4" />
+                        <span className="text-[7px] font-bold uppercase tracking-wider leading-none">Dibujar</span>
+                      </button>
+
+                      {/* 2. Vértices */}
+                      <button
+                        type="button"
+                        disabled={points.length === 0}
+                        onClick={() => handleToolSelect("vertices")}
+                        className={`flex flex-col items-center gap-1 py-2 px-0.5 rounded-xl text-center transition-all border ${
+                          _isEditingRoute
+                            ? "bg-violet-500/15 border-violet-500/40 text-violet-300 shadow-[0_0_8px_rgba(139,92,246,0.15)]"
+                            : "bg-[#0c120f] border-white/5 text-slate-400 hover:text-slate-200 hover:border-white/10 disabled:opacity-25 disabled:cursor-not-allowed cursor-pointer"
+                        }`}
+                        title="Mover Vértices: Arrastra los puntos del trazado directamente sobre el mapa."
+                      >
+                        <Edit2 className="w-4 h-4" />
+                        <span className="text-[7px] font-bold uppercase tracking-wider leading-none">Vértices</span>
+                      </button>
+
+                      {/* 3. Dividir */}
+                      <button
+                        type="button"
+                        disabled={points.length <= 3}
+                        onClick={() => handleToolSelect("split")}
+                        className={`flex flex-col items-center gap-1 py-2 px-0.5 rounded-xl text-center transition-all border ${
+                          isSplitting
+                            ? "bg-orange-500/15 border-orange-500/40 text-orange-300 shadow-[0_0_8px_rgba(249,115,22,0.15)]"
+                            : "bg-[#0c120f] border-white/5 text-slate-400 hover:text-slate-200 hover:border-white/10 disabled:opacity-25 disabled:cursor-not-allowed cursor-pointer"
+                        }`}
+                        title="Dividir Ruta: Haz clic en cualquier punto para segmentar el track en dos."
+                      >
+                        <Scissors className="w-4 h-4" />
+                        <span className="text-[7px] font-bold uppercase tracking-wider leading-none">Dividir</span>
+                      </button>
+
+                      {/* 4. Bucle */}
+                      <button
+                        type="button"
+                        disabled={points.length <= 1 || isDrawing}
+                        onClick={() => handleToolSelect("bucle")}
+                        className="flex flex-col items-center gap-1 py-2 px-0.5 rounded-xl text-center transition-all border bg-[#0c120f] border-white/5 text-slate-400 hover:text-slate-200 hover:border-white/10 disabled:opacity-25 disabled:cursor-not-allowed cursor-pointer"
+                        title="Ida y Vuelta: Conecta el final de la ruta de vuelta al punto de inicio."
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                        <span className="text-[7px] font-bold uppercase tracking-wider leading-none">Bucle</span>
+                      </button>
+
+                      {/* 5. Invertir */}
+                      <button
+                        type="button"
+                        disabled={points.length <= 1}
+                        onClick={() => handleToolSelect("invertir")}
+                        className="flex flex-col items-center gap-1 py-2 px-0.5 rounded-xl text-center transition-all border bg-[#0c120f] border-white/5 text-slate-400 hover:text-slate-200 hover:border-white/10 disabled:opacity-25 disabled:cursor-not-allowed cursor-pointer"
+                        title="Invertir Dirección: Cambia la dirección del trazado (sentido contrario)."
+                      >
+                        <ArrowLeftRight className="w-4 h-4" />
+                        <span className="text-[7px] font-bold uppercase tracking-wider leading-none">Invertir</span>
+                      </button>
+
+                      {/* 6. Recortar */}
+                      <button
+                        type="button"
+                        disabled={points.length <= 2 || isDrawing}
+                        onClick={() => handleToolSelect("trim")}
+                        className={`flex flex-col items-center gap-1 py-2 px-0.5 rounded-xl text-center transition-all border cursor-pointer ${
+                          showTrimPanel
+                            ? "bg-rose-500/15 border-rose-500/40 text-rose-300 shadow-[0_0_8px_rgba(244,63,94,0.15)] animate-pulse"
+                            : "bg-[#0c120f] border-white/5 text-slate-400 hover:text-slate-200 hover:border-white/10 disabled:opacity-25 disabled:cursor-not-allowed"
+                        }`}
+                        title="Recortar: Ajusta los puntos de inicio o fin para recortar la ruta."
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22V12h10"/><path d="M12 12L3 3"/><path d="M16 12l6 6"/></svg>
+                        <span className="text-[7px] font-bold uppercase tracking-wider leading-none">Recortar</span>
+                      </button>
+
+                      {/* 7. Simplificar */}
+                      <button
+                        type="button"
+                        disabled={points.length <= 2 || isDrawing}
+                        onClick={() => handleToolSelect("simplify")}
+                        className={`flex flex-col items-center gap-1 py-2 px-0.5 rounded-xl text-center transition-all border cursor-pointer ${
+                          showSimplifyPanel
+                            ? "bg-amber-500/15 border-amber-500/40 text-amber-300 shadow-[0_0_8px_rgba(245,158,11,0.15)] animate-pulse"
+                            : "bg-[#0c120f] border-white/5 text-slate-400 hover:text-slate-200 hover:border-white/10 disabled:opacity-25 disabled:cursor-not-allowed"
+                        }`}
+                        title="Simplificar: Elimina puntos innecesarios del track GPS manteniendo su geometría."
+                      >
+                        <Trees className="w-4 h-4" />
+                        <span className="text-[7px] font-bold uppercase tracking-wider leading-none">Simplificar</span>
+                      </button>
+
+                      {/* 8. Limpiar Área */}
+                      <button
+                        type="button"
+                        disabled={points.length <= 2 || isDrawing}
+                        onClick={() => handleToolSelect("clean")}
+                        className={`flex flex-col items-center gap-1 py-2 px-0.5 rounded-xl text-center transition-all border cursor-pointer ${
+                          _isCleaningArea
+                            ? "bg-red-500/15 border-red-500/40 text-red-300 shadow-[0_0_8px_rgba(239,68,68,0.15)] animate-pulse"
+                            : "bg-[#0c120f] border-white/5 text-slate-400 hover:text-slate-200 hover:border-white/10 disabled:opacity-25 disabled:cursor-not-allowed"
+                        }`}
+                        title="Limpiar Área: Elimina por completo todos los puntos de ruta dentro/fuera de un área roja dibujada."
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+                        <span className="text-[7px] font-bold uppercase tracking-wider leading-none">Limpiar</span>
+                      </button>
+
+                      {/* 9. Suavizar */}
+                      <button
+                        type="button"
+                        disabled={points.length <= 2 || isDrawing}
+                        onClick={() => handleToolSelect("smooth")}
+                        className={`flex flex-col items-center gap-1 py-2 px-0.5 rounded-xl text-center transition-all border cursor-pointer ${
+                          showSmoothPanel
+                            ? "bg-cyan-500/15 border-cyan-500/40 text-cyan-300 shadow-[0_0_8px_rgba(6,182,212,0.15)] animate-pulse"
+                            : "bg-[#0c120f] border-white/5 text-slate-400 hover:text-slate-200 hover:border-white/10 disabled:opacity-25 disabled:cursor-not-allowed"
+                        }`}
+                        title="Suavizar: Aplica un filtro de media móvil ponderada para suavizar picos en la ruta."
+                      >
+                        <TrendingUp className="w-4 h-4" />
+                        <span className="text-[7px] font-bold uppercase tracking-wider leading-none">Suavizar</span>
+                      </button>
+
+                      {/* 10. Outliers */}
+                      <button
+                        type="button"
+                        disabled={points.length <= 2 || isDrawing}
+                        onClick={() => handleToolSelect("outliers")}
+                        className={`flex flex-col items-center gap-1 py-2 px-0.5 rounded-xl text-center transition-all border cursor-pointer ${
+                          showOutliersPanel
+                            ? "bg-rose-500/15 border-rose-500/40 text-rose-300 shadow-[0_0_8px_rgba(244,63,94,0.15)] animate-pulse"
+                            : "bg-[#0c120f] border-white/5 text-slate-400 hover:text-slate-200 hover:border-white/10 disabled:opacity-25 disabled:cursor-not-allowed"
+                        }`}
+                        title="Outliers: Elimina picos erráticos de señal y saltos bruscos de velocidad de GPS."
+                      >
+                        <Zap className="w-4 h-4" />
+                        <span className="text-[7px] font-bold uppercase tracking-wider leading-none">Outliers</span>
+                      </button>
+                    </div>
+
+                    {/* Param 1: Simplificar Panel Inline */}
+                    {showSimplifyPanel && points.length > 2 && activeTrackId && (
+                      <div className="mt-3.5 space-y-3 p-3 rounded-xl bg-[#080e0a] border border-amber-500/20 shadow-inner animate-fade-in animate-duration-200">
+                        <div className="flex items-center justify-between border-b border-[#1b3d2b]/30 pb-1.5">
+                          <span className="text-[9px] font-extrabold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <Trees className="w-3 h-3" /> Simplificar GPS
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setShowSimplifyPanel(false)}
+                            className="text-slate-500 hover:text-amber-400 transition-colors cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <div className="space-y-2.5">
+                          <div>
+                            <div className="flex items-center justify-between text-[9px] text-slate-400 mb-1">
+                              <span>Tolerancia (RDP):</span>
+                              <span className="font-mono font-bold text-amber-400">{simplifyTolerance} m</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={1}
+                              max={50}
+                              value={simplifyTolerance}
+                              onChange={(e) => setSimplifyTolerance(parseInt(e.target.value))}
+                              className="w-full accent-amber-500 cursor-pointer h-1 rounded-full bg-[#131b17]"
+                            />
+                            <p className="text-[9px] text-slate-500 mt-1 leading-tight">Mayor valor = menos puntos, trazo más tosco.</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (applySimplifyTrack) {
+                                applySimplifyTrack(activeTrackId, simplifyTolerance);
+                                setShowSimplifyPanel(false);
+                                customAlert("Simplificación completada con éxito.");
+                              }
+                            }}
+                            className="w-full py-2 rounded-lg border border-amber-500/20 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                          >
+                            Aplicar Simplificación ({points.length} pts)
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Param 2: Recortar Panel Inline */}
+                    {showTrimPanel && points.length > 2 && activeTrackId && (
+                      <div className="mt-3.5 space-y-3 p-3 rounded-xl bg-[#080e0a] border border-rose-500/20 shadow-inner animate-fade-in animate-duration-200">
+                        <div className="flex items-center justify-between border-b border-[#1b3d2b]/30 pb-1.5">
+                          <span className="text-[9px] font-extrabold text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <Scissors className="w-3 h-3" /> Recortar Inicio / Fin
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setShowTrimPanel(false)}
+                            className="text-slate-500 hover:text-rose-400 transition-colors cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <div className="space-y-3">
+                          <div className="space-y-2">
+                            <div>
+                              <div className="flex items-center justify-between text-[9px] text-slate-400 mb-0.5">
+                                <span>Desde punto:</span>
+                                <span className="font-mono font-bold text-rose-400">{trimStart + 1} / {points.length}</span>
+                              </div>
+                              <input
+                                type="range"
+                                min={0}
+                                max={Math.max(0, trimEnd - 1)}
+                                value={trimStart}
+                                onChange={(e) => setTrimStart(parseInt(e.target.value))}
+                                className="w-full accent-rose-500 cursor-pointer h-1 rounded-full bg-[#131b17]"
+                              />
+                            </div>
+                            <div>
+                              <div className="flex items-center justify-between text-[9px] text-slate-400 mb-0.5">
+                                <span>Hasta punto:</span>
+                                <span className="font-mono font-bold text-rose-400">{trimEnd + 1} / {points.length}</span>
+                              </div>
+                              <input
+                                type="range"
+                                min={Math.min(trimStart + 1, points.length - 1)}
+                                max={points.length - 1}
+                                value={trimEnd}
+                                onChange={(e) => setTrimEnd(parseInt(e.target.value))}
+                                className="w-full accent-rose-500 cursor-pointer h-1 rounded-full bg-[#131b17]"
+                              />
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={trimStart >= trimEnd}
+                            onClick={() => {
+                              if (trimTrack) {
+                                trimTrack(activeTrackId, trimStart, trimEnd);
+                                setShowTrimPanel(false);
+                                customAlert("Recorte aplicado correctamente.");
+                              }
+                            }}
+                            className="w-full py-2 rounded-lg border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                          >
+                            Aplicar Recorte ({trimEnd - trimStart + 1} puntos)
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Param 3: Limpiar por Área Panel Inline */}
+                    {_isCleaningArea && _cleanBounds && activeTrackId && (
+                      <div className="mt-3.5 space-y-3 p-3 rounded-xl bg-[#080e0a] border border-red-500/20 shadow-inner animate-fade-in animate-duration-200">
+                        <div className="flex items-center justify-between border-b border-[#1b3d2b]/30 pb-1.5">
+                          <span className="text-[9px] font-bold text-red-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <Hexagon className="w-3 h-3" /> Limpieza de Área
+                          </span>
+                        </div>
+                        <p className="text-[9px] text-slate-400 leading-normal">
+                          Elimina de forma permanente los puntos que caigan <strong>dentro</strong> o <strong>fuera</strong> del rectángulo seleccionado.
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (activeTrackId && _cleanTrackArea) {
+                                if (await customConfirm("¿Deseas eliminar los puntos DENTRO del área?", "Borrar Interior")) {
+                                  _cleanTrackArea(activeTrackId, _cleanBounds, false);
+                                  if (_setCleanBounds) _setCleanBounds(null);
+                                  if (_setIsCleaningArea) _setIsCleaningArea(false);
+                                  customAlert("Limpieza completada.");
+                                }
+                              }
+                            }}
+                            className="py-1.5 rounded-lg border border-red-500/20 bg-red-500/10 hover:bg-red-500/20 text-red-300 text-[10px] font-bold transition-all cursor-pointer text-center"
+                          >
+                            Borrar Interior
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (activeTrackId && _cleanTrackArea) {
+                                if (await customConfirm("¿Deseas eliminar los puntos FUERA del área?", "Borrar Exterior")) {
+                                  _cleanTrackArea(activeTrackId, _cleanBounds, true);
+                                  if (_setCleanBounds) _setCleanBounds(null);
+                                  if (_setIsCleaningArea) _setIsCleaningArea(false);
+                                  customAlert("Limpieza completada.");
+                                }
+                              }
+                            }}
+                            className="py-1.5 rounded-lg border border-[#1b3d2b] bg-[#111c16] hover:bg-[#182a20] text-slate-300 text-[10px] font-bold transition-all cursor-pointer text-center"
+                          >
+                            Borrar Exterior
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (_setCleanBounds) _setCleanBounds(null);
+                          }}
+                          className="w-full py-1 text-[9.5px] font-semibold text-slate-500 hover:text-slate-300 transition-colors cursor-pointer text-center bg-transparent"
+                        >
+                          Reiniciar Selección
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Param 4: Suavizar Panel Inline */}
+                    {showSmoothPanel && points.length > 2 && activeTrackId && (
+                      <div className="mt-3.5 space-y-3 p-3 rounded-xl bg-[#080e0a] border border-cyan-500/20 shadow-inner animate-fade-in animate-duration-200">
+                        <div className="flex items-center justify-between border-b border-[#1b3d2b]/30 pb-1.5">
+                          <span className="text-[9px] font-extrabold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <TrendingUp className="w-3 h-3" /> Suavizar Ruta
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setShowSmoothPanel(false)}
+                            className="text-slate-500 hover:text-cyan-400 transition-colors cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <div className="space-y-2.5">
+                          <div>
+                            <div className="flex items-center justify-between text-[9px] text-slate-400 mb-1">
+                              <span>Fuerza de Suavizado:</span>
+                              <span className="font-mono font-bold text-cyan-400">{smoothStrength}</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={1}
+                              max={5}
+                              value={smoothStrength}
+                              onChange={(e) => setSmoothStrength(parseInt(e.target.value))}
+                              className="w-full accent-cyan-500 cursor-pointer h-1 rounded-full bg-[#131b17]"
+                            />
+                            <p className="text-[9px] text-slate-500 mt-1 leading-tight">Mayor fuerza = curvas más redondeadas y picos más atenuados.</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (applySmoothTrack) {
+                                applySmoothTrack(activeTrackId, smoothStrength);
+                                setShowSmoothPanel(false);
+                                customAlert("Suavizado completado con éxito.");
+                              }
+                            }}
+                            className="w-full py-2 rounded-lg border border-cyan-500/20 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                          >
+                            Aplicar Suavizado ({points.length} pts)
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Param 5: Outliers Panel Inline */}
+                    {showOutliersPanel && points.length > 2 && activeTrackId && (
+                      <div className="mt-3.5 space-y-3 p-3 rounded-xl bg-[#080e0a] border border-rose-500/20 shadow-inner animate-fade-in animate-duration-200">
+                        <div className="flex items-center justify-between border-b border-[#1b3d2b]/30 pb-1.5">
+                          <span className="text-[9px] font-extrabold text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <Zap className="w-3 h-3" /> Quitar Outliers
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setShowOutliersPanel(false)}
+                            className="text-slate-500 hover:text-rose-400 transition-colors cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <div className="space-y-2.5">
+                          <div>
+                            <div className="flex items-center justify-between text-[9px] text-slate-400 mb-1">
+                              <span>Umbral de Velocidad:</span>
+                              <span className="font-mono font-bold text-rose-400">{outlierThreshold} km/h</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={10}
+                              max={150}
+                              step={5}
+                              value={outlierThreshold}
+                              onChange={(e) => setOutlierThreshold(parseInt(e.target.value))}
+                              className="w-full accent-rose-500 cursor-pointer h-1 rounded-full bg-[#131b17]"
+                            />
+                            <p className="text-[9px] text-slate-500 mt-1 leading-tight">Puntos con velocidad de salto superior a este umbral serán eliminados.</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (applyRemoveOutliers) {
+                                applyRemoveOutliers(activeTrackId, outlierThreshold);
+                                setShowOutliersPanel(false);
+                                customAlert("Eliminación de outliers completada con éxito.");
+                              }
+                            }}
+                            className="w-full py-2 rounded-lg border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                          >
+                            Eliminar Puntos Erráticos ({points.length} pts)
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   {/* Modo de Enrutamiento — primero para que sea siempre visible */}
                   <div className="space-y-2 p-3 rounded-xl bg-[#0b100d] border border-white/5">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                      🗺️ Modo de Enrutamiento
+                      <Route className="w-3.5 h-3.5 text-emerald-400" /> Modo de Enrutamiento
                     </span>
                     <div className="grid grid-cols-4 gap-1.5">
                       {([
-                        { id: 'hike' as RoutingProfile, label: 'Senderismo', emoji: '🥾' },
-                        { id: 'cycle' as RoutingProfile, label: 'Ciclismo', emoji: '🚴' },
-                        { id: 'drive' as RoutingProfile, label: 'Vehículo', emoji: '🚗' },
-                        { id: 'straight' as RoutingProfile, label: 'Línea Recta', emoji: '📏' },
+                        { id: 'hike' as RoutingProfile, label: 'Senderismo', icon: Footprints },
+                        { id: 'cycle' as RoutingProfile, label: 'Ciclismo', icon: Bike },
+                        { id: 'drive' as RoutingProfile, label: 'Vehículo', icon: Car },
+                        { id: 'straight' as RoutingProfile, label: 'Línea Recta', icon: Ruler },
                       ]).map((mode) => (
                         <button
                           key={mode.id}
                           onClick={() => setRoutingProfile(mode.id)}
-                          className={`flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl text-center transition-all border ${
+                          className={`flex flex-col items-center gap-1.5 py-2 px-1 rounded-xl text-center transition-all border cursor-pointer ${
                             routingProfile === mode.id
-                              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.15)]'
+                              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.15)] font-semibold'
                               : 'bg-[#0c120f] border-white/5 text-slate-400 hover:text-slate-200 hover:border-white/10'
                           }`}
                         >
-                          <span className="text-lg">{mode.emoji}</span>
+                          <mode.icon className={`w-4 h-4 transition-transform duration-200 ${routingProfile === mode.id ? 'text-emerald-400 scale-105' : 'text-slate-400 group-hover:text-slate-300'}`} />
                           <span className="text-[8px] font-bold uppercase tracking-wider leading-none">{mode.label}</span>
                         </button>
                       ))}
@@ -2130,23 +2733,25 @@ export function Sidebar({
                         const hasPwr = points.some(pt => pt.power !== undefined);
                         const hasSpd = points.some(pt => pt.speed !== undefined);
                         
-                        const colorModes = [
-                          { id: 'solid', label: 'Sólido', emoji: '🟢' },
-                          { id: 'slope', label: 'Pendiente', emoji: '📈' },
-                          { id: 'elevation', label: 'Altitud', emoji: '🏔️' },
+                        const colorModes: { id: string; label: string; Icon: React.ElementType }[] = [
+                          { id: 'solid', label: 'Sólido', Icon: Circle },
+                          { id: 'slope', label: 'Pendiente', Icon: TrendingUp },
+                          { id: 'elevation', label: 'Altitud', Icon: Mountain },
                         ];
-                        if (hasHr) colorModes.push({ id: 'heartRate', label: 'Pulsaciones', emoji: '💓' });
-                        if (hasCad) colorModes.push({ id: 'cadence', label: 'Cadencia', emoji: '🔄' });
-                        if (hasPwr) colorModes.push({ id: 'power', label: 'Potencia', emoji: '⚡' });
-                        if (hasSpd) colorModes.push({ id: 'speed', label: 'Velocidad', emoji: '🚀' });
+                        if (hasHr) colorModes.push({ id: 'heartRate', label: 'Pulsaciones', Icon: Heart });
+                        if (hasCad) colorModes.push({ id: 'cadence', label: 'Cadencia', Icon: RotateCw });
+                        if (hasPwr) colorModes.push({ id: 'power', label: 'Potencia', Icon: Zap });
+                        if (hasSpd) colorModes.push({ id: 'speed', label: 'Velocidad', Icon: Gauge });
 
                         return (
                           <div className="space-y-2 p-3 rounded-xl bg-[#0b100d] border border-white/5">
                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                              🎨 Modo de Color del Mapa
+                              <Palette className="w-3.5 h-3.5 text-emerald-400" /> Modo de Color del Mapa
                             </span>
                             <div className={`grid ${colorModes.length > 3 ? 'grid-cols-4' : 'grid-cols-3'} gap-1.5`}>
-                              {colorModes.map((mode) => (
+                              {colorModes.map((mode) => {
+                                const ModeIcon = mode.Icon;
+                                return (
                                 <button
                                   key={mode.id}
                                   onClick={() => setTrackColorMode(mode.id as any)}
@@ -2156,10 +2761,11 @@ export function Sidebar({
                                       : 'bg-[#0b100d] border-white/5 text-slate-500 hover:text-slate-200 hover:border-white/10'
                                   }`}
                                 >
-                                  <span className="text-xs">{mode.emoji}</span>
+                                  <ModeIcon className="w-3.5 h-3.5" />
                                   <span className="text-[7.5px] font-bold uppercase tracking-wider leading-none truncate w-full">{mode.label}</span>
                                 </button>
-                              ))}
+                              );
+                              })}
                             </div>
                           </div>
                         );
@@ -2192,8 +2798,8 @@ export function Sidebar({
 
                   {/* Multi-Format Export Options */}
                   <div className="pt-3 border-t border-[#1b3d2b]/20 space-y-2 select-none">
-                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block text-center">
-                      📤 Exportar Ruta Activa
+                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest flex items-center justify-center gap-1.5">
+                      <Share2 className="w-3 h-3 text-slate-500" /> Exportar Ruta Activa
                     </span>
                     <div className="grid grid-cols-3 gap-1.5">
                       <button
@@ -2421,11 +3027,13 @@ export function Sidebar({
           {(activeTab === "waypoints" || activeTab === "challenges") && (() => {
             const isChallengeMode = activeTab === "challenges";
             return (
-            <div className="space-y-4 animate-fade-in flex flex-col h-full overflow-hidden">
+            <div className="space-y-4 animate-fade-in flex flex-col min-h-0 flex-1">
               {/* Tab Title & Control Toolbar */}
               <div className="flex flex-col gap-2.5 shrink-0">
                 <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                  {isChallengeMode ? `Grupos de Retos (${waypointGroups.length})` : `Carpetas de Marcas (${waypointGroups.length})`}
+                  {isChallengeMode
+                    ? `Grupos de Retos (${waypointGroups.filter(g => { if (g.id === "default") return false; const h = g.type === "folder" || g.type === "challenge"; return g.type === "challenge" || !h; }).length})`
+                    : `Carpetas de Marcas (${waypointGroups.filter(g => { if (g.id === "default") return true; const h = g.type === "folder" || g.type === "challenge"; return g.type === "folder" || !h; }).length})`}
                 </h4>
                 <div className="flex gap-2 w-full">
                   <button
@@ -2562,15 +3170,15 @@ export function Sidebar({
 
                         {/* Dropdown Selector Card for Target Challenge */}
                         {selectedPoiIds.length > 0 && (
-                          <div className="flex flex-col gap-1.5 bg-emerald-500/[0.03] border border-emerald-500/20 rounded-xl p-3 shadow-inner animate-fade-in">
+                          <div className="flex flex-col gap-1.5 bg-emerald-500/[0.03] border border-emerald-500/20 rounded-xl p-3 shadow-inner animate-fade-in overflow-hidden">
                             <label className="text-[9.5px] font-bold text-slate-400 uppercase tracking-wider">
                               🎯 Reto o Carpeta Destino:
                             </label>
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 w-full min-w-0">
                               <select
                                 value={importTargetGroupId}
                                 onChange={(e) => setImportTargetGroupId(e.target.value)}
-                                className="flex-1 bg-[#050807] border border-[#1b3d2b] rounded-lg px-2 py-1.5 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-400 transition-colors"
+                                className="flex-1 min-w-0 bg-[#050807] border border-[#1b3d2b] rounded-lg px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-emerald-400 transition-colors"
                               >
                                 <option value="default" className="bg-[#0c120f]">📍 Mis Marcadores (Defecto)</option>
                                 {waypointGroups.map((g) => (
@@ -2581,10 +3189,14 @@ export function Sidebar({
                               </select>
                               <button
                                 type="button"
-                                onClick={() => {
+                                onClick={async () => {
                                   const poisToImport = osmPois.filter((p) => selectedPoiIds.includes(p.id));
                                   if (onAddMultipleWaypoints && poisToImport.length > 0) {
                                     const selectedGroup = waypointGroups.find(g => g.id === importTargetGroupId);
+                                    const confirmed = await customConfirm(
+                                      `¿Importar ${poisToImport.length} POI(s) a la carpeta "${selectedGroup ? selectedGroup.name : 'Mis Marcadores'}"?`
+                                    );
+                                    if (!confirmed) return;
                                     const targetColor = selectedGroup ? selectedGroup.color : "#3b82f6";
                                     const wptsToImport = poisToImport.map((p) => ({
                                       name: p.name,
@@ -2598,12 +3210,14 @@ export function Sidebar({
                                     }));
                                     onAddMultipleWaypoints(wptsToImport);
                                     onSetSelectedPoiIds([]);
+                                    setIsOsmSearchOpen(false);
+                                    setExpandedGroupId(importTargetGroupId);
                                     customAlert(`¡Importación exitosa! Se han añadido ${wptsToImport.length} marcas a "${selectedGroup ? selectedGroup.name : 'Mis Marcadores'}".`);
                                   }
                                 }}
-                                className="px-3 py-1.5 text-[10px] font-extrabold text-black bg-emerald-400 hover:bg-emerald-300 rounded-lg transition-all shadow-md shadow-emerald-500/10 cursor-pointer flex items-center gap-1 shrink-0"
+                                className="shrink-0 px-3 py-1.5 text-[10px] font-extrabold text-black bg-emerald-400 hover:bg-emerald-300 rounded-lg transition-all shadow-md shadow-emerald-500/10 cursor-pointer flex items-center gap-1"
                               >
-                                📥 Importar ({selectedPoiIds.length})
+                                📥 {selectedPoiIds.length}
                               </button>
                             </div>
                           </div>
@@ -2706,7 +3320,7 @@ export function Sidebar({
                     {/* Group Name */}
                     <div className="space-y-1">
                       <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
-                        Nombre del Reto
+                        {isChallengeMode ? "Nombre del Reto" : "Nombre de la Carpeta"}
                       </label>
                       <input
                         type="text"
@@ -2825,13 +3439,19 @@ export function Sidebar({
                             image: newGroupImage,
                           });
                         } else {
-                          onAddWaypointGroup({
-                            name: newGroupName.trim(),
-                            description: newGroupDesc.trim(),
-                            color: newGroupColor,
-                            visible: true,
-                            image: newGroupImage,
-                          });
+                          try {
+                            await onAddWaypointGroup({
+                              name: newGroupName.trim(),
+                              description: newGroupDesc.trim(),
+                              color: newGroupColor,
+                              visible: true,
+                              image: newGroupImage,
+                              type: isChallengeMode ? "challenge" : "folder",
+                            } as any);
+                          } catch (err) {
+                            await customAlert("Error al guardar la carpeta: " + (err as Error).message);
+                            return;
+                          }
                         }
                         setNewGroupName("");
                         setNewGroupDesc("");
@@ -2842,17 +3462,22 @@ export function Sidebar({
                       }}
                       className="w-full py-2 bg-emerald-400 hover:bg-emerald-300 text-black text-xs font-bold rounded-lg transition-colors shadow-lg shadow-emerald-400/10 cursor-pointer"
                     >
-                      {editingGroupId ? "Guardar Cambios" : "Guardar Reto / Carpeta"}
+                      {editingGroupId ? "Guardar Cambios" : (isChallengeMode ? "Guardar Reto" : "Guardar Carpeta")}
                     </button>
                   </div>
                 )}
 
                 {/* 3. LIST OF ACCORDION GROUPS */}
                 <div className="space-y-3">
-                  {waypointGroups.filter(g => !(isChallengeMode && g.id === "default")).map((group) => {
+                  {waypointGroups.filter(g => {
+                    if (g.id === "default") return !isChallengeMode;
+                    const hasType = g.type === "folder" || g.type === "challenge";
+                    if (isChallengeMode) return g.type === "challenge" || !hasType;
+                    return g.type === "folder" || !hasType;
+                  }).map((group) => {
                     const isExpanded = expandedGroupId === group.id;
                     
-                    // Filter waypoints belonging to this group
+                    // Filter waypoints belonging to this group (visible only — for list display)
                     const groupWaypoints = waypoints.filter((w) => {
                       if (group.id === "default") {
                         return !w.groupId || w.groupId === "default";
@@ -2860,12 +3485,16 @@ export function Sidebar({
                       return w.groupId === group.id;
                     });
 
+                    // Total count from ALL waypoints regardless of eye visibility
+                    const totalCount = allGlobalWaypoints.filter((w) => {
+                      if (group.id === "default") return !w.groupId || w.groupId === "default";
+                      return w.groupId === group.id;
+                    }).length;
+
                     const searchQuery = groupSearchQueries[group.id] || "";
                     const filteredWaypoints = groupWaypoints.filter((w) =>
                       w.name.toLowerCase().includes(searchQuery.toLowerCase())
                     );
-
-                    const totalCount = groupWaypoints.length;
                     const completedCount = groupWaypoints.filter((w) => w.completed).length;
                     const completionPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
                     const isFullyCompleted = totalCount > 0 && completedCount === totalCount;
@@ -2907,22 +3536,48 @@ export function Sidebar({
                               )}
                             </div>
                             
-                            {/* Short Progress metrics — Retos only */}
-                            {isChallengeMode && (
+                            {/* Subtitle: count in non-challenge, progress in challenge */}
                             <div className="flex items-center gap-2 mt-0.5 text-[9px] text-slate-400 font-semibold uppercase tracking-wider select-none">
-                              <span>
-                                {completedCount} / {totalCount} marcas
-                              </span>
-                              <span>•</span>
-                              <span className={isFullyCompleted ? "text-yellow-400 animate-pulse font-bold" : "text-emerald-400"}>
-                                {completionPercent}%
-                              </span>
+                              {isChallengeMode ? (
+                                <>
+                                  <span>{completedCount} / {totalCount} marcas</span>
+                                  <span>•</span>
+                                  <span className={isFullyCompleted ? "text-yellow-400 animate-pulse font-bold" : "text-emerald-400"}>
+                                    {completionPercent}%
+                                  </span>
+                                </>
+                              ) : (
+                                <span>{totalCount} {totalCount === 1 ? "marca" : "marcas"}</span>
+                              )}
                             </div>
-                            )}
                           </div>
 
                           {/* Visibility, Edit & Delete icons */}
                           <div className="relative z-10 flex items-center gap-2 shrink-0 pl-2 border-l border-white/5">
+                            {/* Select to delete button — per group */}
+                            {totalCount > 0 && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (wptBulkMode && wptBulkSelectedIds.some(id => groupWaypoints.some(w => w.id === id))) {
+                                    // cancel selection for this group
+                                    setWptBulkSelectedIds(prev => prev.filter(id => !groupWaypoints.some(w => w.id === id)));
+                                    setWptBulkMode(false);
+                                  } else {
+                                    setWptBulkMode(true);
+                                    setWptBulkSelectedIds([]);
+                                    setExpandedGroupId(group.id);
+                                  }
+                                }}
+                                className={`p-0.5 rounded transition-colors cursor-pointer text-[8px] font-bold ${
+                                  wptBulkMode ? "text-blue-400" : "text-slate-500 hover:text-blue-400"
+                                }`}
+                                title="Seleccionar marcas para borrar"
+                              >
+                                ☑
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={(e) => {
@@ -2938,6 +3593,17 @@ export function Sidebar({
                                 <EyeOff className="w-3.5 h-3.5 text-slate-600" />
                               )}
                             </button>
+
+                            {onToggleGroupPublic && (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); onToggleGroupPublic(group.id); }}
+                              className="text-slate-400 hover:text-amber-300 p-0.5 rounded transition-colors cursor-pointer"
+                              title={group.isPublic ? "Público (clic para hacer privado)" : "Privado (clic para compartir con comunidad)"}
+                            >
+                              {group.isPublic ? <Globe className="w-3.5 h-3.5 text-amber-400" /> : <Lock className="w-3.5 h-3.5 text-slate-600" />}
+                            </button>
+                            )}
 
                             <button
                               type="button"
@@ -3082,7 +3748,7 @@ export function Sidebar({
                                         [group.id]: e.target.value,
                                       }));
                                     }}
-                                    placeholder="Buscar marcas en este reto..."
+                                    placeholder={isChallengeMode ? "Buscar marcas en este reto..." : "Buscar marcas..."}
                                     className="w-full bg-[#050807]/60 border border-[#1b3d2b]/60 hover:border-emerald-500/20 focus:border-emerald-400 rounded-lg pl-8 pr-8 py-1.5 text-[11px] text-slate-100 placeholder-slate-600 focus:outline-none transition-colors"
                                   />
                                   {searchQuery && (
@@ -3106,7 +3772,7 @@ export function Sidebar({
                               {groupWaypoints.length === 0 ? (
                                 <div className="py-4 text-center">
                                   <p className="text-[10px] text-slate-500 max-w-[280px] mx-auto leading-relaxed">
-                                    Sin marcas en este reto. Haz clic derecho en el mapa para añadir un waypoint y asígnalo a este reto.
+                                    {isChallengeMode ? "Sin marcas en este reto. Haz clic derecho en el mapa para añadir un waypoint y asígnalo a este reto." : "Sin marcas en esta carpeta. Haz clic derecho en el mapa para añadir una marca."}
                                   </p>
                                 </div>
                               ) : filteredWaypoints.length === 0 ? (
@@ -3117,32 +3783,119 @@ export function Sidebar({
                                 </div>
                               ) : (
                                 <div className="space-y-1.5">
+                                  {/* BULK ACTION BAR - top of list */}
+                                  {wptBulkMode && (() => {
+                                    const groupSelectedIds = wptBulkSelectedIds.filter(id => groupWaypoints.some(w => w.id === id));
+                                    const allSelected = filteredWaypoints.length > 0 && filteredWaypoints.every(w => wptBulkSelectedIds.includes(w.id));
+                                    return (
+                                      <div className="bg-[#0e1a15] border border-blue-500/30 rounded-xl p-2.5 space-y-2 mb-1.5 animate-fade-in">
+                                        {/* Row 1: count + select-all + cancel */}
+                                        <div className="flex items-center justify-between gap-2">
+                                          <span className="text-[9px] font-bold text-blue-400">
+                                            {groupSelectedIds.length > 0 ? `${groupSelectedIds.length} seleccionadas` : "Selección activa"}
+                                          </span>
+                                          <div className="flex items-center gap-2">
+                                            <button type="button"
+                                              onClick={(e) => { e.stopPropagation(); const ids = filteredWaypoints.map(w => w.id); if (allSelected) { setWptBulkSelectedIds(prev => prev.filter(id => !ids.includes(id))); } else { setWptBulkSelectedIds(prev => Array.from(new Set([...prev, ...ids]))); } }}
+                                              className="text-[8.5px] font-bold text-blue-400 hover:text-blue-300 bg-blue-500/10 px-2 py-0.5 rounded cursor-pointer"
+                                            >{allSelected ? "Ninguna" : "Todas"}</button>
+                                            <button type="button"
+                                              onClick={(e) => { e.stopPropagation(); setWptBulkMode(false); setWptBulkSelectedIds([]); }}
+                                              className="text-[8.5px] font-bold text-slate-400 hover:text-slate-200 cursor-pointer"
+                                            >✕ Cancelar</button>
+                                          </div>
+                                        </div>
+                                        {/* Row 2: actions (only when something selected) */}
+                                        {groupSelectedIds.length > 0 && (() => {
+                                          const doFolderAction = async (targetGroupId: string, move: boolean) => {
+                                            const targetGroup = waypointGroups.find(g => g.id === targetGroupId);
+                                            const verb = move ? "Mover" : "Copiar";
+                                            if (!await customConfirm(`¿${verb} ${groupSelectedIds.length} marca(s) a "${targetGroup?.name}"?`)) return;
+                                            if (move) {
+                                              groupSelectedIds.forEach(id => { if (onUpdateWaypoint) onUpdateWaypoint(id, { groupId: targetGroupId }); });
+                                            } else {
+                                              const addFn = onAddWaypointToMarkers || onAddWaypoint;
+                                              groupSelectedIds.forEach(id => {
+                                                const wpt = groupWaypoints.find(w => w.id === id);
+                                                if (wpt) addFn({ name: wpt.name, lat: wpt.lat, lng: wpt.lng, icon: wpt.icon, note: wpt.note || "", color: wpt.color, groupId: targetGroupId, completed: false, elevation: (wpt as any).elevation, link: wpt.link, image: wpt.image });
+                                              });
+                                            }
+                                            setWptBulkMode(false); setWptBulkSelectedIds([]);
+                                          };
+                                          const doTrackAction = async (targetTrackId: string, move: boolean) => {
+                                            const targetTrack = tracks.find(t => t.id === targetTrackId);
+                                            const verb = move ? "Mover" : "Copiar";
+                                            if (!await customConfirm(`¿${verb} ${groupSelectedIds.length} marca(s) al track "${targetTrack?.name}"?${move ? " Se eliminarán de Mis Marcadores." : ""}`)) return;
+                                            if (!onAddWaypointToTrack) { await customAlert("Error: función no disponible."); return; }
+                                            groupSelectedIds.forEach(id => {
+                                              const wpt = groupWaypoints.find(w => w.id === id);
+                                              if (!wpt) return;
+                                              onAddWaypointToTrack(targetTrackId, { name: wpt.name, lat: wpt.lat, lng: wpt.lng, icon: wpt.icon, note: wpt.note || "", color: wpt.color, groupId: "default", completed: false, elevation: (wpt as any).elevation, link: wpt.link, image: wpt.image });
+                                            });
+                                            if (move) { if (onDeleteWaypoints) await onDeleteWaypoints(groupSelectedIds); else groupSelectedIds.forEach(id => onDeleteWaypoint(id)); }
+                                            setWptBulkMode(false); setWptBulkSelectedIds([]);
+                                          };
+                                          return (
+                                          <div className="space-y-1.5 pt-1.5 border-t border-white/5">
+                                            {/* Carpeta: selector + Mover + Copiar */}
+                                            <div className="space-y-1">
+                                              <span className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">Carpeta destino</span>
+                                              <select id={`folder-sel-${group.id}`} defaultValue="" onClick={(e) => e.stopPropagation()}
+                                                className="w-full bg-[#111c16] border border-white/10 rounded text-[8.5px] text-slate-300 px-1.5 py-0.5 cursor-pointer"
+                                              >
+                                                <option value="">-- carpeta --</option>
+                                                {waypointGroups.filter(g => g.id !== group.id).map(g => (
+                                                  <option key={g.id} value={g.id}>{g.name}</option>
+                                                ))}
+                                              </select>
+                                              <div className="flex gap-1">
+                                                <button type="button" onClick={async (e) => { e.stopPropagation(); const sel = (document.getElementById(`folder-sel-${group.id}`) as HTMLSelectElement)?.value; if (!sel) return; await doFolderAction(sel, true); }}
+                                                  className="flex-1 py-0.5 bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/20 rounded text-[8px] font-bold text-sky-400 cursor-pointer">Mover</button>
+                                                <button type="button" onClick={async (e) => { e.stopPropagation(); const sel = (document.getElementById(`folder-sel-${group.id}`) as HTMLSelectElement)?.value; if (!sel) return; await doFolderAction(sel, false); }}
+                                                  className="flex-1 py-0.5 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/20 rounded text-[8px] font-bold text-emerald-400 cursor-pointer">Copiar</button>
+                                              </div>
+                                            </div>
+                                            {/* Track: selector + Mover + Copiar */}
+                                            <div className="space-y-1">
+                                              <span className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">Track destino</span>
+                                              <select id={`track-sel-${group.id}`} defaultValue="" onClick={(e) => e.stopPropagation()}
+                                                className="w-full bg-[#111c16] border border-white/10 rounded text-[8.5px] text-slate-300 px-1.5 py-0.5 cursor-pointer"
+                                              >
+                                                <option value="">-- track --</option>
+                                                {displayTracks.map(t => (
+                                                  <option key={t.id} value={t.id}>{t.name}</option>
+                                                ))}
+                                              </select>
+                                              <div className="flex gap-1">
+                                                <button type="button" onClick={async (e) => { e.stopPropagation(); const sel = (document.getElementById(`track-sel-${group.id}`) as HTMLSelectElement)?.value; if (!sel) return; await doTrackAction(sel, true); }}
+                                                  className="flex-1 py-0.5 bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/20 rounded text-[8px] font-bold text-sky-400 cursor-pointer">Mover</button>
+                                                <button type="button" onClick={async (e) => { e.stopPropagation(); const sel = (document.getElementById(`track-sel-${group.id}`) as HTMLSelectElement)?.value; if (!sel) return; await doTrackAction(sel, false); }}
+                                                  className="flex-1 py-0.5 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/20 rounded text-[8px] font-bold text-emerald-400 cursor-pointer">Copiar</button>
+                                              </div>
+                                            </div>
+                                            {/* Delete */}
+                                            <button type="button"
+                                              onClick={async (e) => {
+                                                e.stopPropagation();
+                                                if (await customConfirm(`¿Eliminar ${groupSelectedIds.length} marca(s)?`)) {
+                                                  if (onDeleteWaypoints) onDeleteWaypoints(groupSelectedIds); else groupSelectedIds.forEach(id => onDeleteWaypoint(id));
+                                                  setWptBulkSelectedIds(prev => prev.filter(id => !groupSelectedIds.includes(id)));
+                                                  setWptBulkMode(false);
+                                                }
+                                              }}
+                                              className="w-full py-1 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-lg text-[8.5px] font-bold text-red-400 hover:text-red-300 cursor-pointer transition-all"
+                                            >🗑 Eliminar {groupSelectedIds.length} marca(s)</button>
+                                          </div>
+                                          );
+                                        })()}
+                                      </div>
+                                    );
+                                  })()}
+                                  {/* Header row: count label */}
                                   <div className="flex justify-between items-center bg-[#070a08]/30 px-2.5 py-1.5 rounded-lg border border-white/5 select-none mb-1.5">
                                     <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
-                                      {searchQuery ? "Resultados" : "Marcas en este reto"} ({filteredWaypoints.length})
+                                      {searchQuery ? "Resultados" : (isChallengeMode ? "Marcas en este reto" : "Marcas")} ({filteredWaypoints.length})
                                     </span>
-                                    {isBulkMode && (
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          const groupWptIds = filteredWaypoints.map((w) => w.id);
-                                          const allSelected = groupWptIds.every((id) => selectedWptIds.includes(id));
-                                          
-                                          if (allSelected) {
-                                            setSelectedWptIds((prev) => prev.filter((id) => !groupWptIds.includes(id)));
-                                          } else {
-                                            setSelectedWptIds((prev) => {
-                                              const union = new Set([...prev, ...groupWptIds]);
-                                              return Array.from(union);
-                                            });
-                                          }
-                                        }}
-                                        className="text-[8.5px] font-extrabold text-blue-400 hover:text-blue-300 transition-colors uppercase tracking-wider bg-blue-500/10 px-2 py-0.5 rounded cursor-pointer animate-fade-in"
-                                      >
-                                        {filteredWaypoints.every((w) => selectedWptIds.includes(w.id)) ? "Ninguno" : "Todo"}
-                                      </button>
-                                    )}
                                   </div>
                                   {filteredWaypoints.map((wpt) => {
                                     const WptIcon = WPT_ICONS[wpt.icon] || MapPin;
@@ -3151,8 +3904,8 @@ export function Sidebar({
                                       <div
                                         key={wpt.id}
                                         onClick={() => {
-                                          if (isBulkMode) {
-                                            setSelectedWptIds((prev) =>
+                                          if (wptBulkMode) {
+                                            setWptBulkSelectedIds((prev) =>
                                               prev.includes(wpt.id)
                                                 ? prev.filter((id) => id !== wpt.id)
                                                 : [...prev, wpt.id]
@@ -3162,7 +3915,7 @@ export function Sidebar({
                                           }
                                         }}
                                         className={`group flex items-start gap-2.5 p-2 rounded-lg border transition-all cursor-pointer ${
-                                          isBulkMode && selectedWptIds.includes(wpt.id)
+                                          wptBulkMode && wptBulkSelectedIds.includes(wpt.id)
                                             ? "bg-blue-500/10 border-blue-500/40 hover:border-blue-500/50"
                                             : (isChallengeMode && isCompleted)
                                             ? "bg-emerald-500/[0.01] border-emerald-500/10 hover:border-emerald-500/20 hover:bg-[#0f1612]/30"
@@ -3170,12 +3923,12 @@ export function Sidebar({
                                         }`}
                                       >
                                         {/* Circular Checkbox for Bulk Selection Mode */}
-                                        {isBulkMode && (
-                                          <div 
-                                            title="Seleccionar para acciones en lote"
+                                        {wptBulkMode && (
+                                          <div
+                                            title="Seleccionar para borrar"
                                             onClick={(e) => {
                                               e.stopPropagation();
-                                              setSelectedWptIds((prev) =>
+                                              setWptBulkSelectedIds((prev) =>
                                                 prev.includes(wpt.id)
                                                   ? prev.filter((id) => id !== wpt.id)
                                                   : [...prev, wpt.id]
@@ -3183,7 +3936,7 @@ export function Sidebar({
                                             }}
                                             className="mr-0.5 mt-0.5 shrink-0 select-none cursor-pointer"
                                           >
-                                            {selectedWptIds.includes(wpt.id) ? (
+                                            {wptBulkSelectedIds.includes(wpt.id) ? (
                                               <div className="w-4 h-4 rounded-full bg-blue-500 border border-blue-500 flex items-center justify-center text-white shadow">
                                                 <Check className="w-2.5 h-2.5 stroke-[4]" />
                                               </div>
@@ -3466,8 +4219,8 @@ export function Sidebar({
               )}
 
               {/* 4. JSON IMPORT WIDGET */}
-              <div className="border-t border-[#1b3d2b]/40 pt-3 flex gap-2 shrink-0">
-                <label className="w-full py-2.5 rounded-xl border border-[#1b3d2b] bg-[#0c120f] hover:bg-[#0f1612] text-slate-300 hover:text-emerald-400 cursor-pointer transition-all text-xs font-semibold flex items-center justify-center gap-1.5">
+              <div className="border-t border-[#1b3d2b]/40 pt-3 shrink-0">
+                <label className="w-full py-2.5 rounded-xl border border-[#1b3d2b] bg-[#0c120f] hover:bg-[#0f1612] text-slate-300 hover:text-emerald-400 cursor-pointer transition-all text-xs font-semibold flex items-center justify-center gap-1.5 min-w-0 overflow-hidden">
                   <Upload className="w-4 h-4" />
                   Importar Marcas JSON
                   <input
@@ -3478,6 +4231,136 @@ export function Sidebar({
                   />
                 </label>
               </div>
+            </div>
+            );
+          })()}
+
+          {/* TAB: COMUNIDAD */}
+          {activeTab === "community" && (() => {
+            const loadCommunity = async () => {
+              if (!onFetchCommunityContent) return;
+              setCommunityLoading(true);
+              try {
+                const result = await onFetchCommunityContent();
+                setCommunityContent(result);
+              } finally {
+                setCommunityLoading(false);
+              }
+            };
+
+            const allItems = communityContent ? [
+              ...(communityContent.tracks || []).map((t: any) => ({ ...t, _kind: "track" })),
+              ...(communityContent.groups || []).filter((g: any) => g.type === "challenge" || !g.type).map((g: any) => ({ ...g, _kind: "challenge" })),
+              ...(communityContent.groups || []).filter((g: any) => g.type === "folder").map((g: any) => ({ ...g, _kind: "marks" })),
+            ] : [];
+
+            const filtered = allItems.filter(item => {
+              if (communityFilter === "tracks") return item._kind === "track";
+              if (communityFilter === "challenges") return item._kind === "challenge";
+              if (communityFilter === "marks") return item._kind === "marks";
+              return true;
+            }).filter(item => !communitySearch.trim() || item.name?.toLowerCase().includes(communitySearch.toLowerCase()));
+
+            return (
+            <div className="space-y-4 animate-fade-in flex flex-col min-h-0 flex-1">
+              <div className="flex flex-col gap-2 shrink-0">
+                <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                  <Users className="w-3 h-3" /> Contenido de la Comunidad
+                </h4>
+                <input
+                  type="text"
+                  placeholder="Buscar..."
+                  value={communitySearch}
+                  onChange={e => setCommunitySearch(e.target.value)}
+                  className="w-full bg-[#111c16] border border-white/10 rounded-lg px-3 py-1.5 text-[11px] text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500/50"
+                />
+                <div className="flex gap-1">
+                  {(["all", "tracks", "challenges", "marks"] as const).map(f => (
+                    <button key={f} type="button" onClick={() => setCommunityFilter(f)}
+                      className={`flex-1 py-1 rounded text-[9px] font-bold transition-all cursor-pointer border ${communityFilter === f ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300" : "bg-transparent border-white/10 text-slate-500 hover:text-slate-300"}`}>
+                      {f === "all" ? "Todo" : f === "tracks" ? "Rutas" : f === "challenges" ? "Retos" : "Marcas"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {communityLoading && (
+                <div className="flex items-center justify-center py-8 text-slate-500 text-xs gap-2">
+                  <Loader className="w-4 h-4 animate-spin" /> Cargando contenido...
+                </div>
+              )}
+
+              {!communityLoading && filtered.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-10 text-slate-600 text-xs gap-2">
+                  <Globe className="w-8 h-8 opacity-30" />
+                  <span>No hay contenido público disponible.</span>
+                  <span className="text-[10px] opacity-60">Comparte tus rutas o retos usando el icono 🔒 en Mis Rutas o Retos.</span>
+                </div>
+              )}
+
+              <div className="space-y-2 overflow-y-auto flex-1">
+                {filtered.map((item: any) => {
+                  const author = item.profiles?.display_name || "Usuario";
+                  const kindLabel = item._kind === "track" ? "Ruta" : item._kind === "challenge" ? "Reto" : "Carpeta";
+                  const kindColor = item._kind === "track" ? "text-blue-400" : item._kind === "challenge" ? "text-amber-400" : "text-emerald-400";
+                  const wptCount = item._kind === "track" ? (item.waypoints?.length || 0) : (item.waypoints?.length || 0);
+                  return (
+                  <div key={item.id} className="bg-[#0e1a12] border border-white/5 rounded-xl p-3 flex flex-col gap-2">
+                    {item.image && (
+                      <div className="h-16 rounded-lg overflow-hidden -mx-0">
+                        <img src={item.image} alt={item.name} className="w-full h-full object-cover opacity-70" />
+                      </div>
+                    )}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-bold text-slate-200 truncate">{item.name}</p>
+                        <p className="text-[9px] text-slate-500">por <span className="text-slate-400">{author}</span> · <span className={kindColor}>{kindLabel}</span>{wptCount > 0 ? ` · ${wptCount} marcas` : ""}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!await customConfirm(`¿Importar "${item.name}" a tu cuenta?`)) return;
+                          if (item._kind === "track") {
+                            const pts = Array.isArray(item.points) ? item.points : [];
+                            const wpts = Array.isArray(item.waypoints) ? item.waypoints : [];
+                            onImportRoute(item.name, pts, wpts.map((w: any) => ({ ...w, groupId: "default", id: `wpt-${Date.now()}-${Math.random().toString(36).substr(2,5)}` })));
+                          } else {
+                            try {
+                              const newGroupId = await onAddWaypointGroup({
+                                name: item.name,
+                                description: item.description || "",
+                                color: item.color || "#10b981",
+                                visible: true,
+                                image: item.image,
+                                type: item._kind === "challenge" ? "challenge" : "folder",
+                              } as any);
+                              if (item.waypoints?.length && onAddWaypointToMarkers) {
+                                item.waypoints.forEach((w: any) => {
+                                  onAddWaypointToMarkers({ name: w.name, lat: w.lat, lng: w.lng, icon: w.icon || "marker", note: w.note || "", color: w.color || item.color || "#10b981", groupId: newGroupId, completed: false, elevation: w.elevation, link: w.link, image: w.image });
+                                });
+                              }
+                            } catch (e) {
+                              await customAlert("Error al importar: " + (e as Error).message);
+                            }
+                          }
+                        }}
+                        className="shrink-0 flex items-center gap-1 px-2 py-1 bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/20 rounded-lg text-[9px] font-bold text-emerald-400 cursor-pointer transition-all"
+                      >
+                        <Import className="w-3 h-3" /> Importar
+                      </button>
+                    </div>
+                    {item.description && (
+                      <p className="text-[9px] text-slate-600 leading-relaxed line-clamp-2">{item.description}</p>
+                    )}
+                  </div>
+                  );
+                })}
+              </div>
+
+              <button type="button" onClick={loadCommunity} disabled={communityLoading}
+                className="shrink-0 w-full py-2 border border-white/10 rounded-xl text-[10px] text-slate-500 hover:text-slate-300 hover:border-white/20 transition-all cursor-pointer flex items-center justify-center gap-1.5">
+                <RefreshCw className={`w-3 h-3 ${communityLoading ? "animate-spin" : ""}`} /> Actualizar
+              </button>
             </div>
             );
           })()}
@@ -3779,6 +4662,59 @@ export function Sidebar({
           )}
         </div>
       </div>
+      )}
+
+      {/* COPY TRACK WAYPOINT TO MARCADORES MODAL */}
+      {copyWptPending && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setCopyWptPending(null)}>
+          <div className="bg-[#111c16] border border-emerald-500/30 rounded-2xl p-5 w-72 shadow-2xl space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="space-y-0.5">
+              <p className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider">Copiar waypoint a Marcadores</p>
+              <p className="text-[12px] font-semibold text-slate-200 truncate">"{copyWptPending.wpt.name}"</p>
+              <p className="text-[10px] text-slate-500">Desde track: {copyWptPending.trackName}</p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[9.5px] font-bold text-slate-400 uppercase tracking-wider">Carpeta destino</label>
+              <select
+                value={copyWptTargetGroupId}
+                onChange={(e) => setCopyWptTargetGroupId(e.target.value)}
+                className="w-full bg-[#0c150f] border border-white/10 rounded-lg text-[11px] text-slate-200 px-3 py-2 cursor-pointer focus:outline-none focus:border-emerald-500/50"
+              >
+                {waypointGroups.map(g => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setCopyWptPending(null)}
+                className="flex-1 py-2 rounded-xl border border-white/10 text-[10px] font-bold text-slate-400 hover:text-slate-200 hover:border-white/20 transition-all cursor-pointer"
+              >Cancelar</button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const targetGroup = waypointGroups.find(g => g.id === copyWptTargetGroupId);
+                  if (!await customConfirm(`¿Copiar "${copyWptPending.wpt.name}" a la carpeta "${targetGroup?.name || copyWptTargetGroupId}"?`)) return;
+                  if (!onAddWaypointToMarkers) { await customAlert("Error: función de copia no disponible."); return; }
+                  onAddWaypointToMarkers({
+                    name: copyWptPending.wpt.name,
+                    lat: copyWptPending.wpt.lat,
+                    lng: copyWptPending.wpt.lng,
+                    icon: copyWptPending.wpt.icon,
+                    note: copyWptPending.wpt.note || "",
+                    color: copyWptPending.wpt.color,
+                    groupId: copyWptTargetGroupId,
+                    completed: false,
+                    elevation: copyWptPending.wpt.elevation,
+                  });
+                  setCopyWptPending(null);
+                }}
+                className="flex-1 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 text-[10px] font-bold text-emerald-400 hover:text-emerald-300 transition-all cursor-pointer"
+              >✓ Copiar</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

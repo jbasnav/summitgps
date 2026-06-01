@@ -44,6 +44,7 @@ const BASE_LAYERS = [
     desc: "Solo las capas personalizadas y overlays. Fondo negro.",
     icon: Layers,
     thumbnail: null,
+    requiresKey: false,
   },
   {
     id: "osm" as BaseLayerId,
@@ -51,6 +52,7 @@ const BASE_LAYERS = [
     desc: "Estándar urbano y vial, ideal para rutas de senderismo cercanas a ciudades.",
     icon: Map,
     thumbnail: "https://a.tile.openstreetmap.org/12/2079/1431.png",
+    requiresKey: false,
   },
   {
     id: "opentopo" as BaseLayerId,
@@ -58,13 +60,15 @@ const BASE_LAYERS = [
     desc: "Curvas de nivel ultra-detalladas, picos y sombreado de relieve perfecto.",
     icon: Mountain,
     thumbnail: "https://a.tile.opentopomap.org/12/2079/1431.png",
+    requiresKey: false,
   },
   {
     id: "satellite" as BaseLayerId,
-    name: "Imágenes Satélite (Esri)",
+    name: "Satélite (Esri)",
     desc: "Imágenes de satélite reales de alta resolución para ver el terreno real.",
     icon: Globe,
     thumbnail: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/12/1431/2079.jpg",
+    requiresKey: false,
   },
   {
     id: "terrain" as BaseLayerId,
@@ -72,6 +76,47 @@ const BASE_LAYERS = [
     desc: "Mapa físico y político integrado, con excelente sombreado de relieve.",
     icon: Compass,
     thumbnail: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/12/1431/2079.jpg",
+    requiresKey: false,
+  },
+  {
+    id: "cyclosm" as BaseLayerId,
+    name: "CyclOSM",
+    desc: "Especializado en ciclismo y mountain bike. Rutas ciclistas marcadas.",
+    icon: Map,
+    thumbnail: "https://c.tile-cyclosm.openstreetmap.fr/cyclosm/12/2079/1431.png",
+    requiresKey: false,
+  },
+  {
+    id: "wanderreitkarte" as BaseLayerId,
+    name: "WanderReitkarte",
+    desc: "Mapa de senderismo y equitación con senderos y rutas a caballo.",
+    icon: Mountain,
+    thumbnail: null,
+    requiresKey: false,
+  },
+  {
+    id: "tf-outdoors" as BaseLayerId,
+    name: "TF Outdoors",
+    desc: "Thunderforest Outdoors: senderismo, altitud y rutas al aire libre.",
+    icon: Mountain,
+    thumbnail: null,
+    requiresKey: true,
+  },
+  {
+    id: "tf-transport" as BaseLayerId,
+    name: "TF Transport",
+    desc: "Thunderforest Transport: transporte público, carreteras y trenes.",
+    icon: Map,
+    thumbnail: null,
+    requiresKey: true,
+  },
+  {
+    id: "tf-cycle" as BaseLayerId,
+    name: "TF Cycle",
+    desc: "Thunderforest Cycle: carriles bici, rutas ciclistas y MTB.",
+    icon: Compass,
+    thumbnail: null,
+    requiresKey: true,
   },
 ];
 
@@ -93,6 +138,13 @@ export function LayerSelector({
   onChangeSlopeShadingOpacity,
 }: LayerSelectorProps) {
   const [showAddForm, setShowAddForm] = useState(false);
+  const [tfKey, setTfKey] = useState(() => localStorage.getItem('summit_thunderforest_key') || '');
+  const [showTfKeyInput, setShowTfKeyInput] = useState(false);
+
+  const saveTfKey = (key: string) => {
+    setTfKey(key);
+    localStorage.setItem('summit_thunderforest_key', key);
+  };
   const [formName, setFormName] = useState("");
   const [formType, setFormType] = useState<"xyz" | "wms">("xyz");
   const [formUrl, setFormUrl] = useState("");
@@ -183,6 +235,7 @@ export function LayerSelector({
           {BASE_LAYERS.map((layer) => {
             const Icon = layer.icon;
             const isActive = activeBaseLayer === layer.id;
+            const needsKey = layer.requiresKey && !tfKey;
             return (
               <button
                 key={layer.id}
@@ -199,8 +252,13 @@ export function LayerSelector({
                     <img src={layer.thumbnail} alt="" className="w-full h-full object-cover" />
                   </div>
                 )}
-                
-                <Icon className={`w-4 h-4 mb-2 ${isActive ? "text-emerald-400" : "text-slate-400"}`} />
+
+                <div className="flex w-full items-center justify-between mb-2">
+                  <Icon className={`w-4 h-4 ${isActive ? "text-emerald-400" : "text-slate-400"}`} />
+                  {needsKey && (
+                    <span className="text-[8px] px-1 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/20 font-bold">🔑 Key</span>
+                  )}
+                </div>
                 <span className={`text-xs font-semibold ${isActive ? "text-emerald-300" : "text-slate-200"}`}>
                   {layer.name}
                 </span>
@@ -332,6 +390,43 @@ export function LayerSelector({
               onChange={(e) => onChangeSlopeShadingOpacity(parseFloat(e.target.value))}
               className="w-full h-1 bg-[#18231e] rounded-lg appearance-none cursor-pointer accent-emerald-400 focus:outline-none"
             />
+          </div>
+        )}
+      </div>
+
+      {/* ══════════ API KEYS ══════════ */}
+      <div className="border-t border-[#1b3d2b]/40 pt-5 space-y-3">
+        <button
+          type="button"
+          onClick={() => setShowTfKeyInput(v => !v)}
+          className="w-full flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider hover:text-slate-200 transition-colors"
+        >
+          <span>🔑 Thunderforest API Key</span>
+          <span className={`text-[9px] px-1.5 py-0.5 rounded ${tfKey ? "bg-emerald-500/20 text-emerald-400" : "bg-amber-500/15 text-amber-400"}`}>
+            {tfKey ? "Configurado" : "No configurado"}
+          </span>
+        </button>
+        {showTfKeyInput && (
+          <div className="space-y-2 animate-fade-in">
+            <p className="text-[9px] text-slate-500 leading-relaxed">
+              Necesaria para TF Outdoors, TF Transport y TF Cycle. Regístrate gratis en <span className="text-blue-400">thunderforest.com</span>.
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Pega tu API key aquí..."
+                value={tfKey}
+                onChange={(e) => saveTfKey(e.target.value)}
+                className="flex-1 bg-[#080d0a] border border-[#1b3d2b]/40 rounded-lg py-1.5 px-2.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-400 transition-colors font-mono"
+              />
+              {tfKey && (
+                <button
+                  type="button"
+                  onClick={() => saveTfKey("")}
+                  className="px-2 py-1 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white text-xs transition-all"
+                >✕</button>
+              )}
+            </div>
           </div>
         )}
       </div>

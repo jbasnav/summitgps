@@ -65,6 +65,7 @@ interface MapContainerProps {
   onAreaComplete: (points: { lat: number; lng: number }[], color: string) => void;
   useImperial: boolean;
   onMapReady?: (map: L.Map) => void;
+  isRouteEditPanelOpen?: boolean;
   isEditingRoute: boolean;
   onUpdateRoutePoint: (trackId: string, index: number, lat: number, lng: number) => void;
   onInsertIntermediatePoint: (trackId: string, lat: number, lng: number) => void;
@@ -81,15 +82,27 @@ interface MapContainerProps {
   slopeShadingOpacity?: number;
   onToggleUnits?: () => void;
   coordinateFormat?: "dd" | "ddm" | "dms" | "utm" | "mgrs";
+  highlightedWptId?: string | null;
 }
 
 // Map Tile Providers
-const TILE_LAYERS = {
+const TILE_LAYERS: Record<string, string> = {
   osm: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
   opentopo: "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
   satellite: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
   terrain: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+  cyclosm: "https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png",
+  wanderreitkarte: "https://www.wanderreitkarte.de/topo/{z}/{x}/{y}.png",
+  "tf-outdoors": "https://tile.thunderforest.com/outdoors/{z}/{x}/{y}.png?apikey={tf_key}",
+  "tf-transport": "https://tile.thunderforest.com/transport/{z}/{x}/{y}.png?apikey={tf_key}",
+  "tf-cycle": "https://tile.thunderforest.com/cycle/{z}/{x}/{y}.png?apikey={tf_key}",
 };
+
+function resolveTileUrl(id: string): string {
+  const url = TILE_LAYERS[id] || TILE_LAYERS.osm;
+  const tfKey = localStorage.getItem('summit_thunderforest_key') || '';
+  return url.replace('{tf_key}', tfKey);
+}
 
 const HILLSHADE_URL = "https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}";
 
@@ -133,6 +146,7 @@ export function MapContainer({
   useImperial,
   onMapReady,
   onUpdateWaypoint,
+  isRouteEditPanelOpen = false,
   isEditingRoute,
   onUpdateRoutePoint,
   onInsertIntermediatePoint,
@@ -147,6 +161,7 @@ export function MapContainer({
   slopeShadingOpacity = 0.6,
   onToggleUnits,
   coordinateFormat = "dd",
+  highlightedWptId = null,
 }: MapContainerProps) {
   const { customConfirm } = useCustomDialog();
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -215,7 +230,7 @@ export function MapContainer({
           baseLayer = L.tileLayer(customBase.url, { maxZoom: 19, zIndex: 1, attribution: customBase.attribution });
         }
       } else {
-        const url = TILE_LAYERS[activeBaseLayer as keyof typeof TILE_LAYERS] || TILE_LAYERS.osm;
+        const url = resolveTileUrl(activeBaseLayer);
         baseLayer = L.tileLayer(url, { maxZoom: 19, zIndex: 1 });
       }
       baseLayer.addTo(map);
@@ -281,7 +296,7 @@ export function MapContainer({
           newBaseLayer = L.tileLayer(customBase.url, { maxZoom: 19, zIndex: 1, attribution: customBase.attribution });
         }
       } else {
-        const url = TILE_LAYERS[activeBaseLayer as keyof typeof TILE_LAYERS] || TILE_LAYERS.osm;
+        const url = resolveTileUrl(activeBaseLayer);
         newBaseLayer = L.tileLayer(url, { maxZoom: 19, zIndex: 1 });
       }
       newBaseLayer.addTo(mapInstance);
@@ -727,18 +742,22 @@ export function MapContainer({
     // 2. Render visible waypoint markers
     waypoints.forEach((wpt) => {
       const isSelected = selectedWptIds.includes(wpt.id);
+      const isHighlighted = highlightedWptId === wpt.id;
       const svg = getIconSvg(wpt.icon, "w-4 h-4 text-white");
       const markerColor = wpt.color || "#10b981";
-      
+
       const customHtml = `
-        <div class="relative w-8 h-8 flex items-center justify-center animate-bounce-short">
+        <div class="relative flex items-center justify-center animate-bounce-short" style="width:${isHighlighted ? 40 : 32}px;height:${isHighlighted ? 40 : 32}px">
           ${
             isBulkMode && isSelected
               ? `<div class="absolute w-10 h-10 rounded-full border border-blue-400 bg-blue-500/25 animate-ping opacity-75"></div>
                  <div class="absolute w-9 h-9 rounded-full border-2 border-blue-400 bg-blue-500/20 shadow-[0_0_8px_rgba(59,130,246,0.6)]"></div>`
+              : isHighlighted
+              ? `<div class="absolute rounded-full animate-ping opacity-60" style="width:48px;height:48px;background:${markerColor}33;border:2px solid ${markerColor}"></div>
+                 <div class="absolute rounded-full" style="width:44px;height:44px;box-shadow:0 0 16px 4px ${markerColor}99;border:2px solid ${markerColor};background:${markerColor}22"></div>`
               : ""
           }
-          <div class="absolute w-8 h-8 rounded-full border-2 border-white shadow-lg flex items-center justify-center transition-all duration-300" style="background-color: ${
+          <div class="absolute rounded-full border-2 border-white shadow-lg flex items-center justify-center transition-all duration-300" style="width:${isHighlighted ? 36 : 32}px;height:${isHighlighted ? 36 : 32}px;background-color:${
             isBulkMode && isSelected ? "#3b82f6" : markerColor
           }">
             ${
@@ -838,7 +857,7 @@ export function MapContainer({
       }
     });
 
-  }, [mapInstance, waypoints, onEditWaypoint, isBulkMode, selectedWptIds, onSetSelectedWptIds, onUpdateWaypoint]);
+  }, [mapInstance, waypoints, onEditWaypoint, isBulkMode, selectedWptIds, onSetSelectedWptIds, onUpdateWaypoint, highlightedWptId]);
 
   // Leaflet mouse event-based click-and-drag Box Selection
   useEffect(() => {
@@ -1704,13 +1723,18 @@ export function MapContainer({
 
     const latlngs = activeTrack.points.map((p) => L.latLng(p.lat, p.lng));
     const bounds = L.latLngBounds(latlngs);
+
+    // Add extra padding to the left when the Route Edit panel is open (380px wide + 50px normal padding = 430px)
+    const leftPadding = isRouteEditPanelOpen ? 430 : 50;
+
     mapInstance.fitBounds(bounds, {
-      padding: [50, 50],
+      paddingTopLeft: [leftPadding, 50],
+      paddingBottomRight: [50, 50],
       maxZoom: 16,
       animate: true,
       duration: 1.2,
     });
-  }, [mapInstance, activeTrackId]);
+  }, [mapInstance, activeTrackId, isRouteEditPanelOpen]);
 
 
   return (
@@ -1824,7 +1848,17 @@ export function MapContainer({
             : activeBaseLayer === "satellite"
             ? "Satélite · Esri"
             : activeBaseLayer === "terrain"
-            ? "Terreno · Esri"
+            ? "Esri World Topo"
+            : activeBaseLayer === "cyclosm"
+            ? "CyclOSM"
+            : activeBaseLayer === "wanderreitkarte"
+            ? "WanderReitkarte"
+            : activeBaseLayer === "tf-outdoors"
+            ? "TF Outdoors"
+            : activeBaseLayer === "tf-transport"
+            ? "TF Transport"
+            : activeBaseLayer === "tf-cycle"
+            ? "TF Cycle"
             : activeBaseLayer}
         </div>
       </div>

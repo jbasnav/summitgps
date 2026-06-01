@@ -6,13 +6,11 @@ import { WaypointModal } from "./components/WaypointModal";
 import { useRoutePlanner, type Waypoint, type RoutePoint } from "./hooks/useRoutePlanner";
 import { useImageLibrary } from "./hooks/useImageLibrary";
 import type { BaseLayerId, CustomLayer } from "./components/LayerSelector";
-import { ChevronDown, ChevronUp, Search, X, Compass, Loader, MapPin, Route, Square, Upload, Download, Printer, Scissors, ArrowLeftRight, RefreshCw, Edit2, Redo2, Undo2, Trees } from "lucide-react";
+import { ChevronDown, ChevronUp, Search, X, Compass, Loader, MapPin, Printer } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "./utils/supabaseClient";
 import { AuthScreen } from "./components/AuthScreen";
 import PrintMapModal from "./components/PrintMapModal";
 import { formatCoordinatesByFormat, parseCoordinateInput, calculateGeodesicArea, calculatePolygonPerimeter } from "./utils/geoUtils";
-import { exportToGPX } from "./utils/gpxExporter";
-
 import { CustomDialogProvider, useCustomDialog } from "./components/CustomDialog";
 
 function AppContent() {
@@ -52,15 +50,19 @@ function AppContent() {
     clearRoute,
     importRouteData,
     addWaypoint,
+    addWaypointToMarkers,
+    addWaypointToTrack,
     addMultipleWaypoints,
     updateWaypoint,
     removeWaypoint,
-    
+    removeWaypoints,
+
     // Multi-track operations
     createNewTrack,
     deleteTrack,
     deleteMultipleTracks,
     toggleTrackVisibility,
+    toggleTrackPublic,
     setTrackColor,
     mergeTracks,
     splitTrack,
@@ -76,7 +78,9 @@ function AppContent() {
     deleteWaypointGroup,
     updateWaypointGroup,
     toggleWaypointGroupVisibility,
+    toggleGroupPublic,
     toggleWaypointCompleted,
+    fetchCommunityContent,
 
     // Route Collections
     routeCollections,
@@ -94,6 +98,8 @@ function AppContent() {
     toggleAreaVisibility,
     applySimplifyTrack,
     cleanTrackArea,
+    applySmoothTrack,
+    applyRemoveOutliers,
 
     // Global History additions
     undo,
@@ -242,6 +248,7 @@ function AppContent() {
 
   // Sidebar collapse state
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
+  const [highlightedWptId, setHighlightedWptId] = useState<string | null>(null);
 
   // Automatically expand sidebar when a map location is marked
   useEffect(() => {
@@ -406,21 +413,7 @@ function AppContent() {
   const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState<boolean>(false); // Keyboard shortcuts modal
   // Route edit panel & sub-panels (lifted from Sidebar so toolbar can control them)
   const [isRouteEditPanelOpen, setIsRouteEditPanelOpen] = useState<boolean>(false);
-  const [showTrimPanel, setShowTrimPanel] = useState<boolean>(false);
-  const [showSimplifyPanel, setShowSimplifyPanel] = useState<boolean>(false);
-  
-  // Simplify and Trim Panel States
-  const [simplifyTolerance, setSimplifyTolerance] = useState<number>(5);
-  const [trimStart, setTrimStart] = useState<number>(0);
-  const [trimEnd, setTrimEnd] = useState<number>(0);
 
-  // Sync trim sliders with active track points length
-  useEffect(() => {
-    if (points && points.length > 0) {
-      setTrimStart(0);
-      setTrimEnd(points.length - 1);
-    }
-  }, [points]);
   // Splits highlight — which km/mile segment is selected in the SplitsTable
   const [selectedSplitNumber, setSelectedSplitNumber] = useState<number | null>(null);
   const [isStreetViewActive, setIsStreetViewActive] = useState<boolean>(false); // Street View active mode
@@ -614,31 +607,36 @@ function AppContent() {
     };
   }, [streetViewCoords, isStreetViewActive]);
 
-  // Derive all visible waypoints across all visible tracks in the library
+  // Waypoints for the MAP: all visible tracks (including route-embedded waypoints)
   const visibleWaypoints = useMemo(() => {
     const list: Waypoint[] = [];
     const groupVisibilityMap = new Map(waypointGroups.map((g) => [g.id, g.visible]));
     const collectionVisibilityMap = new Map(routeCollections.map((c) => [c.id, c.visible]));
-
     tracks.forEach((t) => {
       const collectionId = t.collectionId || "default";
       const isCollectionVisible = collectionVisibilityMap.get(collectionId) !== false;
       if (t.visible && isCollectionVisible) {
+        const isGlobalTrack = t.id === "waypoints-global-track";
         t.waypoints.forEach((w) => {
-          const groupId = w.groupId || "default";
-          const isGroupVisible = groupVisibilityMap.get(groupId) !== false; // Default to true if not found
-
-          if (isGroupVisible) {
-            list.push({
-              ...w,
-              color: w.color || t.color, // Fallback to track color if none set
-            });
+          if (isGlobalTrack) {
+            const groupId = w.groupId || "default";
+            if (groupVisibilityMap.get(groupId) === false) return;
           }
+          list.push({ ...w, color: w.color || t.color });
         });
       }
     });
     return list;
   }, [tracks, waypointGroups, routeCollections]);
+
+  // Waypoints for the SIDEBAR Marcadores tab: ALL from waypoints-global-track (eye only hides from map)
+  const sidebarWaypoints = useMemo(() => {
+    const globalTrack = tracks.find((t) => t.id === "waypoints-global-track");
+    return globalTrack?.waypoints || [];
+  }, [tracks]);
+
+  // Same reference — keep allGlobalWaypoints as alias for any consumer expecting it
+  const allGlobalWaypoints = sidebarWaypoints;
 
   // Compute tracks with reactive collection visibility applied
   const tracksWithCollectionVisibility = useMemo(() => {
@@ -770,30 +768,6 @@ function AppContent() {
     setIsWptModalOpen(true);
   }, []);
 
-  // Directly export the active route track to GPX
-  const handleExportGpxDirect = useCallback(async () => {
-    const activeTrack = tracks.find((t) => t.id === activeTrackId);
-    if (!activeTrack) {
-      customAlert("Por favor, selecciona una ruta activa de la biblioteca para exportar.");
-      return;
-    }
-
-    if (activeTrack.points.length === 0 && activeTrack.waypoints.length === 0) {
-      customAlert("No hay ruta ni marcas en la ruta activa para exportar.");
-      return;
-    }
-
-    const gpxString = exportToGPX(activeTrack.name, activeTrack.points, activeTrack.waypoints);
-    const blob = new Blob([gpxString], { type: "application/gpx+xml" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${activeTrack.name.replace(/\s+/g, "_") || "ruta_summit"}.gpx`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  }, [tracks, activeTrackId, customAlert]);
 
   // Handle clicking a waypoint on map to edit it
   const handleEditWaypoint = useCallback((wpt: Waypoint) => {
@@ -802,23 +776,20 @@ function AppContent() {
     setIsWptModalOpen(true);
   }, []);
 
-  // Handle pre-filling waypoint modal from an OSM POI template
+  // Import an OSM POI directly as a waypoint (no modal)
   const handleAddOsmPoi = useCallback((poi: any) => {
-    const templateWaypoint: Waypoint = {
-      id: `temp-${Date.now()}`,
+    addWaypoint({
       name: poi.name,
       lat: poi.lat,
       lng: poi.lng,
       icon: poi.icon || "mountain",
-      note: poi.note || `Altitud: ${poi.elevation ? `${poi.elevation}m` : "No disponible"}`,
+      note: poi.note || (poi.elevation ? `Altitud: ${poi.elevation}m` : ""),
       color: poi.color || "#10b981",
       groupId: "default",
       completed: false,
-    };
-    setEditingWaypoint(templateWaypoint);
-    setNewWptCoords(null);
-    setIsWptModalOpen(true);
-  }, []);
+      elevation: poi.elevation,
+    });
+  }, [addWaypoint]);
 
   // Save Waypoint (new, edited, or template imported)
   const handleSaveWaypoint = useCallback(
@@ -930,7 +901,7 @@ function AppContent() {
         routeName={routeName}
         setRouteName={setRouteName}
         points={points}
-        waypoints={visibleWaypoints} // Pass all visible waypoints to display in tab
+        waypoints={sidebarWaypoints} // Only global waypoints for the Marcadores tab
         tracks={tracks}
         activeTrackId={activeTrackId}
         setActiveTrackId={setActiveTrackId}
@@ -951,12 +922,17 @@ function AppContent() {
         onImportRoute={importRouteData}
         onFlyToCoords={handleFlyToCoords}
         onDeleteWaypoint={removeWaypoint}
+        onDeleteWaypoints={removeWaypoints}
+        onAddWaypointToMarkers={addWaypointToMarkers}
+        onAddWaypointToTrack={addWaypointToTrack}
+        allGlobalWaypoints={allGlobalWaypoints}
         onEditWaypoint={handleEditWaypoint}
         onUpdateWaypoint={updateWaypoint}
         onCreateNewTrack={createNewTrack}
         onDeleteTrack={deleteTrack}
         onDeleteMultipleTracks={deleteMultipleTracks}
         onToggleTrackVisibility={toggleTrackVisibility}
+        onToggleTrackPublic={toggleTrackPublic}
         onSetTrackColor={setTrackColor}
         onMergeTracks={mergeTracks}
         onReverseTrack={reverseTrack}
@@ -984,7 +960,9 @@ function AppContent() {
         onDeleteWaypointGroup={deleteWaypointGroup}
         onUpdateWaypointGroup={updateWaypointGroup}
         onToggleWaypointGroupVisibility={toggleWaypointGroupVisibility}
+        onToggleGroupPublic={toggleGroupPublic}
         onToggleWaypointCompleted={toggleWaypointCompleted}
+        onFetchCommunityContent={fetchCommunityContent}
         routeCollections={routeCollections}
         onAddRouteCollection={addRouteCollection}
         onDeleteRouteCollection={deleteRouteCollection}
@@ -1061,6 +1039,10 @@ function AppContent() {
         onChangeSlopeShadingOpacity={setSlopeShadingOpacity}
         isRouteEditPanelOpen={isRouteEditPanelOpen}
         setIsRouteEditPanelOpen={setIsRouteEditPanelOpen}
+        applySimplifyTrack={applySimplifyTrack}
+        trimTrack={trimTrack}
+        applySmoothTrack={applySmoothTrack}
+        applyRemoveOutliers={applyRemoveOutliers}
         libraryImages={libraryImages}
         libraryUploading={libraryUploading}
         onAddLibraryImage={addLibraryImage}
@@ -1068,6 +1050,7 @@ function AppContent() {
         onRenameLibraryImage={renameLibraryImage}
         selectedSplitNumber={selectedSplitNumber}
         onSelectSplit={setSelectedSplitNumber}
+        onHighlightWpt={setHighlightedWptId}
       />
 
       {/* Point Info Drawer expanding the Sidebar */}
@@ -1075,33 +1058,26 @@ function AppContent() {
       {!isSidebarCollapsed && markedLocation && (
         <div
           className="absolute w-[340px] md:w-[380px] border-r border-[#1b3d2b] bg-[#131b17]/95 shadow-2xl backdrop-blur-md overflow-hidden flex flex-col z-[9998] animate-slide-in-left pointer-events-auto transition-all duration-300"
-          style={{ left: isSidebarCollapsed ? 64 : 380, marginTop: 144, height: 'calc(100vh - 144px)' }}
+          style={{ left: isSidebarCollapsed ? 64 : 380, top: 144, height: 'calc(100vh - 144px)' }}
         >
           {/* Panel Header (Styled like GaiaGPS Premium Card) */}
-          <div className="flex items-center justify-between p-5 border-b border-[#1b3d2b]/40 bg-[#0c120f]/60 select-none">
+          <div className="flex items-center justify-between h-14 px-4 border-b border-[#1b3d2b]/40 bg-[#0c120f]/60 select-none shrink-0">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-full bg-[#1b3d2b]/25 border border-[#1b3d2b]/60 flex items-center justify-center text-emerald-400 shrink-0 shadow-md">
-                <svg className="w-5 h-5 text-emerald-400 fill-current" viewBox="0 0 24 24">
+              <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0 shadow-md">
+                <svg className="w-4 h-4 text-emerald-400 fill-current" viewBox="0 0 24 24">
                   <path d="M12 2L2 22h20L12 2zm0 4l6.5 13H5.5L12 6z"/>
                 </svg>
               </div>
-              <div className="min-w-0">
-                <h3 className="text-sm font-black text-slate-100 tracking-wide truncate">
+              <div className="min-w-0 flex flex-col justify-center">
+                <h3 className="text-xs font-bold text-slate-200 truncate leading-tight">
                   {markedLocationDetails.loading
                     ? "Buscando..."
                     : (markedLocationDetails.osmName || markedLocationDetails.address?.split(',')?.[0] || "Ubicación Marcada")}
                 </h3>
-                {/* OSM type badge */}
-                {!markedLocationDetails.loading && (markedLocationDetails.osmClass || markedLocationDetails.osmType) && (
-                  <span className="inline-block mt-0.5 text-[8.5px] font-bold uppercase tracking-wider text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2 py-0.5">
-                    {getOsmTypeLabel(markedLocationDetails.osmClass, markedLocationDetails.osmType) ?? `${markedLocationDetails.osmClass} · ${markedLocationDetails.osmType}`}
-                  </span>
-                )}
-                <p className="text-[10.5px] text-slate-400 font-mono mt-0.5 select-all leading-none">
-                  {markedLocation.lat.toFixed(5)}, {markedLocation.lng.toFixed(5)}
-                  {markedLocationDetails.elevation !== null && (
-                    <span className="text-emerald-400/90 font-sans font-semibold"> • {useImperial ? `${Math.round(markedLocationDetails.elevation * 3.28084)} ft` : `${Math.round(markedLocationDetails.elevation)} m`}</span>
-                  )}
+                <p className="text-[9px] text-emerald-400/80 font-bold uppercase tracking-wider truncate mt-0.5 leading-none">
+                  {markedLocationDetails.loading
+                    ? "Cargando info..."
+                    : (getOsmTypeLabel(markedLocationDetails.osmClass, markedLocationDetails.osmType) ?? "Ubicación en el mapa")}
                 </p>
               </div>
             </div>
@@ -1122,6 +1098,46 @@ function AppContent() {
               </div>
             ) : (
               <>
+                {/* Dedicated coordinates and altitude block */}
+                <div className="grid grid-cols-2 gap-2 bg-[#0c120f]/40 p-3 rounded-xl border border-[#1b3d2b]/20 text-[11px] select-text shrink-0">
+                  <div className="space-y-0.5 min-w-0">
+                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide block">Coordenadas</span>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <p className="font-mono text-slate-300 truncate text-[10.5px]">
+                        {markedLocation.lat.toFixed(5)}, {markedLocation.lng.toFixed(5)}
+                      </p>
+                      <button
+                        onClick={() => {
+                          const coordStr = formatCoordinatesByFormat(markedLocation.lat, markedLocation.lng, coordinateFormat);
+                          navigator.clipboard.writeText(coordStr);
+                          setCopiedCoords(true);
+                          setTimeout(() => setCopiedCoords(false), 2000);
+                        }}
+                        className="p-1 rounded hover:bg-[#1b3d2b]/30 text-slate-500 hover:text-emerald-400 transition-all cursor-pointer shrink-0"
+                        title="Copiar Coordenadas"
+                      >
+                        {copiedCoords ? (
+                          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="20 6 9 17 4 12"/>
+                          </svg>
+                        ) : (
+                          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                          </svg>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="space-y-0.5 border-l border-[#1b3d2b]/15 pl-3">
+                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide block">Altitud</span>
+                    <p className="font-sans font-bold text-emerald-400 text-xs mt-0.5">
+                      {markedLocationDetails.elevation !== null
+                        ? (useImperial ? `${Math.round(markedLocationDetails.elevation * 3.28084)} ft` : `${Math.round(markedLocationDetails.elevation)} m`)
+                        : "No disponible"}
+                    </p>
+                  </div>
+                </div>
                 {/* Clean Location Context — skip leading POI name since it's in the header */}
                 {markedLocationDetails.address && (
                   <div className="text-[11px] text-slate-400 bg-[#0c120f]/20 border border-[#1b3d2b]/15 px-3.5 py-2.5 rounded-lg leading-relaxed select-text flex items-center justify-between gap-2">
@@ -1466,6 +1482,7 @@ function AppContent() {
             customLayers={customLayers}
             showSlopeShading={showSlopeShading}
             slopeShadingOpacity={slopeShadingOpacity}
+            highlightedWptId={highlightedWptId}
           />
 
           {/* ── Unified right-side vertical button group ── */}
@@ -1535,82 +1552,6 @@ function AppContent() {
                 Atajos de Teclado (?)
               </span>
             </div>
-
-            {/* Tools sub-panel — only when drawing is active */}
-            {isDrawing && (
-              <>
-                <div className="h-[1px] bg-[#1b3d2b]/60 mx-1 my-0.5" />
-
-                {/* Add Waypoint at center */}
-                <div className="relative group">
-                  <button
-                    onClick={() => { if (mapCenter) handleRightClickMap(mapCenter[0], mapCenter[1]); }}
-                    className="w-10 h-10 rounded-xl bg-[#131b17]/95 border border-[#1b3d2b] hover:border-emerald-500/30 text-slate-300 hover:text-emerald-400 transition-all flex items-center justify-center cursor-pointer"
-                  >
-                    <MapPin className="w-[18px] h-[18px]" />
-                  </button>
-                  <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
-                    Añadir Marca en Centro
-                  </span>
-                </div>
-
-                {/* Drawing active indicator */}
-                <div className="relative group">
-                  <button
-                    onClick={() => setIsDrawing(false)}
-                    className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.2)] animate-pulse flex items-center justify-center cursor-pointer"
-                  >
-                    <Route className="w-[18px] h-[18px]" />
-                  </button>
-                  <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
-                    Dibujo activo — clic para finalizar
-                  </span>
-                </div>
-
-                {/* Area selection */}
-                <div className="relative group">
-                  <button
-                    onClick={() => setIsSelectingArea((prev) => !prev)}
-                    className={`w-10 h-10 rounded-xl border transition-all flex items-center justify-center cursor-pointer ${
-                      isSelectingArea
-                        ? "bg-blue-500/20 border-blue-500/40 text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.3)] animate-pulse"
-                        : "bg-[#131b17]/95 border-[#1b3d2b] hover:border-blue-500/30 text-slate-300 hover:text-blue-400"
-                    }`}
-                  >
-                    <Square className="w-[16px] h-[16px] border-dashed border border-current rounded-sm" />
-                  </button>
-                  <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
-                    Selección por Área
-                  </span>
-                </div>
-
-                {/* Import GPX */}
-                <div className="relative group">
-                  <button
-                    onClick={() => document.getElementById("gpx-upload-input")?.click()}
-                    className="w-10 h-10 rounded-xl bg-[#131b17]/95 border border-[#1b3d2b] hover:border-emerald-500/30 text-slate-300 hover:text-emerald-400 transition-all flex items-center justify-center cursor-pointer"
-                  >
-                    <Upload className="w-[18px] h-[18px]" />
-                  </button>
-                  <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
-                    Importar GPX / KML
-                  </span>
-                </div>
-
-                {/* Export GPX */}
-                <div className="relative group">
-                  <button
-                    onClick={handleExportGpxDirect}
-                    className="w-10 h-10 rounded-xl bg-[#131b17]/95 border border-[#1b3d2b] hover:border-emerald-500/30 text-slate-300 hover:text-emerald-400 transition-all flex items-center justify-center cursor-pointer"
-                  >
-                    <Download className="w-[18px] h-[18px]" />
-                  </button>
-                  <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
-                    Exportar GPX
-                  </span>
-                </div>
-              </>
-            )}
           </div>
 
 
@@ -1706,322 +1647,7 @@ function AppContent() {
             )}
           </div>
 
-          {/* Floating Route Edit Toolbar (top center, horizontal)
-              When the route-edit portal is open it overlays the left 380px of the map div,
-              so we shift the center to the midpoint of the remaining visible area. */}
-          {activeTrackId && (
-            <div
-              className="absolute top-4 z-[4000] pointer-events-auto select-none animate-fade-in flex flex-col items-center gap-2"
-              style={{
-                left: isRouteEditPanelOpen ? 'calc(190px + 50%)' : '50%',
-                transform: 'translateX(-50%)',
-              }}
-            >
-              <div className="flex flex-row items-center gap-0.5 bg-[#131b17]/95 border border-[#1b3d2b] rounded-2xl px-2 py-1.5 shadow-2xl backdrop-blur-md">
 
-                {/* Undo */}
-                <div className="relative group">
-                  <button
-                    onClick={undo}
-                    disabled={!canUndo}
-                    className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all border ${
-                      canUndo
-                        ? "border-transparent hover:bg-white/5 hover:border-white/10 text-slate-300 hover:text-emerald-400 cursor-pointer"
-                        : "border-transparent text-slate-600 opacity-30 cursor-not-allowed"
-                    }`}
-                  >
-                    <Undo2 className="w-[17px] h-[17px]" />
-                  </button>
-                  <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
-                    Deshacer (Ctrl+Z)
-                  </span>
-                </div>
-
-                {/* Redo */}
-                <div className="relative group">
-                  <button
-                    onClick={redo}
-                    disabled={!canRedo}
-                    className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all border ${
-                      canRedo
-                        ? "border-transparent hover:bg-white/5 hover:border-white/10 text-slate-300 hover:text-emerald-400 cursor-pointer"
-                        : "border-transparent text-slate-600 opacity-30 cursor-not-allowed"
-                    }`}
-                  >
-                    <Redo2 className="w-[17px] h-[17px]" />
-                  </button>
-                  <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
-                    Rehacer (Ctrl+Y)
-                  </span>
-                </div>
-
-                {/* Separator */}
-                <div className="h-5 w-[1px] bg-[#1b3d2b]/70 mx-1 self-center" />
-
-                {/* Draw Route */}
-                <div className="relative group">
-                  <button
-                    onClick={() => {
-                      setIsDrawing(!isDrawing);
-                      if (isSplitting) setIsSplitting(false);
-                      if (isEditingRoute) setIsEditingRoute(false);
-                      if (isCleaningArea) setIsCleaningArea(false);
-                    }}
-                    className={`w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-all border ${
-                      isDrawing
-                        ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.25)] animate-pulse"
-                        : "border-transparent hover:bg-emerald-500/10 hover:border-emerald-500/20 text-slate-300 hover:text-emerald-400"
-                    }`}
-                  >
-                    {loading ? <Loader className="w-4 h-4 animate-spin" /> : <Route className="w-[17px] h-[17px]" />}
-                  </button>
-                  <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
-                    {isDrawing ? "Finalizar Dibujo" : "Dibujar Ruta (K)"}
-                  </span>
-                </div>
-
-                {/* Split Track */}
-                {points.length > 3 && (
-                  <div className="relative group">
-                    <button
-                      onClick={() => {
-                        setIsSplitting(!isSplitting);
-                        if (isDrawing) setIsDrawing(false);
-                        if (isEditingRoute) setIsEditingRoute(false);
-                      }}
-                      className={`w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-all border ${
-                        isSplitting
-                          ? "bg-orange-500/20 border-orange-500/40 text-orange-400 shadow-[0_0_10px_rgba(249,115,22,0.25)]"
-                          : "border-transparent hover:bg-orange-500/10 hover:border-orange-500/20 text-slate-300 hover:text-orange-400"
-                      }`}
-                    >
-                      <Scissors className="w-[17px] h-[17px]" />
-                    </button>
-                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
-                      {isSplitting ? "Cancelar División" : "Dividir Ruta"}
-                    </span>
-                  </div>
-                )}
-
-                {/* Reverse Track */}
-                {points.length > 1 && (
-                  <div className="relative group">
-                    <button
-                      onClick={() => reverseTrack(activeTrackId)}
-                      className="w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer border border-transparent hover:bg-cyan-500/10 hover:border-cyan-500/20 text-slate-300 hover:text-cyan-400 transition-all"
-                    >
-                      <ArrowLeftRight className="w-[17px] h-[17px]" />
-                    </button>
-                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
-                      Invertir Ruta
-                    </span>
-                  </div>
-                )}
-
-                {/* Round Trip */}
-                {points.length > 1 && !isDrawing && (
-                  <div className="relative group">
-                    <button
-                      onClick={() => roundTripTrack(activeTrackId)}
-                      className="w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer border border-transparent hover:bg-emerald-500/10 hover:border-emerald-500/20 text-slate-300 hover:text-emerald-400 transition-all"
-                    >
-                      <RefreshCw className="w-[17px] h-[17px]" />
-                    </button>
-                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
-                      Ida y Vuelta (Bucle)
-                    </span>
-                  </div>
-                )}
-
-                {/* Edit Route Vertices */}
-                {points.length > 0 && !isDrawing && (
-                  <div className="relative group">
-                    <button
-                      onClick={() => {
-                        setIsEditingRoute(!isEditingRoute);
-                        if (isSplitting) setIsSplitting(false);
-                      }}
-                      className={`w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-all border ${
-                        isEditingRoute
-                          ? "bg-violet-500/20 border-violet-500/40 text-violet-400 shadow-[0_0_10px_rgba(139,92,246,0.25)]"
-                          : "border-transparent hover:bg-violet-500/10 hover:border-violet-500/20 text-slate-300 hover:text-violet-400"
-                      }`}
-                    >
-                      <Edit2 className="w-[17px] h-[17px]" />
-                    </button>
-                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
-                      {isEditingRoute ? "Finalizar Edición" : "Editar Vértices (E)"}
-                    </span>
-                  </div>
-                )}
-
-                {/* Clean Area */}
-                {points.length > 2 && !isDrawing && (
-                  <div className="relative group">
-                    <button
-                      onClick={() => setIsCleaningArea(!isCleaningArea)}
-                      className={`w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-all border ${
-                        isCleaningArea
-                          ? "bg-red-500/20 border-red-500/40 text-red-400 shadow-[0_0_10px_rgba(239,68,68,0.25)] animate-pulse"
-                          : "border-transparent hover:bg-red-500/10 hover:border-red-500/20 text-slate-300 hover:text-red-400"
-                      }`}
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="w-[17px] h-[17px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
-                    </button>
-                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
-                      {isCleaningArea ? "Cancelar Limpieza" : "Limpiar por Rectángulo"}
-                    </span>
-                  </div>
-                )}
-
-                {/* Simplify Track */}
-                {points.length > 2 && !isDrawing && (
-                  <div className="relative group">
-                    <button
-                      onClick={() => {
-                        setIsRouteEditPanelOpen(true);
-                        setShowSimplifyPanel(true);
-                        setShowTrimPanel(false);
-                      }}
-                      className={`w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-all border ${
-                        showSimplifyPanel
-                          ? "bg-amber-500/20 border-amber-500/40 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.25)] animate-pulse"
-                          : "border-transparent hover:bg-amber-500/10 hover:border-amber-500/20 text-slate-300 hover:text-amber-400"
-                      }`}
-                    >
-                      <Trees className="w-[17px] h-[17px]" />
-                    </button>
-                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
-                      Simplificar Puntos GPS
-                    </span>
-                  </div>
-                )}
-
-                {/* Trim/Crop Track */}
-                {points.length > 2 && !isDrawing && (
-                  <div className="relative group">
-                    <button
-                      onClick={() => {
-                        setIsRouteEditPanelOpen(true);
-                        setShowTrimPanel(true);
-                        setShowSimplifyPanel(false);
-                      }}
-                      className={`w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-all border ${
-                        showTrimPanel
-                          ? "bg-rose-500/20 border-rose-500/40 text-rose-400 shadow-[0_0_10px_rgba(244,63,94,0.25)] animate-pulse"
-                          : "border-transparent hover:bg-rose-500/10 hover:border-rose-500/20 text-slate-300 hover:text-rose-400"
-                      }`}
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="w-[17px] h-[17px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22V12h10"/><path d="M12 12L3 3"/><path d="M16 12l6 6"/></svg>
-                    </button>
-                    <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
-                      Recortar Inicio/Fin
-                    </span>
-                  </div>
-                )}
-
-
-              </div>
-
-              {/* Simplify Panel */}
-              {showSimplifyPanel && points.length > 2 && activeTrackId && (
-                <div className="w-[360px] max-w-[90vw] space-y-3 p-4 rounded-2xl bg-[#131b17]/95 border border-amber-500/30 shadow-2xl backdrop-blur-md animate-slide-up">
-                  <div className="flex items-center justify-between border-b border-amber-500/10 pb-1.5">
-                    <span className="text-[10px] font-extrabold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-                      🌲 Simplificar GPS
-                    </span>
-                    <button
-                      onClick={() => setShowSimplifyPanel(false)}
-                      className="text-slate-500 hover:text-amber-400 transition-colors cursor-pointer"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
-                      <span>Tolerancia (Ramer–Douglas–Peucker):</span>
-                      <span className="font-mono font-bold text-amber-400">{simplifyTolerance} m</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={1}
-                      max={50}
-                      value={simplifyTolerance}
-                      onChange={(e) => setSimplifyTolerance(parseInt(e.target.value))}
-                      className="w-full accent-amber-500 cursor-pointer h-1.5 rounded-full"
-                    />
-                    <p className="text-[9.5px] text-slate-500 mt-1.5">Mayor tolerancia = menos puntos, ruta más suave.</p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      applySimplifyTrack(activeTrackId, simplifyTolerance);
-                      setShowSimplifyPanel(false);
-                    }}
-                    className="w-full py-2 rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
-                  >
-                    🌲 Aplicar Simplificación ({points.length} pts → reducir)
-                  </button>
-                </div>
-              )}
-
-              {/* Trim/Crop Panel */}
-              {showTrimPanel && points.length > 2 && activeTrackId && (
-                <div className="w-[360px] max-w-[90vw] space-y-3 p-4 rounded-2xl bg-[#131b17]/95 border border-rose-500/30 shadow-2xl backdrop-blur-md animate-slide-up">
-                  <div className="flex items-center justify-between border-b border-rose-500/10 pb-1.5">
-                    <span className="text-[10px] font-extrabold text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
-                      ✂️ Recortar Inicio / Fin
-                    </span>
-                    <button
-                      onClick={() => setShowTrimPanel(false)}
-                      className="text-slate-500 hover:text-rose-400 transition-colors cursor-pointer"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                  <div className="space-y-2.5">
-                    <div>
-                      <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
-                        <span>Desde punto:</span>
-                        <span className="font-mono font-bold text-rose-400">{trimStart + 1} / {points.length}</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={0}
-                        max={Math.max(0, trimEnd - 1)}
-                        value={trimStart}
-                        onChange={(e) => setTrimStart(parseInt(e.target.value))}
-                        className="w-full accent-rose-500 cursor-pointer h-1.5 rounded-full"
-                      />
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
-                        <span>Hasta punto:</span>
-                        <span className="font-mono font-bold text-rose-400">{trimEnd + 1} / {points.length}</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={Math.min(trimStart + 1, points.length - 1)}
-                        max={points.length - 1}
-                        value={trimEnd}
-                        onChange={(e) => setTrimEnd(parseInt(e.target.value))}
-                        className="w-full accent-rose-500 cursor-pointer h-1.5 rounded-full"
-                      />
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => {
-                      trimTrack(activeTrackId, trimStart, trimEnd);
-                      setShowTrimPanel(false);
-                    }}
-                    disabled={trimStart >= trimEnd}
-                    className="w-full py-2 rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-bold flex items-center justify-center gap-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                  >
-                    ✂️ Aplicar Recorte ({trimEnd - trimStart} puntos)
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
           </div>
 
           {/* Street View Panel (Split Screen) */}
@@ -2143,7 +1769,7 @@ function AppContent() {
       {/* Waypoint Modal */}
       <WaypointModal
         isOpen={isWptModalOpen}
-        onClose={() => setIsWptModalOpen(false)}
+        onClose={() => { setIsWptModalOpen(false); setEditingWaypoint(null); setNewWptCoords(null); }}
         onSave={handleSaveWaypoint}
         groups={waypointGroups}
         initialData={
