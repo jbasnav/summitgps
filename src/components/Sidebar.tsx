@@ -150,9 +150,9 @@ interface SidebarProps {
   onReverseTrack: (trackId: string) => void;
   isEditingRoute: boolean;
   setIsEditingRoute: (editing: boolean) => void;
-  onTrimTrack: (trackId: string, startIndex: number, endIndex: number) => void;
   onRoundTripTrack: (trackId: string) => void;
-  applySimplifyTrack?: (id: string, tolerance: number) => void;
+  isRouteEditPanelOpen: boolean;
+  setIsRouteEditPanelOpen: (open: boolean) => void;
   cleanTrackArea?: (id: string, bounds: { north: number; south: number; east: number; west: number }, keepInside: boolean) => void;
   isCleaningArea?: boolean;
   setIsCleaningArea?: (cleaning: boolean) => void;
@@ -168,13 +168,7 @@ interface SidebarProps {
   isStreetViewActive: boolean;
   onToggleStreetView: () => void;
 
-  // Route edit panel & sub-panel state (lifted to App.tsx)
-  isRouteEditPanelOpen: boolean;
-  setIsRouteEditPanelOpen: (open: boolean) => void;
-  showTrimPanel: boolean;
-  setShowTrimPanel: (show: boolean) => void;
-  showSimplifyPanel: boolean;
-  setShowSimplifyPanel: (show: boolean) => void;
+
 
   // Image library props
   libraryImages: LibraryImage[];
@@ -289,9 +283,7 @@ export function Sidebar({
   onReverseTrack: _onReverseTrack,
   isEditingRoute: _isEditingRoute,
   setIsEditingRoute,
-  onTrimTrack,
   onRoundTripTrack: _onRoundTripTrack,
-  applySimplifyTrack,
   cleanTrackArea: _cleanTrackArea,
   isCleaningArea: _isCleaningArea,
   setIsCleaningArea: _setIsCleaningArea,
@@ -317,10 +309,6 @@ export function Sidebar({
   onChangeSlopeShadingOpacity,
   isRouteEditPanelOpen,
   setIsRouteEditPanelOpen,
-  showTrimPanel,
-  setShowTrimPanel,
-  showSimplifyPanel,
-  setShowSimplifyPanel,
   libraryImages,
   libraryUploading,
   onAddLibraryImage,
@@ -347,22 +335,10 @@ export function Sidebar({
   ];
   const [heroImage] = useState(() => HERO_IMAGES[Math.floor(Math.random() * HERO_IMAGES.length)]);
   
-  // Local states for Trim/Crop Track (showTrimPanel/showSimplifyPanel come from props)
-  const [simplifyTolerance, setSimplifyTolerance] = useState(5);
   // Image library upload form state
   const [libUploadName, setLibUploadName] = useState("");
   const [libEditingId, setLibEditingId] = useState<string | null>(null);
   const [libEditingName, setLibEditingName] = useState("");
-  const [trimStart, setTrimStart] = useState(0);
-  const [trimEnd, setTrimEnd] = useState(0);
-
-  // Sync trim sliders with active track points length
-  React.useEffect(() => {
-    if (points && points.length > 0) {
-      setTrimStart(0);
-      setTrimEnd(points.length - 1);
-    }
-  }, [points]);
   
   const displayTracks = tracks.filter((t) => t.id !== "waypoints-global-track");
   
@@ -1026,12 +1002,12 @@ export function Sidebar({
         <div className="w-[64px] h-full bg-[#0c120f]/95 border-r border-[#1b3d2b] flex flex-col items-center justify-between py-5 text-slate-400 select-none z-10">
           <div className="flex flex-col items-center gap-6 w-full">
             {/* Logo */}
-            <div className="w-8 h-8 rounded-lg bg-[#0d1a12] border border-emerald-500/20 flex items-center justify-center shadow-md shrink-0">
-              <Compass className="w-4 h-4 text-emerald-400" />
+            <div className="w-10 h-10 rounded-xl bg-[#0d1a12] border border-emerald-500/20 flex items-center justify-center shadow-md shrink-0">
+              <Compass className="w-5 h-5 text-emerald-400" />
             </div>
 
             {/* Vertical Icons */}
-            <div className="flex flex-col gap-4 w-full px-2">
+            <div className="flex flex-col items-center gap-4 w-full px-2">
               {[
                 { id: "layers" as TabId, label: "Capas", icon: LayersIcon },
                 { id: "route" as TabId, label: "Rutas", icon: Route },
@@ -2142,82 +2118,7 @@ export function Sidebar({
                     </p>
                   </div>
 
-                  {/* ── TRIM PANEL ── shown when toolbar "Recortar" button is active */}
-                  {showTrimPanel && points.length > 2 && activeTrackId && (
-                    <div className="space-y-3 p-3 rounded-xl bg-rose-500/[0.06] border border-rose-500/20 animate-fade-in">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-rose-300 uppercase tracking-wider flex items-center gap-1.5">
-                          ✂️ Recortar Inicio / Fin
-                        </span>
-                        <button
-                          onClick={() => setShowTrimPanel(false)}
-                          className="text-slate-500 hover:text-rose-400 transition-colors cursor-pointer"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                      <div className="space-y-2.5">
-                        <div>
-                          <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
-                            <span>Desde punto:</span>
-                            <span className="font-mono text-rose-300">{trimStart + 1} / {points.length}</span>
-                          </div>
-                          <input type="range" min={0} max={Math.max(0, trimEnd - 1)} value={trimStart}
-                            onChange={(e) => setTrimStart(parseInt(e.target.value))}
-                            className="w-full accent-rose-500 cursor-pointer h-1.5 rounded-full" />
-                        </div>
-                        <div>
-                          <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
-                            <span>Hasta punto:</span>
-                            <span className="font-mono text-rose-300">{trimEnd + 1} / {points.length}</span>
-                          </div>
-                          <input type="range" min={Math.min(trimStart + 1, points.length - 1)} max={points.length - 1} value={trimEnd}
-                            onChange={(e) => setTrimEnd(parseInt(e.target.value))}
-                            className="w-full accent-rose-500 cursor-pointer h-1.5 rounded-full" />
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => { onTrimTrack(activeTrackId, trimStart, trimEnd); setShowTrimPanel(false); }}
-                        disabled={trimStart >= trimEnd}
-                        className="w-full py-2 rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-bold flex items-center justify-center gap-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                      >
-                        ✂️ Aplicar Recorte ({trimEnd - trimStart} puntos)
-                      </button>
-                    </div>
-                  )}
 
-                  {/* ── SIMPLIFY PANEL ── shown when toolbar "Simplificar" button is active */}
-                  {showSimplifyPanel && points.length > 2 && activeTrackId && (
-                    <div className="space-y-3 p-3 rounded-xl bg-amber-500/[0.06] border border-amber-500/20 animate-fade-in">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
-                          🌲 Simplificar GPS
-                        </span>
-                        <button
-                          onClick={() => setShowSimplifyPanel(false)}
-                          className="text-slate-500 hover:text-amber-400 transition-colors cursor-pointer"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                      <div>
-                        <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
-                          <span>Tolerancia (Ramer–Douglas–Peucker):</span>
-                          <span className="font-mono text-amber-300">{simplifyTolerance} m</span>
-                        </div>
-                        <input type="range" min={1} max={50} value={simplifyTolerance}
-                          onChange={(e) => setSimplifyTolerance(parseInt(e.target.value))}
-                          className="w-full accent-amber-500 cursor-pointer h-1.5 rounded-full" />
-                        <p className="text-[9.5px] text-slate-500 mt-1">Mayor tolerancia = menos puntos, ruta más suave.</p>
-                      </div>
-                      <button
-                        onClick={() => { if (applySimplifyTrack) { applySimplifyTrack(activeTrackId, simplifyTolerance); setShowSimplifyPanel(false); } }}
-                        className="w-full py-2 rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
-                      >
-                        🌲 Aplicar Simplificación ({points.length} pts → reducir)
-                      </button>
-                    </div>
-                  )}
 
                   {/* Route metrics display */}
                   {points.length > 0 && (

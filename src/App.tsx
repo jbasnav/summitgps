@@ -408,6 +408,19 @@ function AppContent() {
   const [isRouteEditPanelOpen, setIsRouteEditPanelOpen] = useState<boolean>(false);
   const [showTrimPanel, setShowTrimPanel] = useState<boolean>(false);
   const [showSimplifyPanel, setShowSimplifyPanel] = useState<boolean>(false);
+  
+  // Simplify and Trim Panel States
+  const [simplifyTolerance, setSimplifyTolerance] = useState<number>(5);
+  const [trimStart, setTrimStart] = useState<number>(0);
+  const [trimEnd, setTrimEnd] = useState<number>(0);
+
+  // Sync trim sliders with active track points length
+  useEffect(() => {
+    if (points && points.length > 0) {
+      setTrimStart(0);
+      setTrimEnd(points.length - 1);
+    }
+  }, [points]);
   // Splits highlight — which km/mile segment is selected in the SplitsTable
   const [selectedSplitNumber, setSelectedSplitNumber] = useState<number | null>(null);
   const [isStreetViewActive, setIsStreetViewActive] = useState<boolean>(false); // Street View active mode
@@ -952,9 +965,7 @@ function AppContent() {
         canUndo={canUndo}
         canRedo={canRedo}
         onToggleShortcutsModal={useCallback(() => setIsShortcutsModalOpen(prev => !prev), [])}
-        onTrimTrack={trimTrack}
         onRoundTripTrack={roundTripTrack}
-        applySimplifyTrack={applySimplifyTrack}
         cleanTrackArea={cleanTrackArea}
         isCleaningArea={isCleaningArea}
         setIsCleaningArea={setIsCleaningArea}
@@ -1050,10 +1061,6 @@ function AppContent() {
         onChangeSlopeShadingOpacity={setSlopeShadingOpacity}
         isRouteEditPanelOpen={isRouteEditPanelOpen}
         setIsRouteEditPanelOpen={setIsRouteEditPanelOpen}
-        showTrimPanel={showTrimPanel}
-        setShowTrimPanel={setShowTrimPanel}
-        showSimplifyPanel={showSimplifyPanel}
-        setShowSimplifyPanel={setShowSimplifyPanel}
         libraryImages={libraryImages}
         libraryUploading={libraryUploading}
         onAddLibraryImage={addLibraryImage}
@@ -1067,8 +1074,8 @@ function AppContent() {
       {/* Point Info Drawer expanding the Sidebar */}
       {!isSidebarCollapsed && markedLocation && (
         <div
-          className="w-[340px] md:w-[380px] self-start border-r border-[#1b3d2b] bg-[#131b17]/95 shadow-2xl backdrop-blur-md overflow-hidden flex flex-col z-[9998] animate-slide-in-left pointer-events-auto"
-          style={{ marginTop: 144, height: 'calc(100vh - 144px)' }}
+          className="absolute w-[340px] md:w-[380px] border-r border-[#1b3d2b] bg-[#131b17]/95 shadow-2xl backdrop-blur-md overflow-hidden flex flex-col z-[9998] animate-slide-in-left pointer-events-auto transition-all duration-300"
+          style={{ left: isSidebarCollapsed ? 64 : 380, marginTop: 144, height: 'calc(100vh - 144px)' }}
         >
           {/* Panel Header (Styled like GaiaGPS Premium Card) */}
           <div className="flex items-center justify-between p-5 border-b border-[#1b3d2b]/40 bg-[#0c120f]/60 select-none">
@@ -1704,7 +1711,7 @@ function AppContent() {
               so we shift the center to the midpoint of the remaining visible area. */}
           {activeTrackId && (
             <div
-              className="absolute top-4 z-[4000] pointer-events-auto select-none animate-fade-in"
+              className="absolute top-4 z-[4000] pointer-events-auto select-none animate-fade-in flex flex-col items-center gap-2"
               style={{
                 left: isRouteEditPanelOpen ? 'calc(190px + 50%)' : '50%',
                 transform: 'translateX(-50%)',
@@ -1915,6 +1922,104 @@ function AppContent() {
 
 
               </div>
+
+              {/* Simplify Panel */}
+              {showSimplifyPanel && points.length > 2 && activeTrackId && (
+                <div className="w-[360px] max-w-[90vw] space-y-3 p-4 rounded-2xl bg-[#131b17]/95 border border-amber-500/30 shadow-2xl backdrop-blur-md animate-slide-up">
+                  <div className="flex items-center justify-between border-b border-amber-500/10 pb-1.5">
+                    <span className="text-[10px] font-extrabold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                      🌲 Simplificar GPS
+                    </span>
+                    <button
+                      onClick={() => setShowSimplifyPanel(false)}
+                      className="text-slate-500 hover:text-amber-400 transition-colors cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
+                      <span>Tolerancia (Ramer–Douglas–Peucker):</span>
+                      <span className="font-mono font-bold text-amber-400">{simplifyTolerance} m</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={1}
+                      max={50}
+                      value={simplifyTolerance}
+                      onChange={(e) => setSimplifyTolerance(parseInt(e.target.value))}
+                      className="w-full accent-amber-500 cursor-pointer h-1.5 rounded-full"
+                    />
+                    <p className="text-[9.5px] text-slate-500 mt-1.5">Mayor tolerancia = menos puntos, ruta más suave.</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      applySimplifyTrack(activeTrackId, simplifyTolerance);
+                      setShowSimplifyPanel(false);
+                    }}
+                    className="w-full py-2 rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
+                  >
+                    🌲 Aplicar Simplificación ({points.length} pts → reducir)
+                  </button>
+                </div>
+              )}
+
+              {/* Trim/Crop Panel */}
+              {showTrimPanel && points.length > 2 && activeTrackId && (
+                <div className="w-[360px] max-w-[90vw] space-y-3 p-4 rounded-2xl bg-[#131b17]/95 border border-rose-500/30 shadow-2xl backdrop-blur-md animate-slide-up">
+                  <div className="flex items-center justify-between border-b border-rose-500/10 pb-1.5">
+                    <span className="text-[10px] font-extrabold text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
+                      ✂️ Recortar Inicio / Fin
+                    </span>
+                    <button
+                      onClick={() => setShowTrimPanel(false)}
+                      className="text-slate-500 hover:text-rose-400 transition-colors cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <div className="space-y-2.5">
+                    <div>
+                      <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
+                        <span>Desde punto:</span>
+                        <span className="font-mono font-bold text-rose-400">{trimStart + 1} / {points.length}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={Math.max(0, trimEnd - 1)}
+                        value={trimStart}
+                        onChange={(e) => setTrimStart(parseInt(e.target.value))}
+                        className="w-full accent-rose-500 cursor-pointer h-1.5 rounded-full"
+                      />
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
+                        <span>Hasta punto:</span>
+                        <span className="font-mono font-bold text-rose-400">{trimEnd + 1} / {points.length}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={Math.min(trimStart + 1, points.length - 1)}
+                        max={points.length - 1}
+                        value={trimEnd}
+                        onChange={(e) => setTrimEnd(parseInt(e.target.value))}
+                        className="w-full accent-rose-500 cursor-pointer h-1.5 rounded-full"
+                      />
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      trimTrack(activeTrackId, trimStart, trimEnd);
+                      setShowTrimPanel(false);
+                    }}
+                    disabled={trimStart >= trimEnd}
+                    className="w-full py-2 rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-bold flex items-center justify-center gap-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    ✂️ Aplicar Recorte ({trimEnd - trimStart} puntos)
+                  </button>
+                </div>
+              )}
             </div>
           )}
           </div>
