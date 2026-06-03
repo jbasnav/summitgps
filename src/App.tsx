@@ -4,7 +4,7 @@ import { MapContainer } from "./components/MapContainer";
 import { ElevationProfile } from "./components/ElevationProfile";
 import { WaypointModal } from "./components/WaypointModal";
 import { WaypointInfoModal } from "./components/WaypointInfoModal";
-import { Map3DContainer } from "./components/Map3DContainer";
+import { Map3DCesiumModal } from "./components/Map3DCesiumModal";
 import { useRoutePlanner, type Waypoint, type RoutePoint } from "./hooks/useRoutePlanner";
 import { useImageLibrary } from "./hooks/useImageLibrary";
 import type { BaseLayerId, CustomLayer } from "./components/LayerSelector";
@@ -471,6 +471,9 @@ function AppContent() {
   const [showCaminoSantiago,  setShowCaminoSantiago]  = useState(false);
   const [showSpainByBike,     setShowSpainByBike]     = useState(false);
   const [showMountainRefuges, setShowMountainRefuges] = useState(false);
+  const [showHidrografia,    setShowHidrografia]    = useState(false);
+  const [showOcupacionSuelo, setShowOcupacionSuelo] = useState(false);
+  const [showTransportes,    setShowTransportes]    = useState(false);
 
   // Floating Layer Selector & Map Overlay options
   const [isLayerSelectorOpen, setIsLayerSelectorOpen] = useState<boolean>(false);
@@ -1472,22 +1475,14 @@ function AppContent() {
           {/* Left/Top Map Area */}
           <div className={`flex-1 h-full relative ${isStreetViewActive && isStreetViewFullscreen ? 'hidden' : 'flex flex-col'}`}>
 
-          {/* 3D MapLibre view — renders on top when active */}
-          {is3DActive && (
-            <div className="absolute inset-0 z-[3000]">
-              <Map3DContainer
-                tracks={tracksWithCollectionVisibility as any}
-                activeTrackId={activeTrackId}
-                waypoints={waypoints}
-                mapCenter={mapCenter ?? null}
-                mapZoom={mapInstance?.getZoom() ?? 12}
-                showProtectedAreas={showProtectedAreas}
-                showCaminoSantiago={showCaminoSantiago}
-                showSpainByBike={showSpainByBike}
-                showMountainRefuges={showMountainRefuges}
-              />
-            </div>
-          )}
+          {/* 3D modal — CesiumJS globe viewer */}
+          <Map3DCesiumModal
+            isOpen={is3DActive}
+            onClose={() => setIs3DActive(false)}
+            trackPoints={(activeTrackForPrint?.points ?? []) as any}
+            trackColor={activeTrackForPrint?.color ?? "#10b981"}
+            trackName={activeTrackForPrint?.name ?? "Ruta activa"}
+          />
 
           <MapContainer
             tracks={tracksWithCollectionVisibility}
@@ -1559,6 +1554,9 @@ function AppContent() {
             showCaminoSantiago={showCaminoSantiago}
             showSpainByBike={showSpainByBike}
             showMountainRefuges={showMountainRefuges}
+            showHidrografia={showHidrografia}
+            showOcupacionSuelo={showOcupacionSuelo}
+            showTransportes={showTransportes}
           />
           {/* Day/Night solar simulated illumination overlay */}
           {(() => {
@@ -2110,6 +2108,12 @@ function AppContent() {
         onToggleSpainByBike={() => setShowSpainByBike(prev => !prev)}
         showMountainRefuges={showMountainRefuges}
         onToggleMountainRefuges={() => setShowMountainRefuges(prev => !prev)}
+        showHidrografia={showHidrografia}
+        onToggleHidrografia={() => setShowHidrografia(prev => !prev)}
+        showOcupacionSuelo={showOcupacionSuelo}
+        onToggleOcupacionSuelo={() => setShowOcupacionSuelo(prev => !prev)}
+        showTransportes={showTransportes}
+        onToggleTransportes={() => setShowTransportes(prev => !prev)}
         isPlusUser={isPlusUser}
         onOpenPlusModal={() => setIsPlusModalOpen(true)}
       />

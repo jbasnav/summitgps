@@ -98,6 +98,9 @@ interface MapContainerProps {
   showCaminoSantiago?: boolean;
   showSpainByBike?: boolean;
   showMountainRefuges?: boolean;
+  showHidrografia?: boolean;
+  showOcupacionSuelo?: boolean;
+  showTransportes?: boolean;
 }
 
 // Map Tile Providers
@@ -192,6 +195,9 @@ export function MapContainer({
   showCaminoSantiago = false,
   showSpainByBike = false,
   showMountainRefuges = false,
+  showHidrografia = false,
+  showOcupacionSuelo = false,
+  showTransportes = false,
 }: MapContainerProps) {
   const { customConfirm } = useCustomDialog();
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -224,6 +230,9 @@ export function MapContainer({
   const caminoSantiagoRef  = useRef<L.TileLayer.WMS | null>(null);
   const spainByBikeRef     = useRef<L.TileLayer.WMS | null>(null);
   const mountainRefugesRef = useRef<L.TileLayer | null>(null);
+  const hidografiaRef      = useRef<L.TileLayer.WMS | null>(null);
+  const ocupacionSueloRef  = useRef<L.TileLayer.WMS | null>(null);
+  const transportesRef     = useRef<L.TileLayer.WMS | null>(null);
   const markedLocationMarkerRef = useRef<L.Marker | null>(null);
   const pegmanMarkerRef = useRef<L.Marker | null>(null);
   const gridGroupRef = useRef<L.LayerGroup | null>(null);
@@ -465,8 +474,24 @@ export function MapContainer({
     applyWms(showMountainRefuges, mountainRefugesRef as any,
       "https://www.ign.es/wms-inspire/ign-base", "refugio");
 
+    // Hidrografía — ríos, embalses, humedales (IGN INSPIRE)
+    applyWms(showHidrografia, hidografiaRef,
+      "https://servicios.idee.es/wms-inspire/hidrografia",
+      "HY.PhysicalWaters.Waterbodies,HY.PhysicalWaters.LandWaterBoundary,HY.PhysicalWaters.HydroPointOfInterest");
+
+    // Ocupación del suelo — CORINE Land Cover (IGN)
+    applyWms(showOcupacionSuelo, ocupacionSueloRef,
+      "https://servicios.idee.es/wms-inspire/ocupacion-suelo",
+      "LC.LandCoverSurfaces,LU.ExistingLandUse");
+
+    // Red de transportes — carreteras y caminos (IGN)
+    applyWms(showTransportes, transportesRef,
+      "https://servicios.idee.es/wms-inspire/transportes",
+      "TN.RoadTransportNetwork.RoadLink,TN.RailTransportNetwork.RailwayLink");
+
     // No cleanup return — layers persist until explicitly toggled off
-  }, [mapInstance, showProtectedAreas, showCaminoSantiago, showSpainByBike, showMountainRefuges]);
+  }, [mapInstance, showProtectedAreas, showCaminoSantiago, showSpainByBike, showMountainRefuges,
+      showHidrografia, showOcupacionSuelo, showTransportes]);
 
   // Update Base Layer (supporting custom base layers)
   useEffect(() => {
@@ -580,7 +605,7 @@ export function MapContainer({
         }
       } else {
         const slopeLayer = L.tileLayer.wms("https://wms-pendientes.idee.es/pendientes", {
-          layers: "pendientes",
+          layers: "MDP05",
           format: "image/png",
           transparent: true,
           maxZoom: 19,

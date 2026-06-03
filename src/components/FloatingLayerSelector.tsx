@@ -57,6 +57,12 @@ interface FloatingLayerSelectorProps {
   onToggleSpainByBike: () => void;
   showMountainRefuges: boolean;
   onToggleMountainRefuges: () => void;
+  showHidrografia: boolean;
+  onToggleHidrografia: () => void;
+  showOcupacionSuelo: boolean;
+  onToggleOcupacionSuelo: () => void;
+  showTransportes: boolean;
+  onToggleTransportes: () => void;
 
   isPlusUser: boolean;
   onOpenPlusModal: () => void;
@@ -103,6 +109,12 @@ export function FloatingLayerSelector({
   onToggleSpainByBike,
   showMountainRefuges,
   onToggleMountainRefuges,
+  showHidrografia,
+  onToggleHidrografia,
+  showOcupacionSuelo,
+  onToggleOcupacionSuelo,
+  showTransportes,
+  onToggleTransportes,
   isPlusUser,
   onOpenPlusModal,
 }: FloatingLayerSelectorProps) {
@@ -542,6 +554,9 @@ export function FloatingLayerSelector({
                     { key: "caminoSantiago",  label: "⛩️ Caminos de Santiago (IGN)",  value: showCaminoSantiago,  toggle: onToggleCaminoSantiago },
                     { key: "spainByBike",     label: "🚴 Spain by Bike / BTT",        value: showSpainByBike,     toggle: onToggleSpainByBike },
                     { key: "mountainRefuges", label: "🏕️ Refugios de Montaña (OSM)",  value: showMountainRefuges, toggle: onToggleMountainRefuges },
+                    { key: "hidrografia",    label: "💧 Hidrografía (IGN)",           value: showHidrografia,     toggle: onToggleHidrografia },
+                    { key: "ocupacionSuelo", label: "🗺️ Uso del Suelo / CORINE",      value: showOcupacionSuelo,  toggle: onToggleOcupacionSuelo },
+                    { key: "transportes",    label: "🛣️ Red de Transportes (IGN)",    value: showTransportes,     toggle: onToggleTransportes },
                   ].map(({ key, label, value, toggle }) => (
                     <div key={key} className="flex items-center justify-between p-2.5 rounded-2xl bg-[#0c120f]/30 border border-[#1b3d2b] select-none">
                       <span className="text-[11px] text-slate-200 font-medium">{label}</span>

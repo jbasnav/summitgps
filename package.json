@@ -13,6 +13,8 @@
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.106.2",
     "@tailwindcss/vite": "^4.3.0",
+    "@types/three": "^0.184.1",
+    "cesium": "^1.142.0",
     "html2canvas-pro": "^2.0.4",
     "jspdf": "^4.2.1",
     "leaflet": "^1.9.4",
@@ -21,7 +23,9 @@
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "recharts": "^3.8.1",
-    "tailwindcss": "^4.3.0"
+    "tailwindcss": "^4.3.0",
+    "three": "^0.184.0",
+    "vite-plugin-cesium": "^1.2.23"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
