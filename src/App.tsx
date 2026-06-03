@@ -3,6 +3,7 @@ import { Sidebar } from "./components/Sidebar";
 import { MapContainer } from "./components/MapContainer";
 import { ElevationProfile } from "./components/ElevationProfile";
 import { WaypointModal } from "./components/WaypointModal";
+import { WaypointInfoModal } from "./components/WaypointInfoModal";
 import { useRoutePlanner, type Waypoint, type RoutePoint } from "./hooks/useRoutePlanner";
 import { useImageLibrary } from "./hooks/useImageLibrary";
 import type { BaseLayerId, CustomLayer } from "./components/LayerSelector";
@@ -429,6 +430,7 @@ function AppContent() {
   // Waypoint Modal States
   const [isWptModalOpen, setIsWptModalOpen] = useState(false);
   const [editingWaypoint, setEditingWaypoint] = useState<Waypoint | null>(null);
+  const [infoWaypoint, setInfoWaypoint] = useState<Waypoint | null>(null);
   const [newWptCoords, setNewWptCoords] = useState<[number, number] | null>(null);
   const [newWptGroupId, setNewWptGroupId] = useState<string>("default");
 
@@ -802,6 +804,10 @@ function AppContent() {
     setIsWptModalOpen(true);
   }, []);
 
+  const handleShowWaypointInfo = useCallback((wpt: Waypoint) => {
+    setInfoWaypoint(wpt);
+  }, []);
+
   // Import an OSM POI directly as a waypoint (no modal)
   const handleAddOsmPoi = useCallback((poi: any) => {
     addWaypoint({
@@ -878,7 +884,7 @@ function AppContent() {
           : newWptCoords;
 
         if (coords) {
-          addWaypoint({
+          addWaypointToMarkers({
             name: data.name,
             lat: coords[0],
             lng: coords[1],
@@ -896,7 +902,7 @@ function AppContent() {
       setEditingWaypoint(null);
       setNewWptCoords(null);
     },
-    [editingWaypoint, newWptCoords, addWaypoint, updateWaypoint, user]
+    [editingWaypoint, newWptCoords, addWaypoint, addWaypointToMarkers, updateWaypoint, user]
   );
 
   // Handle vertex click splitting action
@@ -957,6 +963,7 @@ function AppContent() {
         onAddWaypointToTrack={addWaypointToTrack}
         allGlobalWaypoints={allGlobalWaypoints}
         onEditWaypoint={handleEditWaypoint}
+        onShowWaypointInfo={handleShowWaypointInfo}
         onUpdateWaypoint={updateWaypoint}
         onCreateNewTrack={createNewTrack}
         onDeleteTrack={deleteTrack}
@@ -1471,6 +1478,7 @@ function AppContent() {
             onAddPoint={addPoint}
             onRightClickMap={handleRightClickMap}
             onEditWaypoint={handleEditWaypoint}
+            onShowWaypointInfo={handleShowWaypointInfo}
             onSplitTrackAt={handleSplitTrackAt}
             waypointGroups={waypointGroups}
             onMapMove={useCallback((lat: number, lng: number) => setMapCenter([lat, lng]), [])}
@@ -1551,6 +1559,21 @@ function AppContent() {
               />
             );
           })()}
+
+          {/* ── Fin Ruta floating button (visible only while drawing) ── */}
+          {isDrawing && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[4500] pointer-events-auto animate-fade-in">
+              <button
+                onClick={() => setIsDrawing(false)}
+                className="flex items-center gap-2.5 px-5 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-black font-extrabold text-sm shadow-2xl shadow-emerald-500/40 transition-all border border-emerald-400/50"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                </svg>
+                Finalizar Ruta
+              </button>
+            </div>
+          )}
 
           {/* ── Unified right-side vertical button group ── */}
           <div className="absolute top-4 right-4 z-[4000] pointer-events-auto flex flex-col gap-2">
@@ -1892,6 +1915,13 @@ function AppContent() {
           </div>
         )}
       </div>
+
+      {/* Waypoint Info Modal */}
+      <WaypointInfoModal
+        isOpen={infoWaypoint !== null}
+        waypoint={infoWaypoint}
+        onClose={() => setInfoWaypoint(null)}
+      />
 
       {/* Waypoint Modal */}
       <WaypointModal

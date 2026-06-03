@@ -195,8 +195,8 @@ export function WaypointModal({
     setImage("");
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = (e?: React.FormEvent | React.MouseEvent) => {
+    e?.preventDefault();
     if (!name.trim()) return;
     onSave({ 
       name, 
@@ -215,7 +215,7 @@ export function WaypointModal({
 
   return (
     <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-4">
-      <div className="w-full max-w-md bg-[#131b17]/95 border border-[#1b3d2b] rounded-2xl shadow-2xl overflow-hidden text-slate-100 flex flex-col max-h-[90vh]">
+      <div className="w-full max-w-2xl bg-[#131b17]/95 border border-[#1b3d2b] rounded-2xl shadow-2xl overflow-hidden text-slate-100 flex flex-col max-h-[95vh]">
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-[#1b3d2b] bg-[#0c120f]">
           <h3 className="text-lg font-bold text-emerald-400 flex items-center gap-2">
@@ -231,248 +231,268 @@ export function WaypointModal({
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-5">
-          {/* Name */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-emerald-400/80 tracking-wider uppercase">
-              Nombre del Lugar
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              placeholder="Ej. Cima de Monte Perdido, Campamento base..."
-              className="w-full bg-[#0a0f0d]/80 border border-[#1b3d2b] rounded-xl px-4 py-3 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 transition-colors"
-            />
-          </div>
+        <form onSubmit={handleSubmit} className="flex-1 p-5 overflow-y-auto">
+          <div className="grid grid-cols-2 gap-5">
 
-          {/* Icon Selector (Categorized Tabs) */}
-          <div className="space-y-3.5 border border-[#1b3d2b] p-4 rounded-2xl bg-[#0c120f]/50">
-            <div className="space-y-1 shrink-0 select-none">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                Filtrar por Categoría
-              </span>
-              <div className="flex gap-1 overflow-x-auto pb-1.5 scrollbar-thin scrollbar-thumb-emerald-500/20">
-                {WAYPOINT_CATEGORIES.map((cat) => (
-                  <button
-                    key={cat.id}
-                    type="button"
-                    onClick={() => setActiveCategory(cat.id)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all border shrink-0 cursor-pointer flex items-center gap-1 ${
-                      activeCategory === cat.id
-                        ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.15)]"
-                        : "bg-[#0b100d] border-white/5 text-slate-400 hover:text-slate-200"
-                    }`}
-                  >
-                    <span>{cat.emoji}</span>
-                    <span>{cat.name}</span>
-                  </button>
-                ))}
+            {/* ── COLUMNA IZQUIERDA ── */}
+            <div className="space-y-4">
+              {/* Name */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-emerald-400/80 tracking-wider uppercase">
+                  Nombre del Lugar
+                </label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                  placeholder="Ej. Cima de Monte Perdido..."
+                  className="w-full bg-[#0a0f0d]/80 border border-[#1b3d2b] rounded-xl px-4 py-2.5 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 transition-colors text-sm"
+                />
               </div>
-            </div>
 
-            <div className="space-y-1">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
-                Selecciona el Icono
-              </span>
-              <div className="grid grid-cols-4 gap-2 max-h-[170px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-emerald-500/20">
-                {WAYPOINT_CATEGORIES.find((c) => c.id === activeCategory)?.icons.map((item) => {
-                  const IconComponent = item.icon;
-                  const isSelected = icon === item.value;
-                  return (
-                    <button
-                      key={item.value}
-                      type="button"
-                      onClick={() => setIcon(item.value)}
-                      className={`flex flex-col items-center justify-center p-2 rounded-xl border text-center transition-all cursor-pointer ${
-                        isSelected
-                          ? "bg-emerald-500/10 border-emerald-400 text-emerald-300 font-medium scale-95"
-                          : "bg-[#0a0f0d]/50 border-white/5 text-slate-400 hover:text-slate-200 hover:bg-[#0c120f]/80"
-                      }`}
-                    >
-                      <IconComponent className={`w-5 h-5 mb-1 ${isSelected ? "text-emerald-400" : "text-slate-400"}`} />
-                      <span className="text-[9px] leading-tight truncate w-full text-center">{item.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
+              {/* Icon Selector */}
+              <div className="space-y-3 border border-[#1b3d2b] p-3 rounded-2xl bg-[#0c120f]/50">
+                <div className="space-y-1 shrink-0 select-none">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                    Filtrar por Categoría
+                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {WAYPOINT_CATEGORIES.map((cat) => (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => setActiveCategory(cat.id)}
+                        className={`px-2 py-1 rounded-xl text-[10px] font-bold whitespace-nowrap transition-all border cursor-pointer flex items-center gap-0.5 ${
+                          activeCategory === cat.id
+                            ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
+                            : "bg-[#0b100d] border-white/5 text-slate-400 hover:text-slate-200"
+                        }`}
+                      >
+                        <span>{cat.emoji}</span>
+                        <span>{cat.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-          {/* Color Selector */}
-          <div className="space-y-2">
-            <label className="text-xs font-semibold text-emerald-400/80 tracking-wider uppercase">
-              Color del Marcador
-            </label>
-            <div className="flex gap-3">
-              {COLORS.map((c) => {
-                const isSelected = color === c.value;
-                return (
-                  <button
-                    key={c.value}
-                    type="button"
-                    onClick={() => setColor(c.value)}
-                    title={c.name}
-                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-transform hover:scale-110 ${
-                      isSelected ? "ring-2 ring-emerald-400 ring-offset-2 ring-offset-[#131b17]" : ""
-                    }`}
-                    style={{ backgroundColor: c.value }}
-                  >
-                    {isSelected && (
-                      <span className="w-2 h-2 bg-white rounded-full" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Group / Challenge Selector */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-emerald-400/80 tracking-wider uppercase">
-              Grupo / Reto Asociado
-            </label>
-            <select
-              value={groupId}
-              onChange={(e) => setGroupId(e.target.value)}
-              className="w-full bg-[#0a0f0d]/80 border border-[#1b3d2b] rounded-xl px-4 py-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 transition-colors"
-            >
-              {groups.map((g) => (
-                <option key={g.id} value={g.id} className="bg-[#131b17] text-slate-100">
-                  {g.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Completed Checkbox */}
-          <div className="flex items-center gap-3 p-3.5 rounded-xl bg-[#0a0f0d]/50 border border-white/5">
-            <input
-              type="checkbox"
-              id="wpt-completed"
-              checked={completed}
-              onChange={(e) => setCompleted(e.target.checked)}
-              className="w-4 h-4 accent-emerald-400 bg-black border-[#1b3d2b] cursor-pointer"
-            />
-            <label htmlFor="wpt-completed" className="text-xs font-semibold text-slate-200 cursor-pointer">
-              ¿Reto Completado? (Marcar como visitado/coronado)
-            </label>
-          </div>
-
-          {/* Image Upload Component */}
-          <div className="space-y-2">
-            <label className="text-xs font-semibold text-emerald-400/80 tracking-wider uppercase flex items-center gap-1.5 select-none">
-              📸 Foto del Lugar
-            </label>
-
-            {imagePreview ? (
-              <div className="relative rounded-xl overflow-hidden w-full h-32 border border-[#1b3d2b] bg-black/40 shadow-inner group">
-                <img src={imagePreview} alt="Vista previa" className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
-                  <label
-                    htmlFor="wpt-photo-upload"
-                    className="px-3.5 py-1.5 rounded-lg bg-emerald-400 text-black text-[10px] font-extrabold uppercase tracking-wider cursor-pointer hover:bg-emerald-300 transition-colors flex items-center gap-1 shadow-md"
-                  >
-                    <Upload className="w-3 h-3" />
-                    Cambiar
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleRemovePhoto}
-                    className="px-3.5 py-1.5 rounded-lg bg-red-500/80 text-white text-[10px] font-extrabold uppercase tracking-wider cursor-pointer hover:bg-red-500 transition-colors flex items-center gap-1 shadow-md"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    Quitar
-                  </button>
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                    Selecciona el Icono
+                  </span>
+                  <div className="grid grid-cols-6 gap-1.5">
+                    {WAYPOINT_CATEGORIES.find((c) => c.id === activeCategory)?.icons.map((item) => {
+                      const IconComponent = item.icon;
+                      const isSelected = icon === item.value;
+                      return (
+                        <button
+                          key={item.value}
+                          type="button"
+                          onClick={() => setIcon(item.value)}
+                          className={`aspect-square flex flex-col items-center justify-center p-1 rounded-xl border text-center transition-all cursor-pointer ${
+                            isSelected
+                              ? "bg-emerald-500/10 border-emerald-400 text-emerald-300 font-medium"
+                              : "bg-[#0a0f0d]/50 border-white/5 text-slate-400 hover:text-slate-200 hover:bg-[#0c120f]/80"
+                          }`}
+                        >
+                          <IconComponent className={`w-4 h-4 mb-0.5 shrink-0 ${isSelected ? "text-emerald-400" : "text-slate-400"}`} />
+                          <span className="text-[8px] leading-tight truncate w-full text-center">{item.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
-            ) : (
-              <label
-                htmlFor="wpt-photo-upload"
-                className="w-full flex flex-col items-center justify-center p-6 border-2 border-dashed border-[#1b3d2b] rounded-xl cursor-pointer hover:border-emerald-400 bg-[#0a0f0d]/50 hover:bg-[#0c120f]/50 transition-all text-slate-400 hover:text-slate-200 select-none group"
-              >
-                <Camera className="w-6 h-6 text-emerald-400/80 mb-1.5 group-hover:scale-110 transition-transform" />
-                <span className="text-[10px] font-extrabold uppercase tracking-wider">Subir Foto</span>
-                <span className="text-[9px] text-slate-500 mt-0.5">Desde tu ordenador</span>
-              </label>
-            )}
 
-            <input
-              type="file"
-              id="wpt-photo-upload"
-              accept="image/*"
-              onChange={handleFileChange}
-              className="hidden"
-            />
+              {/* Notes */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-emerald-400/80 tracking-wider uppercase">
+                  Notas y Descripción
+                </label>
+                <textarea
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="Añade detalles sobre el terreno, agua disponible, refugio, etc."
+                  rows={4}
+                  className="w-full bg-[#0a0f0d]/80 border border-[#1b3d2b] rounded-xl px-4 py-3 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 transition-colors resize-none text-sm"
+                />
+              </div>
+            </div>
 
-            {/* Fallback URL Input */}
-            <div className="pt-1.5 space-y-1">
-              <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block select-none">
-                O introduce una URL de internet
-              </span>
-              <input
-                type="url"
-                value={image}
-                onChange={(e) => {
-                  setImage(e.target.value);
-                  setImagePreview(e.target.value || null);
-                  setImageFile(null); // clear uploaded file if user pastes a URL
-                }}
-                placeholder="Ej. https://images.unsplash.com/... o tu enlace"
-                className="w-full bg-[#0a0f0d]/80 border border-[#1b3d2b] rounded-xl px-4 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 transition-colors"
-              />
+            {/* ── COLUMNA DERECHA ── */}
+            <div className="space-y-4">
+              {/* Color */}
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-emerald-400/80 tracking-wider uppercase">
+                    Color
+                  </label>
+                  <div className="flex gap-2">
+                    {COLORS.map((c) => {
+                      const isSelected = color === c.value;
+                      return (
+                        <button
+                          key={c.value}
+                          type="button"
+                          onClick={() => setColor(c.value)}
+                          title={c.name}
+                          className={`w-7 h-7 rounded-full flex items-center justify-center transition-transform hover:scale-110 shrink-0 ${
+                            isSelected ? "ring-2 ring-emerald-400 ring-offset-2 ring-offset-[#131b17]" : ""
+                          }`}
+                          style={{ backgroundColor: c.value }}
+                        >
+                          {isSelected && <span className="w-2 h-2 bg-white rounded-full" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-emerald-400/80 tracking-wider uppercase">
+                    Grupo / Reto
+                  </label>
+                  <select
+                    value={groupId}
+                    onChange={(e) => setGroupId(e.target.value)}
+                    className="w-full bg-[#0a0f0d]/80 border border-[#1b3d2b] rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-emerald-400 transition-colors"
+                  >
+                    {groups.map((g) => (
+                      <option key={g.id} value={g.id} className="bg-[#131b17] text-slate-100">
+                        {g.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Completed Checkbox */}
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-[#0a0f0d]/50 border border-white/5">
+                <input
+                  type="checkbox"
+                  id="wpt-completed"
+                  checked={completed}
+                  onChange={(e) => setCompleted(e.target.checked)}
+                  className="w-4 h-4 accent-emerald-400 bg-black border-[#1b3d2b] cursor-pointer"
+                />
+                <label htmlFor="wpt-completed" className="text-xs font-semibold text-slate-200 cursor-pointer">
+                  ¿Reto Completado? (Marcar como visitado/coronado)
+                </label>
+              </div>
+
+              {/* Image Upload */}
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-emerald-400/80 tracking-wider uppercase flex items-center gap-1.5 select-none">
+                  📸 Foto del Lugar
+                </label>
+
+                {imagePreview ? (
+                  <div className="relative rounded-xl overflow-hidden w-full h-28 border border-[#1b3d2b] bg-black/40 shadow-inner group">
+                    <img src={imagePreview} alt="Vista previa" className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                      <label
+                        htmlFor="wpt-photo-upload"
+                        className="px-3 py-1.5 rounded-lg bg-emerald-400 text-black text-[10px] font-extrabold uppercase tracking-wider cursor-pointer hover:bg-emerald-300 transition-colors flex items-center gap-1"
+                      >
+                        <Upload className="w-3 h-3" />
+                        Cambiar
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleRemovePhoto}
+                        className="px-3 py-1.5 rounded-lg bg-red-500/80 text-white text-[10px] font-extrabold uppercase tracking-wider cursor-pointer hover:bg-red-500 transition-colors flex items-center gap-1"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Quitar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <label
+                    htmlFor="wpt-photo-upload"
+                    className="w-full flex flex-col items-center justify-center p-4 border-2 border-dashed border-[#1b3d2b] rounded-xl cursor-pointer hover:border-emerald-400 bg-[#0a0f0d]/50 hover:bg-[#0c120f]/50 transition-all text-slate-400 hover:text-slate-200 select-none group"
+                  >
+                    <Camera className="w-5 h-5 text-emerald-400/80 mb-1 group-hover:scale-110 transition-transform" />
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider">Subir Foto</span>
+                    <span className="text-[9px] text-slate-500 mt-0.5">Desde tu ordenador</span>
+                  </label>
+                )}
+
+                <input
+                  type="file"
+                  id="wpt-photo-upload"
+                  accept="image/*"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+
+                <div className="space-y-1">
+                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block select-none">
+                    O URL de imagen
+                  </span>
+                  <input
+                    type="url"
+                    value={image}
+                    onChange={(e) => {
+                      setImage(e.target.value);
+                      setImagePreview(e.target.value || null);
+                      setImageFile(null);
+                    }}
+                    placeholder="https://images.unsplash.com/..."
+                    className="w-full bg-[#0a0f0d]/80 border border-[#1b3d2b] rounded-xl px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 transition-colors"
+                  />
+                </div>
+              </div>
+
+              {/* Link URL */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-emerald-400/80 tracking-wider uppercase flex items-center gap-1.5">
+                  🔗 Enlace de Información (URL)
+                </label>
+                <input
+                  type="url"
+                  value={link}
+                  onChange={(e) => setLink(e.target.value)}
+                  placeholder="Ej. https://es.wikipedia.org/... o web del refugio"
+                  className="w-full bg-[#0a0f0d]/80 border border-[#1b3d2b] rounded-xl px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 transition-colors"
+                />
+              </div>
             </div>
           </div>
 
-          {/* Link URL input */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-emerald-400/80 tracking-wider uppercase flex items-center gap-1.5">
-              🔗 Enlace de Información (URL)
-            </label>
-            <input
-              type="url"
-              value={link}
-              onChange={(e) => setLink(e.target.value)}
-              placeholder="Ej. https://es.wikipedia.org/... o web del refugio"
-              className="w-full bg-[#0a0f0d]/80 border border-[#1b3d2b] rounded-xl px-4 py-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 transition-colors"
-            />
-          </div>
-
-          {/* Coordinates Details (Multisystem display) */}
+          {/* ── FILA COMPLETA: Coordenadas ── */}
           {initialData?.lat !== undefined && initialData?.lng !== undefined && (
-            <div className="space-y-1.5 p-4 rounded-xl bg-[#0a0f0d]/50 border border-white/5 shadow-inner">
+            <div className="mt-4 space-y-1.5 p-4 rounded-xl bg-[#0a0f0d]/50 border border-white/5 shadow-inner">
               <label className="text-xs font-semibold text-emerald-400/80 tracking-wider uppercase select-none">
                 Ubicación y Sistemas de Coordenadas
               </label>
-              <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-300 font-mono select-text">
+              <div className="grid grid-cols-4 gap-2 text-[10px] text-slate-300 font-mono select-text">
                 <div className="bg-[#050807]/40 border border-[#1b3d2b] p-2 rounded-lg">
                   <p className="text-[9px] font-sans font-bold text-slate-500 uppercase tracking-wide mb-0.5">Decimal (WGS84)</p>
-                  <p className="text-emerald-400 font-bold truncate">Lat: {initialData.lat.toFixed(6)}</p>
-                  <p className="text-emerald-400 font-bold truncate">Lon: {initialData.lng.toFixed(6)}</p>
+                  <p className="text-emerald-400 font-bold">Lat: {initialData.lat.toFixed(6)}</p>
+                  <p className="text-emerald-400 font-bold">Lon: {initialData.lng.toFixed(6)}</p>
                 </div>
-                
+
                 <div className="bg-[#050807]/40 border border-[#1b3d2b] p-2 rounded-lg">
                   <p className="text-[9px] font-sans font-bold text-slate-500 uppercase tracking-wide mb-0.5">DMS (GMS)</p>
-                  <p className="text-amber-400 truncate">{latLngToDms(initialData.lat, initialData.lng).lat}</p>
-                  <p className="text-amber-400 truncate">{latLngToDms(initialData.lat, initialData.lng).lng}</p>
+                  <p className="text-amber-400">{latLngToDms(initialData.lat, initialData.lng).lat}</p>
+                  <p className="text-amber-400">{latLngToDms(initialData.lat, initialData.lng).lng}</p>
                 </div>
-                
-                <div className="bg-[#050807]/40 border border-[#1b3d2b] p-2 rounded-lg col-span-2 flex justify-between gap-4">
-                  <div>
-                    <p className="text-[9px] font-sans font-bold text-slate-500 uppercase tracking-wide mb-0.5">UTM ETRS89 (Huso 30N)</p>
-                    <p className="text-blue-400">X: <span className="font-bold">{latLngToUtm(initialData.lat, initialData.lng, "WGS84").x.toLocaleString()}</span></p>
-                    <p className="text-blue-400">Y: <span className="font-bold">{latLngToUtm(initialData.lat, initialData.lng, "WGS84").y.toLocaleString()}</span></p>
-                  </div>
-                  <div className="border-l border-[#1b3d2b] pl-4">
-                    <p className="text-[9px] font-sans font-bold text-slate-500 uppercase tracking-wide mb-0.5">UTM ED50 (Huso 30N)</p>
-                    <p className="text-rose-400">X: <span className="font-bold">{latLngToUtm(initialData.lat, initialData.lng, "ED50").x.toLocaleString()}</span></p>
-                    <p className="text-rose-400">Y: <span className="font-bold">{latLngToUtm(initialData.lat, initialData.lng, "ED50").y.toLocaleString()}</span></p>
-                  </div>
+
+                <div className="bg-[#050807]/40 border border-[#1b3d2b] p-2 rounded-lg">
+                  <p className="text-[9px] font-sans font-bold text-slate-500 uppercase tracking-wide mb-0.5">UTM ETRS89 (30N)</p>
+                  <p className="text-blue-400">X: <span className="font-bold">{latLngToUtm(initialData.lat, initialData.lng, "WGS84").x.toLocaleString()}</span></p>
+                  <p className="text-blue-400">Y: <span className="font-bold">{latLngToUtm(initialData.lat, initialData.lng, "WGS84").y.toLocaleString()}</span></p>
+                </div>
+
+                <div className="bg-[#050807]/40 border border-[#1b3d2b] p-2 rounded-lg">
+                  <p className="text-[9px] font-sans font-bold text-slate-500 uppercase tracking-wide mb-0.5">UTM ED50 (30N)</p>
+                  <p className="text-rose-400">X: <span className="font-bold">{latLngToUtm(initialData.lat, initialData.lng, "ED50").x.toLocaleString()}</span></p>
+                  <p className="text-rose-400">Y: <span className="font-bold">{latLngToUtm(initialData.lat, initialData.lng, "ED50").y.toLocaleString()}</span></p>
                 </div>
               </div>
 
-              {/* Altitud Estimada (API Open-Meteo) */}
+              {/* Altitud Estimada */}
               <div className="bg-[#050807]/60 border border-[#1b3d2b] rounded-lg p-2.5 flex items-center justify-between mt-2 select-none">
                 <div className="flex items-center gap-2">
                   <span className="text-base">🏔️</span>
@@ -492,7 +512,6 @@ export function WaypointModal({
                     )}
                   </div>
                 </div>
-
                 {elevation !== null && (
                   <button
                     type="button"
@@ -514,20 +533,6 @@ export function WaypointModal({
               </p>
             </div>
           )}
-
-          {/* Notes */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-emerald-400/80 tracking-wider uppercase">
-              Notas y Descripción
-            </label>
-            <textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Añade detalles sobre el terreno, agua disponible, refugio, etc."
-              rows={3}
-              className="w-full bg-[#0a0f0d]/80 border border-[#1b3d2b] rounded-xl px-4 py-3 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 transition-colors resize-none"
-            />
-          </div>
         </form>
 
         {/* Footer */}
@@ -558,7 +563,7 @@ export function WaypointModal({
               Cancelar
             </button>
             <button
-              type="submit"
+              type="button"
               onClick={handleSubmit}
               className="px-5 py-2.5 text-xs font-semibold text-black bg-emerald-400 hover:bg-emerald-300 transition-colors rounded-xl shadow-lg shadow-emerald-400/20"
             >

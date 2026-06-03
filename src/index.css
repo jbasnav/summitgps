@@ -180,6 +180,22 @@ body {
   border-top-color: transparent !important;
 }
 
+/* Waypoint hover popup custom styling */
+.leaflet-popup-content-wrapper {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.leaflet-popup-content {
+  margin: 0 !important;
+}
+
+.leaflet-popup-tip-container {
+  display: none !important;
+}
+
 /* Smooth Fade and Glow for Recharts */
 .recharts-tooltip-cursor {
   stroke: #10b981;

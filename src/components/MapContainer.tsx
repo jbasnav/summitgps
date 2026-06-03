@@ -34,6 +34,7 @@ interface MapContainerProps {
   onAddPoint: (lat: number, lng: number) => void;
   onRightClickMap: (lat: number, lng: number) => void;
   onEditWaypoint: (wpt: Waypoint) => void;
+  onShowWaypointInfo: (wpt: Waypoint) => void;
   onUpdateWaypoint: (id: string, fields: Partial<Waypoint>) => void;
   onSplitTrackAt: (trackId: string, index: number) => void;
   waypointGroups: WaypointGroup[];
@@ -131,6 +132,7 @@ export function MapContainer({
   onAddPoint,
   onRightClickMap,
   onEditWaypoint,
+  onShowWaypointInfo,
   onSplitTrackAt,
   // waypointGroups is kept in Props but not destructured here to avoid unused variable warning
   onMapMove,
@@ -317,24 +319,41 @@ export function MapContainer({
     const interval = useImperial ? 1.60934 : 1.0; // 1 mile in km, or 1 km
     const unitLabel = useImperial ? "mi" : "km";
 
+    const makeDistanceIcon = (label: string, color: string, isEndpoint = false) =>
+      L.divIcon({
+        className: "custom-distance-marker-icon",
+        html: `<div style="background-color:${isEndpoint ? color : "white"};color:${isEndpoint ? "white" : "#0c120f"};font-weight:800;font-size:9px;padding:2px 6px;border-radius:999px;border:1.5px solid ${color};box-shadow:0 2px 6px rgba(0,0,0,0.3);white-space:nowrap;transform:translate(-50%,-50%);display:inline-block;">${label}</div>`,
+        iconSize: [0, 0] as any,
+      });
+
+    // Start marker
+    const startPt = activeTrack.points[0];
+    const startLabel = useImperial ? `0 mi` : `0 km`;
+    markers.push(
+      L.marker([startPt.lat, startPt.lng], { icon: makeDistanceIcon(startLabel, activeTrack.color, true), zIndexOffset: 2000 }).addTo(mapInstance)
+    );
+
     let nextThreshold = interval;
-    
+
     for (let i = 1; i < activeTrack.points.length; i++) {
       const p2 = activeTrack.points[i];
       if (p2.distance >= nextThreshold) {
         const labelText = `${Math.round(nextThreshold / interval)} ${unitLabel}`;
-        const markerIcon = L.divIcon({
-          className: "custom-distance-marker-icon",
-          html: `<div style="background-color: white; color: #0c120f; font-weight: 800; font-size: 9px; padding: 2px 6px; border-radius: 999px; border: 1.5px solid ${activeTrack.color}; box-shadow: 0 2px 6px rgba(0,0,0,0.3); white-space: nowrap; transform: translate(-50%, -50%); display: inline-block;">${labelText}</div>`,
-          iconSize: [0, 0] as any,
-        });
-
-        const marker = L.marker([p2.lat, p2.lng], { icon: markerIcon, zIndexOffset: 2000 }).addTo(mapInstance);
+        const marker = L.marker([p2.lat, p2.lng], { icon: makeDistanceIcon(labelText, activeTrack.color), zIndexOffset: 2000 }).addTo(mapInstance);
         markers.push(marker);
-
         nextThreshold += interval;
       }
     }
+
+    // End marker
+    const endPt = activeTrack.points[activeTrack.points.length - 1];
+    const totalDist = endPt.distance;
+    const totalLabel = useImperial
+      ? `${(totalDist / 1.60934).toFixed(1)} mi`
+      : `${totalDist.toFixed(1)} km`;
+    markers.push(
+      L.marker([endPt.lat, endPt.lng], { icon: makeDistanceIcon(totalLabel, activeTrack.color, true), zIndexOffset: 2000 }).addTo(mapInstance)
+    );
 
     distanceMarkersRef.current = markers;
 
@@ -867,8 +886,10 @@ export function MapContainer({
       const svg = getIconSvg(wpt.icon, "w-4 h-4 text-white");
       const markerColor = wpt.color || "#10b981";
 
+      const isMapEditingMode = isDrawing || isEditingRoute;
+
       const customHtml = `
-        <div class="relative flex items-center justify-center animate-bounce-short" style="width:${isHighlighted ? 40 : 32}px;height:${isHighlighted ? 40 : 32}px">
+        <div class="relative flex items-center justify-center animate-bounce-short" style="width:${isHighlighted ? 40 : 32}px;height:${isHighlighted ? 40 : 32}px;${isMapEditingMode ? "pointer-events:none;" : ""}">
           ${
             isBulkMode && isSelected
               ? `<div class="absolute w-10 h-10 rounded-full border border-blue-400 bg-blue-500/25 animate-ping opacity-75"></div>
@@ -921,11 +942,55 @@ export function MapContainer({
           : ` · 🏔️ ${wpt.elevation} m`
         : "";
 
+      const popupHtml = `
+        <div style="background:#0c120f;border:1px solid #1b3d2b;border-radius:12px;padding:10px 12px;min-width:150px;box-shadow:0 8px 24px rgba(0,0,0,0.5);">
+          <div style="color:#e2e8f0;font-size:12px;font-weight:700;margin-bottom:8px;">${wpt.name}${elevStr}</div>
+          ${isBulkMode ? `<div style="color:#94a3b8;font-size:11px;">${isSelected ? "☑️ Seleccionado" : "Haz clic para seleccionar"}</div>` : `
+          <div style="display:flex;gap:6px;">
+            <button class="wpt-btn-info" style="flex:1;background:#059669;color:#fff;font-size:11px;font-weight:600;padding:5px 8px;border-radius:8px;border:none;cursor:pointer;">+ Info</button>
+            <button class="wpt-btn-edit" style="flex:1;background:#1e293b;color:#cbd5e1;font-size:11px;font-weight:600;padding:5px 8px;border-radius:8px;border:none;cursor:pointer;">Editar</button>
+          </div>`}
+        </div>
+      `;
+
+      const attachPopupListeners = (marker: L.Marker) => {
+        let closeTimer: ReturnType<typeof setTimeout> | null = null;
+
+        const scheduleClose = () => {
+          closeTimer = setTimeout(() => { marker.closePopup(); }, 300);
+        };
+        const cancelClose = () => {
+          if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
+        };
+
+        marker.on("mouseover", () => { cancelClose(); marker.openPopup(); });
+        marker.on("mouseout", scheduleClose);
+
+        marker.on("popupopen", () => {
+          const el = marker.getPopup()?.getElement();
+          if (!el) return;
+
+          el.addEventListener("mouseenter", cancelClose);
+          el.addEventListener("mouseleave", scheduleClose);
+
+          el.querySelector(".wpt-btn-info")?.addEventListener("click", (e) => {
+            e.stopPropagation();
+            marker.closePopup();
+            onShowWaypointInfo(wpt);
+          });
+          el.querySelector(".wpt-btn-edit")?.addEventListener("click", (e) => {
+            e.stopPropagation();
+            marker.closePopup();
+            onEditWaypoint(wpt);
+          });
+        });
+      };
+
       if (existingMarker) {
         existingMarker.setLatLng([wpt.lat, wpt.lng]);
         existingMarker.setIcon(customIcon);
         existingMarker.off("click");
-        existingMarker.on("click", handleClick);
+        if (!isMapEditingMode) existingMarker.on("click", handleClick);
 
         // Update draggable status dynamically — only allow drag in editing mode
         if (isEditingRoute && !isBulkMode) {
@@ -952,23 +1017,27 @@ export function MapContainer({
           });
         }
 
-        existingMarker.setTooltipContent(`
-          <div class="px-2 py-1 text-slate-200 text-xs font-semibold bg-[#131b17] border border-[#1b3d2b] rounded-lg shadow-md">
-            ${wpt.name}${elevStr} ${isBulkMode && isSelected ? "☑️" : ""}
-          </div>
-        `);
+        existingMarker.off("mouseover");
+        existingMarker.off("mouseout");
+        existingMarker.off("popupopen");
+        existingMarker.unbindPopup();
+        if (!isMapEditingMode) {
+          existingMarker.bindPopup(popupHtml, { interactive: true, closeButton: false, offset: [0, -28] as any });
+          attachPopupListeners(existingMarker);
+        }
       } else {
-        const marker = L.marker([wpt.lat, wpt.lng], { 
+        const marker = L.marker([wpt.lat, wpt.lng], {
           icon: customIcon,
           draggable: isEditingRoute && !isBulkMode
         })
-          .addTo(mapInstance)
-          .bindTooltip(`
-            <div class="px-2 py-1 text-slate-200 text-xs font-semibold bg-[#131b17]/95 border border-[#1b3d2b] rounded-lg shadow-xl">
-              ${wpt.name}${elevStr}
-            </div>
-          `, { direction: "top", offset: [0, -32], opacity: 0.9 })
-          .on("click", handleClick);
+          .addTo(mapInstance);
+
+        if (!isMapEditingMode) marker.on("click", handleClick);
+
+        if (!isMapEditingMode) {
+          marker.bindPopup(popupHtml, { interactive: true, closeButton: false, offset: [0, -28] as any });
+          attachPopupListeners(marker);
+        }
 
         if (isEditingRoute && !isBulkMode) {
           marker.on("dragend", async (e: any) => {
@@ -985,12 +1054,12 @@ export function MapContainer({
             }
           });
         }
-        
+
         waypointMarkersRef.current[wpt.id] = marker;
       }
     });
 
-  }, [mapInstance, waypoints, onEditWaypoint, isBulkMode, selectedWptIds, onSetSelectedWptIds, onUpdateWaypoint, highlightedWptId, isEditingRoute]);
+  }, [mapInstance, waypoints, onEditWaypoint, onShowWaypointInfo, isBulkMode, selectedWptIds, onSetSelectedWptIds, onUpdateWaypoint, highlightedWptId, isEditingRoute, isDrawing]);
 
   // Leaflet mouse event-based click-and-drag Box Selection
   useEffect(() => {

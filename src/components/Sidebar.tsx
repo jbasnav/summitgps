@@ -1982,6 +1982,9 @@ export function Sidebar({
                                                 onClick={() => {
                                                   setActiveTrackId(track.id);
                                                   setIsRouteEditPanelOpen(true);
+                                                  setIsDrawing(true);
+                                                  setIsEditingRoute(false);
+                                                  setIsSplitting(false);
                                                 }}
                                                 className={`p-1 rounded transition-colors cursor-pointer ${
                                                   isActive && isRouteEditPanelOpen
