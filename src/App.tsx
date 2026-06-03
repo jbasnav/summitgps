@@ -6,10 +6,13 @@ import { WaypointModal } from "./components/WaypointModal";
 import { useRoutePlanner, type Waypoint, type RoutePoint } from "./hooks/useRoutePlanner";
 import { useImageLibrary } from "./hooks/useImageLibrary";
 import type { BaseLayerId, CustomLayer } from "./components/LayerSelector";
-import { ChevronDown, ChevronUp, Search, X, Compass, Loader, MapPin, Printer } from "lucide-react";
+import { ChevronDown, ChevronUp, Search, X, Compass, Loader, MapPin, Printer, CloudRain, Layers } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "./utils/supabaseClient";
 import { AuthScreen } from "./components/AuthScreen";
 import PrintMapModal from "./components/PrintMapModal";
+import { PlusModal } from "./components/PlusModal";
+import { RouteConditionsPanel } from "./components/RouteConditionsPanel";
+import { FloatingLayerSelector } from "./components/FloatingLayerSelector";
 import { formatCoordinatesByFormat, parseCoordinateInput, calculateGeodesicArea, calculatePolygonPerimeter } from "./utils/geoUtils";
 import { CustomDialogProvider, useCustomDialog } from "./components/CustomDialog";
 
@@ -452,6 +455,28 @@ function AppContent() {
   const [trackColorMode, setTrackColorMode] = useState<"solid" | "slope" | "elevation" | "heartRate" | "cadence" | "power" | "speed">("solid");
   const [selectedRange, setSelectedRange] = useState<[number, number] | null>(null);
 
+  // SummitGPS Plus & Weather states
+  const [isPlusUser, setIsPlusUser] = useState<boolean>(() => {
+    return localStorage.getItem("summitgps_is_plus") === "true";
+  });
+  const [isPlusModalOpen, setIsPlusModalOpen] = useState<boolean>(false);
+  const [isRouteConditionsOpen, setIsRouteConditionsOpen] = useState<boolean>(false);
+  const [simulatedTime, setSimulatedTime] = useState<number>(720); // 12:00 PM in minutes
+  const [is3DActive, setIs3DActive] = useState<boolean>(false);
+
+  // Floating Layer Selector & Map Overlay options
+  const [isLayerSelectorOpen, setIsLayerSelectorOpen] = useState<boolean>(false);
+  const [showDistanceMarkers, setShowDistanceMarkers] = useState<boolean>(true);
+  const [showWaypoints, setShowWaypoints] = useState<boolean>(true);
+  const [showCommunityWaypoints, setShowCommunityWaypoints] = useState<boolean>(false);
+  const [showPersonalHeatmap, setShowPersonalHeatmap] = useState<boolean>(false);
+  const [showCommunityHeatmap, setShowCommunityHeatmap] = useState<boolean>(false);
+  const [showTerrainLimits, setShowTerrainLimits] = useState<boolean>(false);
+  const [showNearbyTrails, setShowNearbyTrails] = useState<boolean>(false);
+  const [showHikingTrails, setShowHikingTrails] = useState<boolean>(false);
+  const [showCyclingTrails, setShowCyclingTrails] = useState<boolean>(false);
+  const [showMtbTrails, setShowMtbTrails] = useState<boolean>(false);
+
   const activeTrackForPrint = useMemo(() => {
     return tracks.find((t) => t.id === activeTrackId);
   }, [tracks, activeTrackId]);
@@ -609,6 +634,7 @@ function AppContent() {
 
   // Waypoints for the MAP: all visible tracks (including route-embedded waypoints)
   const visibleWaypoints = useMemo(() => {
+    if (!showWaypoints) return [];
     const list: Waypoint[] = [];
     const groupVisibilityMap = new Map(waypointGroups.map((g) => [g.id, g.visible]));
     const collectionVisibilityMap = new Map(routeCollections.map((c) => [c.id, c.visible]));
@@ -627,7 +653,7 @@ function AppContent() {
       }
     });
     return list;
-  }, [tracks, waypointGroups, routeCollections]);
+  }, [tracks, waypointGroups, routeCollections, showWaypoints]);
 
   // Waypoints for the SIDEBAR Marcadores tab: ALL from waypoints-global-track (eye only hides from map)
   const sidebarWaypoints = useMemo(() => {
@@ -898,6 +924,10 @@ function AppContent() {
     <div className="w-screen h-screen flex overflow-hidden bg-[#070a08] select-none relative">
       {/* Sidebar Panel */}
       <Sidebar
+        isPlusUser={isPlusUser}
+        onOpenPlusModal={useCallback(() => setIsPlusModalOpen(true), [])}
+        isRouteConditionsOpen={isRouteConditionsOpen}
+        onToggleRouteConditions={useCallback(() => setIsRouteConditionsOpen(prev => !prev), [])}
         routeName={routeName}
         setRouteName={setRouteName}
         points={points}
@@ -1057,11 +1087,11 @@ function AppContent() {
       {/* Point Info Drawer expanding the Sidebar */}
       {!isSidebarCollapsed && markedLocation && (
         <div
-          className="absolute w-[340px] md:w-[380px] border-r border-[#1b3d2b] bg-[#131b17]/95 shadow-2xl backdrop-blur-md overflow-hidden flex flex-col z-[9998] animate-slide-in-left pointer-events-auto transition-all duration-300"
+          className="absolute w-[340px] md:w-[380px] border-l border-r border-[#1b3d2b] bg-[#131b17]/95 shadow-2xl backdrop-blur-md overflow-hidden flex flex-col z-[9998] animate-slide-in-left pointer-events-auto transition-all duration-300"
           style={{ left: isSidebarCollapsed ? 64 : 380, top: 144, height: 'calc(100vh - 144px)' }}
         >
           {/* Panel Header (Styled like GaiaGPS Premium Card) */}
-          <div className="flex items-center justify-between h-14 px-4 border-b border-[#1b3d2b]/40 bg-[#0c120f]/60 select-none shrink-0">
+          <div className="flex items-center justify-between h-14 px-4 border-b border-[#1b3d2b] bg-[#0c120f]/60 select-none shrink-0">
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0 shadow-md">
                 <svg className="w-4 h-4 text-emerald-400 fill-current" viewBox="0 0 24 24">
@@ -1099,7 +1129,7 @@ function AppContent() {
             ) : (
               <>
                 {/* Dedicated coordinates and altitude block */}
-                <div className="grid grid-cols-2 gap-2 bg-[#0c120f]/40 p-3 rounded-xl border border-[#1b3d2b]/20 text-[11px] select-text shrink-0">
+                <div className="grid grid-cols-2 gap-2 bg-[#0c120f]/40 p-3 rounded-xl border border-[#1b3d2b] text-[11px] select-text shrink-0">
                   <div className="space-y-0.5 min-w-0">
                     <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide block">Coordenadas</span>
                     <div className="flex items-center gap-1.5 min-w-0">
@@ -1129,7 +1159,7 @@ function AppContent() {
                       </button>
                     </div>
                   </div>
-                  <div className="space-y-0.5 border-l border-[#1b3d2b]/15 pl-3">
+                  <div className="space-y-0.5 border-l border-[#1b3d2b] pl-3">
                     <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide block">Altitud</span>
                     <p className="font-sans font-bold text-emerald-400 text-xs mt-0.5">
                       {markedLocationDetails.elevation !== null
@@ -1140,7 +1170,7 @@ function AppContent() {
                 </div>
                 {/* Clean Location Context — skip leading POI name since it's in the header */}
                 {markedLocationDetails.address && (
-                  <div className="text-[11px] text-slate-400 bg-[#0c120f]/20 border border-[#1b3d2b]/15 px-3.5 py-2.5 rounded-lg leading-relaxed select-text flex items-center justify-between gap-2">
+                  <div className="text-[11px] text-slate-400 bg-[#0c120f]/20 border border-[#1b3d2b] px-3.5 py-2.5 rounded-lg leading-relaxed select-text flex items-center justify-between gap-2">
                     <span className="truncate">
                       {(() => {
                         const parts = markedLocationDetails.address.split(',');
@@ -1157,7 +1187,7 @@ function AppContent() {
                         setCopiedCoords(true);
                         setTimeout(() => setCopiedCoords(false), 2000);
                       }}
-                      className="p-1 rounded bg-[#131b17] border border-[#1b3d2b]/40 hover:border-emerald-500/40 text-slate-400 hover:text-emerald-400 transition-all cursor-pointer shrink-0"
+                      className="p-1 rounded bg-[#131b17] border border-[#1b3d2b] hover:border-emerald-500/40 text-slate-400 hover:text-emerald-400 transition-all cursor-pointer shrink-0"
                       title="Copiar Coordenadas"
                     >
                       {copiedCoords ? (
@@ -1176,14 +1206,14 @@ function AppContent() {
 
                 {/* Current & Weekly Weather Card (OpenSnow Style) */}
                 {markedLocationDetails.weather && (
-                  <div className="space-y-4 bg-[#0c120f]/60 p-4 rounded-xl border border-[#1b3d2b]/30 shadow-2xl backdrop-blur-md">
+                  <div className="space-y-4 bg-[#0c120f]/60 p-4 rounded-xl border border-[#1b3d2b] shadow-2xl backdrop-blur-md">
                     
                     {/* Header */}
-                    <div className="flex items-center justify-between pb-1.5 border-b border-[#1b3d2b]/15">
+                    <div className="flex items-center justify-between pb-1.5 border-b border-[#1b3d2b]">
                       <span className="text-[10px] text-emerald-400 font-extrabold uppercase tracking-wider flex items-center gap-1">
                         ❄️ El Tiempo
                       </span>
-                      <span className="text-[9px] text-slate-400 font-mono flex items-center gap-1 bg-[#131b17]/80 px-1.5 py-0.5 rounded border border-[#1b3d2b]/20">
+                      <span className="text-[9px] text-slate-400 font-mono flex items-center gap-1 bg-[#131b17]/80 px-1.5 py-0.5 rounded border border-[#1b3d2b]">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                         OpenSnow Predictor
                       </span>
@@ -1223,7 +1253,7 @@ function AppContent() {
 
                       {/* Divider line */}
                       <div className="relative">
-                        <div className="absolute inset-y-0 left-0 border-l border-[#1b3d2b]/20"></div>
+                        <div className="absolute inset-y-0 left-0 border-l border-[#1b3d2b]"></div>
                         
                         {/* Right: Night */}
                         <div className="pl-4 space-y-2">
@@ -1264,13 +1294,13 @@ function AppContent() {
                     </div>
 
                     {/* Solar Indicators (Sunset & Sunrise) */}
-                    <div className="bg-[#131b17]/80 border border-[#1b3d2b]/25 rounded-lg py-1.5 px-3 flex items-center justify-between text-[10px] text-slate-300 font-medium select-none">
+                    <div className="bg-[#131b17]/80 border border-[#1b3d2b] rounded-lg py-1.5 px-3 flex items-center justify-between text-[10px] text-slate-300 font-medium select-none">
                       <div className="flex items-center gap-1">
                         <span className="text-xs">🌅</span>
                         <span>Amanece:</span>
                         <span className="font-mono font-bold text-emerald-400">{markedLocationDetails.weather.sunrise}</span>
                       </div>
-                      <div className="h-3 w-px bg-[#1b3d2b]/30"></div>
+                      <div className="h-3 w-px bg-[#1b3d2b]"></div>
                       <div className="flex items-center gap-1">
                         <span className="text-xs">🌇</span>
                         <span>Anochece:</span>
@@ -1280,7 +1310,7 @@ function AppContent() {
 
                     {/* Weekly Forecast Sub-Section (List Layout) */}
                     {markedLocationDetails.weather.daily && (
-                      <div className="space-y-2 border-t border-[#1b3d2b]/15 pt-3 mt-1">
+                      <div className="space-y-2 border-t border-[#1b3d2b] pt-3 mt-1">
                         <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider select-none">
                           📅 Previsión Semanal
                         </span>
@@ -1312,7 +1342,7 @@ function AppContent() {
                             return (
                               <div
                                 key={timeStr}
-                                className="flex items-center justify-between bg-[#131b17]/40 hover:bg-[#131b17]/85 border border-[#1b3d2b]/10 hover:border-[#1b3d2b]/25 rounded-lg px-2.5 py-1.5 transition-all duration-150"
+                                className="flex items-center justify-between bg-[#131b17]/40 hover:bg-[#131b17]/85 border border-[#1b3d2b] hover:border-emerald-500/20 rounded-lg px-2.5 py-1.5 transition-all duration-150"
                               >
                                 <span className="font-semibold text-slate-300 w-[72px] truncate select-none">
                                   {getFullSpanishDay(timeStr, idx)}
@@ -1353,7 +1383,7 @@ function AppContent() {
                         href={`https://opensnow.com`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center justify-center gap-2 w-full py-2 px-3 rounded-lg bg-[#1b3d2b]/30 hover:bg-[#1b3d2b]/60 border border-[#1b3d2b]/50 hover:border-emerald-500/50 text-[10.5px] font-extrabold text-slate-200 hover:text-emerald-400 tracking-wider uppercase transition-all shadow-md cursor-pointer"
+                        className="flex items-center justify-center gap-2 w-full py-2 px-3 rounded-lg bg-[#1b3d2b]/30 hover:bg-[#1b3d2b]/60 border border-[#1b3d2b] hover:border-emerald-500/50 text-[10.5px] font-extrabold text-slate-200 hover:text-emerald-400 tracking-wider uppercase transition-all shadow-md cursor-pointer"
                       >
                         <span>View 10 Day Forecast</span>
                         <svg className="w-3.5 h-3.5 fill-none stroke-current" viewBox="0 0 24 24" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -1365,7 +1395,7 @@ function AppContent() {
                     </div>
 
                     {/* OpenSnow Badge Footer */}
-                    <div className="flex items-center justify-center gap-1.5 pt-3.5 border-t border-[#1b3d2b]/15 text-[9.5px] text-slate-500 font-bold select-none">
+                    <div className="flex items-center justify-center gap-1.5 pt-3.5 border-t border-[#1b3d2b] text-[9.5px] text-slate-500 font-bold select-none">
                       <span>Powered by OpenSnow</span>
                       <div className="flex items-center gap-1 bg-gradient-to-r from-orange-500 to-amber-500 text-white font-extrabold px-1.5 py-0.5 rounded text-[8px] tracking-wider uppercase shadow-sm">
                         <svg className="w-2.5 h-2.5 fill-current animate-spin" viewBox="0 0 24 24" style={{ animationDuration: '10s' }}>
@@ -1483,10 +1513,65 @@ function AppContent() {
             showSlopeShading={showSlopeShading}
             slopeShadingOpacity={slopeShadingOpacity}
             highlightedWptId={highlightedWptId}
+            is3DActive={is3DActive}
+            showDistanceMarkers={showDistanceMarkers}
+            showPersonalHeatmap={showPersonalHeatmap}
+            showCommunityHeatmap={showCommunityHeatmap}
+            showTerrainLimits={showTerrainLimits}
+            showNearbyTrails={showNearbyTrails}
+            showHikingTrails={showHikingTrails}
+            showCyclingTrails={showCyclingTrails}
+            showMtbTrails={showMtbTrails}
+            showCommunityWaypoints={showCommunityWaypoints}
           />
+          {/* Day/Night solar simulated illumination overlay */}
+          {(() => {
+            const getNightOpacity = (minutes: number) => {
+              if (minutes < 300 || minutes > 1320) {
+                return 0.75;
+              } else if (minutes >= 300 && minutes < 420) {
+                const progress = (minutes - 300) / 120;
+                return 0.75 * (1 - progress);
+              } else if (minutes >= 1200 && minutes <= 1320) {
+                const progress = (minutes - 1200) / 120;
+                return 0.75 * progress;
+              } else {
+                return 0;
+              }
+            };
+            const opacity = getNightOpacity(simulatedTime);
+            if (opacity === 0) return null;
+            return (
+              <div 
+                className="absolute inset-0 z-[1000] pointer-events-none mix-blend-multiply transition-opacity duration-500 animate-fade-in"
+                style={{ 
+                  backgroundColor: "#070c24", 
+                  opacity: opacity 
+                }} 
+              />
+            );
+          })()}
 
           {/* ── Unified right-side vertical button group ── */}
           <div className="absolute top-4 right-4 z-[4000] pointer-events-auto flex flex-col gap-2">
+
+            {/* Capas / Layer Selector */}
+            <div className="relative group">
+              <button
+                onClick={() => setIsLayerSelectorOpen(prev => !prev)}
+                title="Capas del Mapa"
+                className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer border transition-all ${
+                  isLayerSelectorOpen
+                    ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.3)] animate-pulse"
+                    : "bg-[#131b17]/95 border-[#1b3d2b] hover:border-emerald-500/30 text-slate-300 hover:text-emerald-400"
+                }`}
+              >
+                <Layers className="w-[18px] h-[18px]" />
+              </button>
+              <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
+                Capas del Mapa
+              </span>
+            </div>
 
             {/* Printer */}
             <div className="relative group">
@@ -1499,6 +1584,48 @@ function AppContent() {
               </button>
               <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
                 Imprimir Mapa
+              </span>
+            </div>
+
+            {/* Condiciones del Clima / Tiempo */}
+            <div className="relative group">
+              <button
+                onClick={() => setIsRouteConditionsOpen(prev => !prev)}
+                title="Condiciones de la Ruta"
+                className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer border transition-all ${
+                  isRouteConditionsOpen
+                    ? "bg-sky-500/20 border-sky-500/50 text-sky-400 shadow-[0_0_12px_rgba(56,189,248,0.3)] animate-pulse"
+                    : "bg-[#131b17]/95 border-[#1b3d2b] hover:border-sky-500/30 text-slate-300 hover:text-sky-400"
+                }`}
+              >
+                <CloudRain className="w-[18px] h-[18px]" />
+              </button>
+              <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
+                Condiciones de la Ruta
+              </span>
+            </div>
+
+            {/* Inclinación 3D del Terreno */}
+            <div className="relative group">
+              <button
+                onClick={() => {
+                  if (!isPlusUser) {
+                    setIsPlusModalOpen(true);
+                  } else {
+                    setIs3DActive(prev => !prev);
+                  }
+                }}
+                title="Vista 3D"
+                className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer border transition-all ${
+                  is3DActive
+                    ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.3)]"
+                    : "bg-[#131b17]/95 border-[#1b3d2b] hover:border-emerald-500/30 text-slate-300 hover:text-emerald-400"
+                }`}
+              >
+                <span className="text-[10px] font-extrabold tracking-tighter">3D</span>
+              </button>
+              <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
+                Vista 3D {!isPlusUser && "(Plus)"}
               </span>
             </div>
 
@@ -1653,14 +1780,14 @@ function AppContent() {
           {/* Street View Panel (Split Screen) */}
           {isStreetViewActive && streetViewCoords && (
             <div
-              className={`border-[#1b3d2b]/40 bg-[#0a0e0c]/95 backdrop-blur-md flex flex-col z-[3000] transition-all duration-300 shrink-0 overflow-hidden ${
+              className={`border-[#1b3d2b] bg-[#0a0e0c]/95 backdrop-blur-md flex flex-col z-[3000] transition-all duration-300 shrink-0 overflow-hidden ${
                 isStreetViewFullscreen
                   ? "w-full h-full border-0"
-                  : "w-full md:w-[40%] h-[40%] md:h-full border-t md:border-t-0 md:border-l"
+                  : "w-full md:w-[40%] h-[40%] md:h-full border-t md:border-t-0 md:border-l border-[#1b3d2b]"
               }`}
             >
               {/* Glassmorphic Panel Header */}
-              <div className="flex items-center justify-between p-3.5 border-b border-[#1b3d2b]/40 bg-[#0c120f]/60 select-none shrink-0">
+              <div className="flex items-center justify-between p-3.5 border-b border-[#1b3d2b] bg-[#0c120f]/60 select-none shrink-0">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <div className="w-8 h-8 rounded-lg bg-yellow-500/10 border border-yellow-500/30 flex items-center justify-center shrink-0">
                     <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-yellow-400 fill-current" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
@@ -1825,7 +1952,7 @@ function AppContent() {
             <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-[40px] pointer-events-none" />
             
             {/* Header */}
-            <div className="flex items-center gap-3 border-b border-[#1b3d2b]/40 pb-4 mb-4 select-none">
+            <div className="flex items-center gap-3 border-b border-[#1b3d2b] pb-4 mb-4 select-none">
               <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0">
                 <Compass className="w-5 h-5 text-emerald-400 animate-spin-slow" />
               </div>
@@ -1853,7 +1980,7 @@ function AppContent() {
                   { keys: ["Esc"], desc: "Cancelar dibujos o cerrar panel" },
                   { keys: ["?"], desc: "Mostrar / ocultar menú de atajos" },
                 ].map((shortcut, i) => (
-                  <div key={i} className="flex flex-col gap-1.5 p-3 rounded-xl bg-[#0c120f]/80 border border-[#1b3d2b]/25 hover:border-emerald-500/30 transition-all select-none">
+                  <div key={i} className="flex flex-col gap-1.5 p-3 rounded-xl bg-[#0c120f]/80 border border-[#1b3d2b] hover:border-emerald-500/30 transition-all select-none">
                     <div className="flex items-center gap-1 flex-wrap">
                       {shortcut.keys.map((k, ki) => (
                         <span key={ki} className="flex items-center gap-1">
@@ -1881,7 +2008,7 @@ function AppContent() {
             </div>
 
             {/* Footer */}
-            <div className="border-t border-[#1b3d2b]/40 pt-4 flex items-center justify-between">
+            <div className="border-t border-[#1b3d2b] pt-4 flex items-center justify-between">
               <span className="text-[9px] text-slate-500 select-none">
                 Consejo: Presiona <kbd className="px-1.5 py-0.5 bg-[#131b17] border border-white/5 text-slate-400 rounded font-mono text-[9px]">?</kbd> para ver de nuevo.
               </span>
@@ -1907,7 +2034,7 @@ function AppContent() {
           
           <div className="relative flex flex-col items-center space-y-6 animate-fade-in">
             {/* Logo container */}
-            <div className="w-20 h-20 rounded-2xl overflow-hidden border border-[#1b3d2b]/60 flex items-center justify-center shadow-2xl bg-[#131b17]/90 relative">
+            <div className="w-20 h-20 rounded-2xl overflow-hidden border border-[#1b3d2b] flex items-center justify-center shadow-2xl bg-[#131b17]/90 relative">
               <Compass className="w-9 h-9 text-emerald-400 animate-spin-slow" />
             </div>
             
@@ -1922,7 +2049,7 @@ function AppContent() {
             </div>
             
             {/* Loading bar progress tracker */}
-            <div className="w-36 h-0.5 bg-[#131b17] border border-[#1b3d2b]/30 rounded-full overflow-hidden relative">
+            <div className="w-36 h-0.5 bg-[#131b17] border border-[#1b3d2b] rounded-full overflow-hidden relative">
               <div className="absolute top-0 left-0 h-full bg-gradient-to-r from-emerald-400 to-teal-300 rounded-full w-full animate-loading-bar" />
             </div>
           </div>
@@ -1935,6 +2062,72 @@ function AppContent() {
           onSkipAuth={handleSkipAuth}
         />
       )}
+
+      {/* SummitGPS Plus Modal */}
+      <PlusModal
+        isOpen={isPlusModalOpen}
+        onClose={() => setIsPlusModalOpen(false)}
+        onUpgradeSuccess={() => {
+          setIsPlusUser(true);
+          localStorage.setItem("summitgps_is_plus", "true");
+          setIsPlusModalOpen(false);
+          customAlert("¡Felicidades! Has desbloqueado SummitGPS Plus de manera exitosa. Todas las funciones premium ya están disponibles.");
+        }}
+      />
+
+      {/* Route Conditions Panel */}
+      <RouteConditionsPanel
+        isOpen={isRouteConditionsOpen}
+        onClose={() => setIsRouteConditionsOpen(false)}
+        isPlusUser={isPlusUser}
+        onOpenPlusModal={() => {
+          setIsRouteConditionsOpen(false);
+          setIsPlusModalOpen(true);
+        }}
+        points={activeTrackForPrint?.points || []}
+        useImperial={useImperial}
+        simulatedTime={simulatedTime}
+        onChangeSimulatedTime={setSimulatedTime}
+        isCollapsed={isSidebarCollapsed}
+      />
+
+      {/* Floating Layer Selector */}
+      <FloatingLayerSelector
+        isOpen={isLayerSelectorOpen}
+        onClose={() => setIsLayerSelectorOpen(false)}
+        activeBaseLayer={activeBaseLayer}
+        onChangeBaseLayer={setActiveBaseLayer}
+        showPersonalHeatmap={showPersonalHeatmap}
+        onTogglePersonalHeatmap={() => setShowPersonalHeatmap(prev => !prev)}
+        showCommunityHeatmap={showCommunityHeatmap}
+        onToggleCommunityHeatmap={() => setShowCommunityHeatmap(prev => !prev)}
+        showTerrainLimits={showTerrainLimits}
+        onToggleTerrainLimits={() => setShowTerrainLimits(prev => !prev)}
+        showContours={showContours}
+        onToggleContours={() => setShowContours(prev => !prev)}
+        overlayOpacity={overlayOpacity}
+        onChangeOverlayOpacity={setOverlayOpacity}
+        showSlopeShading={showSlopeShading}
+        onToggleSlopeShading={() => setShowSlopeShading(prev => !prev)}
+        slopeShadingOpacity={slopeShadingOpacity}
+        onChangeSlopeShadingOpacity={setSlopeShadingOpacity}
+        showDistanceMarkers={showDistanceMarkers}
+        onToggleDistanceMarkers={() => setShowDistanceMarkers(prev => !prev)}
+        showWaypoints={showWaypoints}
+        onToggleWaypoints={() => setShowWaypoints(prev => !prev)}
+        showCommunityWaypoints={showCommunityWaypoints}
+        onToggleCommunityWaypoints={() => setShowCommunityWaypoints(prev => !prev)}
+        showNearbyTrails={showNearbyTrails}
+        onToggleNearbyTrails={() => setShowNearbyTrails(prev => !prev)}
+        showHikingTrails={showHikingTrails}
+        onToggleHikingTrails={() => setShowHikingTrails(prev => !prev)}
+        showCyclingTrails={showCyclingTrails}
+        onToggleCyclingTrails={() => setShowCyclingTrails(prev => !prev)}
+        showMtbTrails={showMtbTrails}
+        onToggleMtbTrails={() => setShowMtbTrails(prev => !prev)}
+        isPlusUser={isPlusUser}
+        onOpenPlusModal={() => setIsPlusModalOpen(true)}
+      />
     </div>
   );
 }

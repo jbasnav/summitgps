@@ -83,6 +83,16 @@ interface MapContainerProps {
   onToggleUnits?: () => void;
   coordinateFormat?: "dd" | "ddm" | "dms" | "utm" | "mgrs";
   highlightedWptId?: string | null;
+  is3DActive?: boolean;
+  showDistanceMarkers?: boolean;
+  showPersonalHeatmap?: boolean;
+  showCommunityHeatmap?: boolean;
+  showTerrainLimits?: boolean;
+  showNearbyTrails?: boolean;
+  showHikingTrails?: boolean;
+  showCyclingTrails?: boolean;
+  showMtbTrails?: boolean;
+  showCommunityWaypoints?: boolean;
 }
 
 // Map Tile Providers
@@ -162,6 +172,16 @@ export function MapContainer({
   onToggleUnits,
   coordinateFormat = "dd",
   highlightedWptId = null,
+  is3DActive = false,
+  showDistanceMarkers = true,
+  showPersonalHeatmap = false,
+  showCommunityHeatmap = false,
+  showTerrainLimits = false,
+  showNearbyTrails: _showNearbyTrails = false,
+  showHikingTrails = false,
+  showCyclingTrails = false,
+  showMtbTrails = false,
+  showCommunityWaypoints: _showCommunityWaypoints = false,
 }: MapContainerProps) {
   const { customConfirm } = useCustomDialog();
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -178,6 +198,15 @@ export function MapContainer({
   const splitHighlightRef = useRef<L.Polyline | null>(null);
   const controlMarkersRef = useRef<L.CircleMarker[]>([]);
   const waypointMarkersRef = useRef<Record<string, L.Marker>>({});
+  
+  // Custom overlays & Extras refs
+  const distanceMarkersRef = useRef<L.Marker[]>([]);
+  const personalHeatmapRef = useRef<L.TileLayer | null>(null);
+  const communityHeatmapRef = useRef<L.TileLayer | null>(null);
+  const terrainLimitsRef = useRef<L.TileLayer | null>(null);
+  const hikingTrailsRef = useRef<L.TileLayer | null>(null);
+  const cyclingTrailsRef = useRef<L.TileLayer | null>(null);
+  const mtbTrailsRef = useRef<L.TileLayer | null>(null);
   const osmPoiMarkersRef = useRef<Record<string, L.Marker>>({});
   const hoverIndicatorRef = useRef<L.CircleMarker | null>(null);
   const markedLocationMarkerRef = useRef<L.Marker | null>(null);
@@ -269,6 +298,98 @@ export function MapContainer({
       map.remove();
     };
   }, []);
+
+  // Distance Markers effect
+  useEffect(() => {
+    if (!mapInstance) return;
+
+    distanceMarkersRef.current.forEach((marker) => {
+      mapInstance.removeLayer(marker);
+    });
+    distanceMarkersRef.current = [];
+
+    if (!showDistanceMarkers || !activeTrackId) return;
+
+    const activeTrack = tracks.find((t) => t.id === activeTrackId);
+    if (!activeTrack || activeTrack.points.length < 2 || !activeTrack.visible) return;
+
+    const markers: L.Marker[] = [];
+    const interval = useImperial ? 1.60934 : 1.0; // 1 mile in km, or 1 km
+    const unitLabel = useImperial ? "mi" : "km";
+
+    let nextThreshold = interval;
+    
+    for (let i = 1; i < activeTrack.points.length; i++) {
+      const p2 = activeTrack.points[i];
+      if (p2.distance >= nextThreshold) {
+        const labelText = `${Math.round(nextThreshold / interval)} ${unitLabel}`;
+        const markerIcon = L.divIcon({
+          className: "custom-distance-marker-icon",
+          html: `<div style="background-color: white; color: #0c120f; font-weight: 800; font-size: 9px; padding: 2px 6px; border-radius: 999px; border: 1.5px solid ${activeTrack.color}; box-shadow: 0 2px 6px rgba(0,0,0,0.3); white-space: nowrap; transform: translate(-50%, -50%); display: inline-block;">${labelText}</div>`,
+          iconSize: [0, 0] as any,
+        });
+
+        const marker = L.marker([p2.lat, p2.lng], { icon: markerIcon, zIndexOffset: 2000 }).addTo(mapInstance);
+        markers.push(marker);
+
+        nextThreshold += interval;
+      }
+    }
+
+    distanceMarkersRef.current = markers;
+
+    return () => {
+      markers.forEach((m) => mapInstance.removeLayer(m));
+    };
+  }, [mapInstance, activeTrackId, tracks, showDistanceMarkers, useImperial]);
+
+  // Heatmap and Trails Layers effect
+  useEffect(() => {
+    if (!mapInstance) return;
+
+    const toggleLayer = (
+      flag: boolean,
+      ref: React.MutableRefObject<L.TileLayer | null>,
+      url: string,
+      zIndex: number,
+      opacity: number = 1.0
+    ) => {
+      if (flag) {
+        if (!ref.current) {
+          ref.current = L.tileLayer(url, { maxZoom: 19, zIndex, opacity }).addTo(mapInstance);
+        }
+      } else {
+        if (ref.current) {
+          mapInstance.removeLayer(ref.current);
+          ref.current = null;
+        }
+      }
+    };
+
+    toggleLayer(!!showPersonalHeatmap, personalHeatmapRef, "https://a.gps-tile.openstreetmap.org/lines/{z}/{x}/{y}.png", 50, 0.7);
+    toggleLayer(!!showCommunityHeatmap, communityHeatmapRef, "https://b.gps-tile.openstreetmap.org/lines/{z}/{x}/{y}.png", 51, 0.7);
+    toggleLayer(!!showTerrainLimits, terrainLimitsRef, "https://server.arcgisonline.com/ArcGIS/rest/services/Specialty/Soil_Survey_Map/MapServer/tile/{z}/{y}/{x}", 40, 0.4);
+    toggleLayer(!!showHikingTrails, hikingTrailsRef, "https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png", 60, 0.85);
+    toggleLayer(!!showCyclingTrails, cyclingTrailsRef, "https://tile.waymarkedtrails.org/cycling/{z}/{x}/{y}.png", 61, 0.85);
+    toggleLayer(!!showMtbTrails, mtbTrailsRef, "https://tile.waymarkedtrails.org/mtb/{z}/{x}/{y}.png", 62, 0.85);
+
+    return () => {
+      [personalHeatmapRef, communityHeatmapRef, terrainLimitsRef, hikingTrailsRef, cyclingTrailsRef, mtbTrailsRef].forEach((ref) => {
+        if (ref.current) {
+          mapInstance.removeLayer(ref.current);
+          ref.current = null;
+        }
+      });
+    };
+  }, [
+    mapInstance,
+    showPersonalHeatmap,
+    showCommunityHeatmap,
+    showTerrainLimits,
+    showHikingTrails,
+    showCyclingTrails,
+    showMtbTrails,
+  ]);
 
   // Update Base Layer (supporting custom base layers)
   useEffect(() => {
@@ -1751,7 +1872,11 @@ export function MapContainer({
 
   return (
     <div className={`relative w-full h-full bg-[#0a0e0c] overflow-hidden ${isDrawing || isSelectingArea || isCleaningArea || isDrawingArea ? "leaflet-crosshair" : isSplitting ? "leaflet-scissors" : ""}`}>
-      <div ref={mapContainerRef} className="w-full h-full z-10" />
+      <div 
+        ref={mapContainerRef} 
+        className="w-full h-full z-10 transition-all duration-700 ease-in-out origin-bottom" 
+        style={is3DActive ? { transform: 'perspective(1200px) rotateX(25deg) scale(1.03)' } : undefined}
+      />
 
       {/* Map Drawing overlay badge */}
       {isDrawing && (

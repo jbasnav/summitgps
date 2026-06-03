@@ -20,35 +20,35 @@ export interface LibraryImage {
   createdAt: string; // ISO date string
 }
 
-const STORAGE_KEY = "summit_image_library";
 const MAX_IMAGES = 20;
 
-function loadFromStorage(): LibraryImage[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    return JSON.parse(raw) as LibraryImage[];
-  } catch {
-    return [];
-  }
-}
-
-function saveToStorage(images: LibraryImage[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(images));
-  } catch (e) {
-    console.warn("useImageLibrary: failed to save to localStorage", e);
-  }
-}
-
 export function useImageLibrary(userId?: string | null) {
-  const [images, setImages] = useState<LibraryImage[]>(loadFromStorage);
+  const [images, setImages] = useState<LibraryImage[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [lastLoadedUserId, setLastLoadedUserId] = useState<string | null | undefined>(undefined);
 
-  // Keep localStorage in sync whenever images change
+  // Load from storage reactively when userId changes
   useEffect(() => {
-    saveToStorage(images);
-  }, [images]);
+    const key = userId ? `summit_image_library_${userId}` : "summit_image_library";
+    try {
+      const raw = localStorage.getItem(key);
+      setImages(raw ? JSON.parse(raw) : []);
+    } catch {
+      setImages([]);
+    }
+    setLastLoadedUserId(userId);
+  }, [userId]);
+
+  // Keep localStorage in sync whenever images change (only when loaded state is aligned with current user)
+  useEffect(() => {
+    if (lastLoadedUserId !== userId) return;
+    const key = userId ? `summit_image_library_${userId}` : "summit_image_library";
+    try {
+      localStorage.setItem(key, JSON.stringify(images));
+    } catch (e) {
+      console.warn("useImageLibrary: failed to save to localStorage", e);
+    }
+  }, [images, userId, lastLoadedUserId]);
 
   /**
    * Add a new image from a File object.

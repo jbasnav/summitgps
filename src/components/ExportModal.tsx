@@ -453,7 +453,7 @@ export function ExportModal({
         </button>
 
         {/* Modal Header */}
-        <div className="flex items-center gap-3 pb-4 border-b border-[#1b3d2b]/40">
+        <div className="flex items-center gap-3 pb-4 border-b border-[#1b3d2b]">
           <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
             <Settings2 className="w-5 h-5" />
           </div>
@@ -540,7 +540,7 @@ export function ExportModal({
         {/* Cloud Hosting Section */}
         <div className="mt-5 space-y-2">
           <span className="text-[9.5px] font-bold text-slate-500 uppercase tracking-widest block">3. Almacenamiento en la Nube y Compartir</span>
-          <div className="p-4 rounded-2xl bg-[#0c120f]/60 border border-[#1b3d2b]/30 relative overflow-hidden">
+          <div className="p-4 rounded-2xl bg-[#0c120f]/60 border border-[#1b3d2b] relative overflow-hidden">
             {user ? (
               <div className="space-y-3.5">
                 <div className="flex items-center justify-between">
@@ -563,7 +563,7 @@ export function ExportModal({
                 </div>
 
                 {cloudUrl && (
-                  <div className="flex items-center gap-2 bg-[#060a08]/85 border border-[#1b3d2b]/40 rounded-xl p-2 animate-fade-in relative z-10">
+                  <div className="flex items-center gap-2 bg-[#060a08]/85 border border-[#1b3d2b] rounded-xl p-2 animate-fade-in relative z-10">
                     <input
                       type="text"
                       readOnly
@@ -610,7 +610,7 @@ export function ExportModal({
         </div>
 
         {/* Footer Actions */}
-        <div className="border-t border-[#1b3d2b]/40 pt-5 mt-6 flex items-center justify-between gap-3">
+        <div className="border-t border-[#1b3d2b] pt-5 mt-6 flex items-center justify-between gap-3">
           <button
             onClick={onClose}
             className="px-4 py-2 bg-transparent hover:bg-white/5 border border-white/5 hover:border-white/10 text-slate-400 hover:text-slate-200 text-xs font-bold rounded-xl transition-all cursor-pointer"

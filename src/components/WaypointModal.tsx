@@ -248,7 +248,7 @@ export function WaypointModal({
           </div>
 
           {/* Icon Selector (Categorized Tabs) */}
-          <div className="space-y-3.5 border border-[#1b3d2b]/30 p-4 rounded-2xl bg-[#0c120f]/50">
+          <div className="space-y-3.5 border border-[#1b3d2b] p-4 rounded-2xl bg-[#0c120f]/50">
             <div className="space-y-1 shrink-0 select-none">
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
                 Filtrar por Categoría
@@ -390,7 +390,7 @@ export function WaypointModal({
             ) : (
               <label
                 htmlFor="wpt-photo-upload"
-                className="w-full flex flex-col items-center justify-center p-6 border-2 border-dashed border-[#1b3d2b]/60 rounded-xl cursor-pointer hover:border-emerald-400 bg-[#0a0f0d]/50 hover:bg-[#0c120f]/50 transition-all text-slate-400 hover:text-slate-200 select-none group"
+                className="w-full flex flex-col items-center justify-center p-6 border-2 border-dashed border-[#1b3d2b] rounded-xl cursor-pointer hover:border-emerald-400 bg-[#0a0f0d]/50 hover:bg-[#0c120f]/50 transition-all text-slate-400 hover:text-slate-200 select-none group"
               >
                 <Camera className="w-6 h-6 text-emerald-400/80 mb-1.5 group-hover:scale-110 transition-transform" />
                 <span className="text-[10px] font-extrabold uppercase tracking-wider">Subir Foto</span>
@@ -446,25 +446,25 @@ export function WaypointModal({
                 Ubicación y Sistemas de Coordenadas
               </label>
               <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-300 font-mono select-text">
-                <div className="bg-[#050807]/40 border border-[#1b3d2b]/20 p-2 rounded-lg">
+                <div className="bg-[#050807]/40 border border-[#1b3d2b] p-2 rounded-lg">
                   <p className="text-[9px] font-sans font-bold text-slate-500 uppercase tracking-wide mb-0.5">Decimal (WGS84)</p>
                   <p className="text-emerald-400 font-bold truncate">Lat: {initialData.lat.toFixed(6)}</p>
                   <p className="text-emerald-400 font-bold truncate">Lon: {initialData.lng.toFixed(6)}</p>
                 </div>
                 
-                <div className="bg-[#050807]/40 border border-[#1b3d2b]/20 p-2 rounded-lg">
+                <div className="bg-[#050807]/40 border border-[#1b3d2b] p-2 rounded-lg">
                   <p className="text-[9px] font-sans font-bold text-slate-500 uppercase tracking-wide mb-0.5">DMS (GMS)</p>
                   <p className="text-amber-400 truncate">{latLngToDms(initialData.lat, initialData.lng).lat}</p>
                   <p className="text-amber-400 truncate">{latLngToDms(initialData.lat, initialData.lng).lng}</p>
                 </div>
                 
-                <div className="bg-[#050807]/40 border border-[#1b3d2b]/20 p-2 rounded-lg col-span-2 flex justify-between gap-4">
+                <div className="bg-[#050807]/40 border border-[#1b3d2b] p-2 rounded-lg col-span-2 flex justify-between gap-4">
                   <div>
                     <p className="text-[9px] font-sans font-bold text-slate-500 uppercase tracking-wide mb-0.5">UTM ETRS89 (Huso 30N)</p>
                     <p className="text-blue-400">X: <span className="font-bold">{latLngToUtm(initialData.lat, initialData.lng, "WGS84").x.toLocaleString()}</span></p>
                     <p className="text-blue-400">Y: <span className="font-bold">{latLngToUtm(initialData.lat, initialData.lng, "WGS84").y.toLocaleString()}</span></p>
                   </div>
-                  <div className="border-l border-[#1b3d2b]/30 pl-4">
+                  <div className="border-l border-[#1b3d2b] pl-4">
                     <p className="text-[9px] font-sans font-bold text-slate-500 uppercase tracking-wide mb-0.5">UTM ED50 (Huso 30N)</p>
                     <p className="text-rose-400">X: <span className="font-bold">{latLngToUtm(initialData.lat, initialData.lng, "ED50").x.toLocaleString()}</span></p>
                     <p className="text-rose-400">Y: <span className="font-bold">{latLngToUtm(initialData.lat, initialData.lng, "ED50").y.toLocaleString()}</span></p>
@@ -473,7 +473,7 @@ export function WaypointModal({
               </div>
 
               {/* Altitud Estimada (API Open-Meteo) */}
-              <div className="bg-[#050807]/60 border border-[#1b3d2b]/30 rounded-lg p-2.5 flex items-center justify-between mt-2 select-none">
+              <div className="bg-[#050807]/60 border border-[#1b3d2b] rounded-lg p-2.5 flex items-center justify-between mt-2 select-none">
                 <div className="flex items-center gap-2">
                   <span className="text-base">🏔️</span>
                   <div>

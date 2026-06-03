@@ -254,54 +254,67 @@ export function useRoutePlanner(user: any | null = null) {
 
   // 2. Persist to LocalStorage as write-through cache (both Guest and Logged-in modes)
   // This ensures localStorage always has a backup copy of the latest state,
-  // preventing data loss on refresh/logout when Supabase writes are fire-and-forget.
+  // preventing data loss on refresh/logout. Prefixed with user.id when logged in
+  // to prevent data leaks into guest sessions.
   useEffect(() => {
+    if (loading) return;
     try {
-      localStorage.setItem("summit_route_collections", JSON.stringify(routeCollections));
+      const key = user ? `summit_route_collections_${user.id}` : "summit_route_collections";
+      localStorage.setItem(key, JSON.stringify(routeCollections));
     } catch (e) {
       console.error("Failed to save route collections to localStorage:", e);
     }
-  }, [routeCollections]);
+  }, [routeCollections, user, loading]);
 
   useEffect(() => {
+    if (loading) return;
     try {
-      localStorage.setItem("summit_waypoint_groups", JSON.stringify(waypointGroups));
+      const key = user ? `summit_waypoint_groups_${user.id}` : "summit_waypoint_groups";
+      localStorage.setItem(key, JSON.stringify(waypointGroups));
     } catch (e) {
       console.error("Failed to save waypoint groups to localStorage:", e);
     }
-  }, [waypointGroups]);
+  }, [waypointGroups, user, loading]);
 
   useEffect(() => {
+    if (loading) return;
     try {
-      localStorage.setItem("summit_click_segments", JSON.stringify(clickSegments));
+      const key = user ? `summit_click_segments_${user.id}` : "summit_click_segments";
+      localStorage.setItem(key, JSON.stringify(clickSegments));
     } catch (e) {
       console.error("Failed to save click segments to localStorage:", e);
     }
-  }, [clickSegments]);
+  }, [clickSegments, user, loading]);
 
   useEffect(() => {
+    if (loading) return;
     try {
-      localStorage.setItem("summit_tracks", JSON.stringify(tracks));
+      const key = user ? `summit_tracks_${user.id}` : "summit_tracks";
+      localStorage.setItem(key, JSON.stringify(tracks));
     } catch (e) {
       console.error("Failed to save tracks to localStorage:", e);
     }
-  }, [tracks]);
+  }, [tracks, user, loading]);
 
   useEffect(() => {
+    if (loading) return;
     try {
-      localStorage.setItem("summit_active_track_id", JSON.stringify(activeTrackId));
+      const key = user ? `summit_active_track_id_${user.id}` : "summit_active_track_id";
+      localStorage.setItem(key, JSON.stringify(activeTrackId));
     } catch (e) {
       console.error("Failed to save activeTrackId to localStorage:", e);
     }
-  }, [activeTrackId]);
+  }, [activeTrackId, user, loading]);
 
   useEffect(() => {
+    if (loading) return;
     try {
-      localStorage.setItem("summit_areas", JSON.stringify(areas));
+      const key = user ? `summit_areas_${user.id}` : "summit_areas";
+      localStorage.setItem(key, JSON.stringify(areas));
     } catch (e) {
       console.error("Failed to save areas to localStorage:", e);
     }
-  }, [areas]);
+  }, [areas, user, loading]);
 
   useEffect(() => {
     localStorage.setItem('summit_routing_profile', routingProfile);
@@ -311,18 +324,19 @@ export function useRoutePlanner(user: any | null = null) {
   useEffect(() => {
     const flush = () => {
       try {
-        localStorage.setItem("summit_tracks", JSON.stringify(tracks));
-        localStorage.setItem("summit_areas", JSON.stringify(areas));
-        localStorage.setItem("summit_active_track_id", JSON.stringify(activeTrackId));
-        localStorage.setItem("summit_route_collections", JSON.stringify(routeCollections));
-        localStorage.setItem("summit_waypoint_groups", JSON.stringify(waypointGroups));
+        const suffix = user ? `_${user.id}` : "";
+        localStorage.setItem(`summit_tracks${suffix}`, JSON.stringify(tracks));
+        localStorage.setItem(`summit_areas${suffix}`, JSON.stringify(areas));
+        localStorage.setItem(`summit_active_track_id${suffix}`, JSON.stringify(activeTrackId));
+        localStorage.setItem(`summit_route_collections${suffix}`, JSON.stringify(routeCollections));
+        localStorage.setItem(`summit_waypoint_groups${suffix}`, JSON.stringify(waypointGroups));
       } catch (e) {
         console.error("Failed to flush data on unload:", e);
       }
     };
     window.addEventListener("beforeunload", flush);
     return () => window.removeEventListener("beforeunload", flush);
-  }, [tracks, areas, activeTrackId, routeCollections, waypointGroups]);
+  }, [tracks, areas, activeTrackId, routeCollections, waypointGroups, user]);
 
   // Load data reactively when user changes (Cloud or Guest Mode)
   useEffect(() => {

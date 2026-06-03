@@ -48,7 +48,6 @@ import {
   Users,
   Globe,
   Lock,
-  Unlock,
   Import,
 } from "lucide-react";
 import { LayerSelector, type BaseLayerId, type CustomLayer } from "./LayerSelector";
@@ -127,11 +126,17 @@ interface SidebarProps {
   showGridLabels: boolean;
   onToggleGridLabels: () => void;
 
+  // Plus and Conditions options
+  isPlusUser?: boolean;
+  onOpenPlusModal?: () => void;
+  isRouteConditionsOpen?: boolean;
+  onToggleRouteConditions?: () => void;
+
   // Waypoint Groups / Challenges Props
   waypointGroups: any[];
-  onAddWaypointGroup: (group: { id?: string; name: string; description: string; color: string; visible: boolean; image?: string }) => any;
+  onAddWaypointGroup: (group: { id?: string; name: string; description: string; color: string; visible: boolean; image?: string; type?: "folder" | "challenge"; isPublic?: boolean }) => any;
   onDeleteWaypointGroup: (id: string) => void;
-  onUpdateWaypointGroup: (id: string, group: { name?: string; description?: string; color?: string; visible?: boolean; image?: string }) => void;
+  onUpdateWaypointGroup: (id: string, group: { name?: string; description?: string; color?: string; visible?: boolean; image?: string; type?: "folder" | "challenge"; isPublic?: boolean }) => void;
   onToggleWaypointGroupVisibility: (id: string) => void;
   onToggleGroupPublic?: (id: string) => void;
   onToggleWaypointCompleted: (id: string) => void;
@@ -361,6 +366,10 @@ export function Sidebar({
   trimTrack,
   applySmoothTrack,
   applyRemoveOutliers,
+  isPlusUser = false,
+  onOpenPlusModal = () => {},
+  isRouteConditionsOpen = false,
+  onToggleRouteConditions = () => {},
 }: SidebarProps) {
   const { customAlert, customConfirm, customPrompt } = useCustomDialog();
   const [activeTab, setActiveTab] = useState<TabId>("route");
@@ -1239,12 +1248,15 @@ export function Sidebar({
 
         {/* User Session Sub-Header Status Panel */}
         {user ? (
-          <div className="h-[36px] px-5 bg-[#0a0f0d] border-b border-[#1b3d2b]/60 flex items-center justify-between text-[10px] select-none shrink-0">
+          <div className="h-[36px] px-5 bg-[#0a0f0d] border-b border-[#1b3d2b] flex items-center justify-between text-[10px] select-none shrink-0">
             <div className="flex items-center gap-1.5 min-w-0">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
               <span className="text-slate-400 truncate font-semibold" title={user.email}>
                 {user.email}
               </span>
+              {isPlusUser && (
+                <span className="text-[7.5px] bg-gradient-to-r from-yellow-500/20 to-amber-500/20 border border-yellow-500/30 text-yellow-400 font-extrabold px-1 py-0.5 rounded leading-none">PLUS</span>
+              )}
             </div>
             <button
               onClick={onSignOut}
@@ -1256,10 +1268,13 @@ export function Sidebar({
             </button>
           </div>
         ) : (
-          <div className="h-[36px] px-5 bg-[#1b231e]/20 border-b border-[#1b3d2b]/60 flex items-center justify-between text-[10px] select-none shrink-0">
+          <div className="h-[36px] px-5 bg-[#1b231e]/20 border-b border-[#1b3d2b] flex items-center justify-between text-[10px] select-none shrink-0">
             <div className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 animate-pulse" />
               <span className="text-slate-400 font-semibold">👤 Modo Invitado</span>
+              {isPlusUser && (
+                <span className="text-[7.5px] bg-gradient-to-r from-yellow-500/20 to-amber-500/20 border border-yellow-500/30 text-yellow-400 font-extrabold px-1 py-0.5 rounded leading-none">PLUS</span>
+              )}
             </div>
             {isSupabaseConfigured && (
               <button
@@ -1303,6 +1318,24 @@ export function Sidebar({
 
         {/* Tab Content Panel */}
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
+          {/* Plus Promo Banner */}
+          {!isPlusUser && (
+            <div className="p-3 bg-gradient-to-r from-emerald-500/10 via-teal-500/15 to-emerald-600/10 border border-emerald-500/20 rounded-xl flex items-center justify-between gap-2.5 animate-pulse shadow-md select-none shrink-0 mb-1">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[7.5px] font-extrabold text-emerald-400 bg-emerald-500/20 px-1 py-0.5 rounded uppercase tracking-widest leading-none">Plus</span>
+                  <span className="text-[10px] font-bold text-slate-200">Mapas 3D y Clima Premium</span>
+                </div>
+                <p className="text-[8.5px] text-slate-500 mt-0.5 leading-tight">Previsiones detalladas y filtros de sol.</p>
+              </div>
+              <button
+                onClick={onOpenPlusModal}
+                className="shrink-0 bg-emerald-500 hover:bg-emerald-400 text-[#0c120f] font-extrabold text-[9px] px-2.5 py-1.5 rounded-lg transition-all shadow-md cursor-pointer"
+              >
+                Planes
+              </button>
+            </div>
+          )}
           {/* TAB: ROUTE (MULTIPLES RUTAS) */}
           {activeTab === "route" && (
             <div className="space-y-5 animate-fade-in">
@@ -1491,7 +1524,7 @@ export function Sidebar({
                 {/* COLLECTION CREATOR/EDITOR FORM */}
                 {isCreatingCollection && (
                   <div className="bg-[#0c120f]/80 border border-[#1b3d2b] rounded-xl p-4 space-y-3.5 shadow-inner animate-fade-in">
-                    <div className="flex items-center justify-between border-b border-[#1b3d2b]/20 pb-2">
+                    <div className="flex items-center justify-between border-b border-[#1b3d2b] pb-2">
                       <span className="text-xs font-bold text-emerald-400">
                         {editingCollectionId ? "Editar Colección" : "Crear Colección"}
                       </span>
@@ -1716,14 +1749,6 @@ export function Sidebar({
                         return t.collectionId === collection.id;
                       });
 
-                      // Filter waypoints belonging to this collection
-                      const collectionWaypoints = waypoints.filter((w) => {
-                        if (collection.id === "default") {
-                          return !w.groupId || w.groupId === "default";
-                        }
-                        return w.groupId === collection.id;
-                      });
-
                       // Filter areas belonging to this collection
                       const collectionAreas = areas.filter((a) => {
                         if (collection.id === "default") {
@@ -1736,10 +1761,6 @@ export function Sidebar({
                       const filteredTracks = !librarySearchQuery.trim() 
                         ? collectionTracks 
                         : collectionTracks.filter(t => t.name.toLowerCase().includes(librarySearchQuery.toLowerCase()));
-
-                      const filteredWaypoints = !librarySearchQuery.trim() 
-                        ? collectionWaypoints 
-                        : collectionWaypoints.filter(w => w.name.toLowerCase().includes(librarySearchQuery.toLowerCase()) || (w.note && w.note.toLowerCase().includes(librarySearchQuery.toLowerCase())));
 
                       const filteredAreas = !librarySearchQuery.trim() 
                         ? collectionAreas 
@@ -1856,7 +1877,7 @@ export function Sidebar({
 
                           {/* Accordion Content: Unified elements lists */}
                           {isExpanded && (
-                            <div className="border-t border-[#1b3d2b]/25 bg-[#0a0f0d]/60 p-3 space-y-4 animate-slide-in-top">
+                            <div className="border-t border-[#1b3d2b] bg-[#0a0f0d]/60 p-3 space-y-4 animate-slide-in-top">
                               {collection.description && (
                                 <p className="text-[10px] text-slate-400 px-2.5 py-1.5 bg-black/10 rounded-lg italic">
                                   {collection.description}
@@ -2079,7 +2100,7 @@ export function Sidebar({
                               </div>
 
                               {/* CATEGORY 2: AREAS (POLYGONS) */}
-                              <div className="space-y-1.5 border-t border-[#1b3d2b]/15 pt-3">
+                              <div className="space-y-1.5 border-t border-[#1b3d2b] pt-3">
                                 <button
                                   type="button"
                                   onClick={() => toggleCollectionCat(collection.id, "areas")}
@@ -2153,7 +2174,7 @@ export function Sidebar({
                               </div>
 
                               {/* ADD NEW ROUTE INSIDE FOLDER */}
-                              <div className="border-t border-[#1b3d2b]/15 pt-2.5">
+                              <div className="border-t border-[#1b3d2b] pt-2.5">
                                 <button
                                   type="button"
                                   onClick={async (e) => {
@@ -2427,7 +2448,7 @@ export function Sidebar({
                     {/* Param 1: Simplificar Panel Inline */}
                     {showSimplifyPanel && points.length > 2 && activeTrackId && (
                       <div className="mt-3.5 space-y-3 p-3 rounded-xl bg-[#080e0a] border border-amber-500/20 shadow-inner animate-fade-in animate-duration-200">
-                        <div className="flex items-center justify-between border-b border-[#1b3d2b]/30 pb-1.5">
+                        <div className="flex items-center justify-between border-b border-[#1b3d2b] pb-1.5">
                           <span className="text-[9px] font-extrabold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
                             <Trees className="w-3 h-3" /> Simplificar GPS
                           </span>
@@ -2475,7 +2496,7 @@ export function Sidebar({
                     {/* Param 2: Recortar Panel Inline */}
                     {showTrimPanel && points.length > 2 && activeTrackId && (
                       <div className="mt-3.5 space-y-3 p-3 rounded-xl bg-[#080e0a] border border-rose-500/20 shadow-inner animate-fade-in animate-duration-200">
-                        <div className="flex items-center justify-between border-b border-[#1b3d2b]/30 pb-1.5">
+                        <div className="flex items-center justify-between border-b border-[#1b3d2b] pb-1.5">
                           <span className="text-[9px] font-extrabold text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
                             <Scissors className="w-3 h-3" /> Recortar Inicio / Fin
                           </span>
@@ -2539,7 +2560,7 @@ export function Sidebar({
                     {/* Param 3: Limpiar por Área Panel Inline */}
                     {_isCleaningArea && _cleanBounds && activeTrackId && (
                       <div className="mt-3.5 space-y-3 p-3 rounded-xl bg-[#080e0a] border border-red-500/20 shadow-inner animate-fade-in animate-duration-200">
-                        <div className="flex items-center justify-between border-b border-[#1b3d2b]/30 pb-1.5">
+                        <div className="flex items-center justify-between border-b border-[#1b3d2b] pb-1.5">
                           <span className="text-[9px] font-bold text-red-400 uppercase tracking-wider flex items-center gap-1.5">
                             <Hexagon className="w-3 h-3" /> Limpieza de Área
                           </span>
@@ -2596,7 +2617,7 @@ export function Sidebar({
                     {/* Param 4: Suavizar Panel Inline */}
                     {showSmoothPanel && points.length > 2 && activeTrackId && (
                       <div className="mt-3.5 space-y-3 p-3 rounded-xl bg-[#080e0a] border border-cyan-500/20 shadow-inner animate-fade-in animate-duration-200">
-                        <div className="flex items-center justify-between border-b border-[#1b3d2b]/30 pb-1.5">
+                        <div className="flex items-center justify-between border-b border-[#1b3d2b] pb-1.5">
                           <span className="text-[9px] font-extrabold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
                             <TrendingUp className="w-3 h-3" /> Suavizar Ruta
                           </span>
@@ -2644,7 +2665,7 @@ export function Sidebar({
                     {/* Param 5: Outliers Panel Inline */}
                     {showOutliersPanel && points.length > 2 && activeTrackId && (
                       <div className="mt-3.5 space-y-3 p-3 rounded-xl bg-[#080e0a] border border-rose-500/20 shadow-inner animate-fade-in animate-duration-200">
-                        <div className="flex items-center justify-between border-b border-[#1b3d2b]/30 pb-1.5">
+                        <div className="flex items-center justify-between border-b border-[#1b3d2b] pb-1.5">
                           <span className="text-[9px] font-extrabold text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
                             <Zap className="w-3 h-3" /> Quitar Outliers
                           </span>
@@ -2774,6 +2795,21 @@ export function Sidebar({
                         );
                       })()}
 
+                      <button
+                        type="button"
+                        onClick={onToggleRouteConditions}
+                        className={`w-full py-2.5 rounded-xl border transition-all text-xs font-bold flex items-center justify-center gap-1.5 shadow-lg cursor-pointer mb-2 ${
+                          isRouteConditionsOpen
+                            ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.2)]"
+                            : "bg-[#0b100d] border-white/5 hover:border-emerald-500/20 text-slate-400 hover:text-slate-200"
+                        }`}
+                      >
+                        <span>🌦️ Condiciones de la ruta</span>
+                        {!isPlusUser && (
+                          <span className="text-[7.5px] bg-yellow-500/20 border border-yellow-500/30 text-yellow-400 font-extrabold px-1 py-0.5 rounded leading-none">PLUS</span>
+                        )}
+                      </button>
+
                       <StatsPanel
                         distance={distance}
                         ascent={ascent}
@@ -2800,7 +2836,7 @@ export function Sidebar({
                   )}
 
                   {/* Multi-Format Export Options */}
-                  <div className="pt-3 border-t border-[#1b3d2b]/20 space-y-2 select-none">
+                  <div className="pt-3 border-t border-[#1b3d2b] space-y-2 select-none">
                     <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest flex items-center justify-center gap-1.5">
                       <Share2 className="w-3 h-3 text-slate-500" /> Exportar Ruta Activa
                     </span>
@@ -2837,7 +2873,7 @@ export function Sidebar({
               )}
 
               {/* Import Upload Widget (Always Visible) */}
-              <div className="border-t border-[#1b3d2b]/40 pt-4">
+              <div className="border-t border-[#1b3d2b] pt-4">
                 <label className="w-full py-2.5 rounded-xl border border-[#1b3d2b] bg-[#0c120f] hover:bg-[#0f1612] text-slate-300 hover:text-emerald-400 cursor-pointer transition-all text-xs font-semibold flex items-center justify-center gap-1.5">
                   <Upload className="w-4 h-4" />
                   Importar GPX / KML / GeoJSON / FIT
@@ -2852,7 +2888,7 @@ export function Sidebar({
               </div>
 
               {/* ══════════ AREAS SECTION ══════════ */}
-              <div className="border-t border-[#1b3d2b]/40 pt-4 space-y-3">
+              <div className="border-t border-[#1b3d2b] pt-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
                     <Hexagon className="w-3.5 h-3.5 text-emerald-400" />
@@ -2898,7 +2934,7 @@ export function Sidebar({
                       return (
                         <div
                           key={area.id}
-                          className="group bg-[#0c120f]/80 border border-[#1b3d2b]/30 rounded-xl p-3 space-y-2 hover:border-[#1b3d2b]/60 transition-all"
+                          className="group bg-[#0c120f]/80 border border-[#1b3d2b] rounded-xl p-3 space-y-2 hover:border-[#1b3d2b]/60 transition-all"
                         >
                           {/* Area Header */}
                           <div className="flex items-center gap-2">
@@ -2939,7 +2975,7 @@ export function Sidebar({
                             <select
                               value={area.collectionId || "default"}
                               onChange={(e) => onUpdateArea(area.id, { collectionId: e.target.value })}
-                              className="flex-1 bg-[#0a0f0d]/80 border border-[#1b3d2b]/40 rounded-lg px-2 py-1 text-[10px] text-slate-300 focus:outline-none focus:border-emerald-400 transition-colors cursor-pointer"
+                              className="flex-1 bg-[#0a0f0d]/80 border border-[#1b3d2b] rounded-lg px-2 py-1 text-[10px] text-slate-300 focus:outline-none focus:border-emerald-400 transition-colors cursor-pointer"
                             >
                               {routeCollections.map((col) => (
                                 <option key={col.id} value={col.id} style={{ backgroundColor: '#0c120f', color: '#e2e8f0' }}>
@@ -2982,7 +3018,7 @@ export function Sidebar({
                                 onFlyToCoords(lat, lng);
                               }
                             }}
-                            className="w-full py-1.5 rounded-lg border border-[#1b3d2b]/30 bg-[#0a0f0d] text-[10px] text-slate-400 hover:text-emerald-300 hover:border-emerald-500/20 transition-all flex items-center justify-center gap-1.5 font-semibold cursor-pointer"
+                            className="w-full py-1.5 rounded-lg border border-[#1b3d2b] bg-[#0a0f0d] text-[10px] text-slate-400 hover:text-emerald-300 hover:border-emerald-500/20 transition-all flex items-center justify-center gap-1.5 font-semibold cursor-pointer"
                           >
                             <Compass className="w-3 h-3" />
                             Centrar en Mapa
@@ -3298,7 +3334,7 @@ export function Sidebar({
                 {/* 2. CHALLENGE CREATOR/EDITOR FORM */}
                 {isCreatingGroup && (
                   <div className="bg-[#0c120f]/80 border border-[#1b3d2b] rounded-xl p-4 space-y-3.5 shadow-inner animate-fade-in">
-                    <div className="flex items-center justify-between border-b border-[#1b3d2b]/20 pb-2">
+                    <div className="flex items-center justify-between border-b border-[#1b3d2b] pb-2">
                       <span className="text-xs font-bold text-emerald-400">
                         {editingGroupId
                           ? (isChallengeMode ? "Editar Reto" : "Editar Carpeta")
@@ -3506,7 +3542,7 @@ export function Sidebar({
                     return (
                       <div
                         key={group.id}
-                        className="relative border border-[#1b3d2b]/40 rounded-xl overflow-hidden bg-[#1c2921]/45 hover:bg-[#1c2921]/55 transition-all duration-300 shadow-md"
+                        className="relative border border-[#1b3d2b] rounded-xl overflow-hidden bg-[#1c2921]/45 hover:bg-[#1c2921]/55 transition-all duration-300 shadow-md"
                       >
                         {/* Accordion Header */}
                         <div
@@ -3753,7 +3789,7 @@ export function Sidebar({
                                       }));
                                     }}
                                     placeholder={isChallengeMode ? "Buscar marcas en este reto..." : "Buscar marcas..."}
-                                    className="w-full bg-[#050807]/60 border border-[#1b3d2b]/60 hover:border-emerald-500/20 focus:border-emerald-400 rounded-lg pl-8 pr-8 py-1.5 text-[11px] text-slate-100 placeholder-slate-600 focus:outline-none transition-colors"
+                                    className="w-full bg-[#050807]/60 border border-[#1b3d2b] hover:border-emerald-500/20 focus:border-emerald-400 rounded-lg pl-8 pr-8 py-1.5 text-[11px] text-slate-100 placeholder-slate-600 focus:outline-none transition-colors"
                                   />
                                   {searchQuery && (
                                     <button
@@ -4061,7 +4097,7 @@ export function Sidebar({
                               )}
 
                               {/* ADD NEW MARCA INSIDE THIS FOLDER */}
-                              <div className="border-t border-[#1b3d2b]/15 pt-2">
+                              <div className="border-t border-[#1b3d2b] pt-2">
                                 <button
                                   type="button"
                                   onClick={(e) => {
@@ -4151,7 +4187,7 @@ export function Sidebar({
                         </button>
                       </div>
 
-                      <div className="flex flex-col gap-2 pt-2 border-t border-[#1b3d2b]/20">
+                      <div className="flex flex-col gap-2 pt-2 border-t border-[#1b3d2b]">
                         <div className="flex items-center gap-2">
                           <span className="text-[9.5px] text-slate-400 font-semibold w-14 shrink-0">Mover a:</span>
                           <select
@@ -4223,7 +4259,7 @@ export function Sidebar({
               )}
 
               {/* 4. JSON IMPORT WIDGET */}
-              <div className="border-t border-[#1b3d2b]/40 pt-3 shrink-0">
+              <div className="border-t border-[#1b3d2b] pt-3 shrink-0">
                 <label className="w-full py-2.5 rounded-xl border border-[#1b3d2b] bg-[#0c120f] hover:bg-[#0f1612] text-slate-300 hover:text-emerald-400 cursor-pointer transition-all text-xs font-semibold flex items-center justify-center gap-1.5 min-w-0 overflow-hidden">
                   <Upload className="w-4 h-4" />
                   Importar Marcas JSON
@@ -4378,7 +4414,7 @@ export function Sidebar({
               </div>
 
               {/* Coordinate Format Section */}
-              <div className="space-y-3 bg-[#0c120f]/60 p-4 rounded-xl border border-[#1b3d2b]/25 shadow-lg">
+              <div className="space-y-3 bg-[#0c120f]/60 p-4 rounded-xl border border-[#1b3d2b] shadow-lg">
                 <div className="flex items-center gap-2">
                   <Compass className="w-4 h-4 text-emerald-400 shrink-0" />
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-300 font-sans">Formato de Coordenadas</span>
@@ -4408,7 +4444,7 @@ export function Sidebar({
               </div>
 
               {/* Grid Overlay Section */}
-              <div className="space-y-3 bg-[#0c120f]/60 p-4 rounded-xl border border-[#1b3d2b]/25 shadow-lg">
+              <div className="space-y-3 bg-[#0c120f]/60 p-4 rounded-xl border border-[#1b3d2b] shadow-lg">
                 <div className="flex items-center gap-2">
                   <Settings className="w-4 h-4 text-emerald-400 shrink-0" />
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-300 font-sans">Cuadrícula del Mapa (Grid)</span>
@@ -4438,7 +4474,7 @@ export function Sidebar({
 
                 {/* ON/OFF toggle switch for showing coordinate text labels on the grid lines */}
                 {gridOverlay !== "none" && (
-                  <div className="pt-3 border-t border-[#1b3d2b]/20 flex items-center justify-between">
+                  <div className="pt-3 border-t border-[#1b3d2b] flex items-center justify-between">
                     <div className="flex flex-col gap-0.5 min-w-0">
                       <span className="text-[11px] font-bold text-slate-300">Mostrar Datos Lat/Lng</span>
                       <span className="text-[9px] text-slate-500 leading-none">Muestra valores en cada línea</span>
@@ -4461,7 +4497,7 @@ export function Sidebar({
               </div>
 
               {/* Distance Units Section */}
-              <div className="space-y-3 bg-[#0c120f]/60 p-4 rounded-xl border border-[#1b3d2b]/25 shadow-lg">
+              <div className="space-y-3 bg-[#0c120f]/60 p-4 rounded-xl border border-[#1b3d2b] shadow-lg">
                 <div className="flex items-center gap-2">
                   <Route className="w-4 h-4 text-emerald-400 shrink-0" />
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-300 font-sans">Unidades de Medida</span>
@@ -4491,7 +4527,7 @@ export function Sidebar({
               </div>
 
               {/* Vista a Pie de Calle / Street View Section */}
-              <div className="space-y-3 bg-[#0c120f]/60 p-4 rounded-xl border border-[#1b3d2b]/25 shadow-lg">
+              <div className="space-y-3 bg-[#0c120f]/60 p-4 rounded-xl border border-[#1b3d2b] shadow-lg">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-emerald-400 shrink-0 fill-current" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
@@ -4528,7 +4564,7 @@ export function Sidebar({
               </div>
 
               {/* ── Biblioteca de Portadas ── */}
-              <div className="space-y-4 bg-[#0c120f]/60 p-4 rounded-xl border border-[#1b3d2b]/25 shadow-lg">
+              <div className="space-y-4 bg-[#0c120f]/60 p-4 rounded-xl border border-[#1b3d2b] shadow-lg">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Palette className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -4646,7 +4682,7 @@ export function Sidebar({
               </div>
 
               {/* Keyboard Shortcuts Section */}
-              <div className="space-y-3 bg-[#0c120f]/60 p-4 rounded-xl border border-[#1b3d2b]/25 shadow-lg">
+              <div className="space-y-3 bg-[#0c120f]/60 p-4 rounded-xl border border-[#1b3d2b] shadow-lg">
                 <div className="flex items-center gap-2">
                   <Compass className="w-4 h-4 text-emerald-400 shrink-0" />
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-300 font-sans">Accesos Directos</span>

@@ -199,7 +199,7 @@ export function OnboardingTour({ onComplete }: OnboardingTourProps) {
         <div className="absolute -top-10 -left-10 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
 
         {/* Step Indicator Header */}
-        <div className="flex items-center justify-between mb-3 border-b border-[#1b3d2b]/40 pb-2">
+        <div className="flex items-center justify-between mb-3 border-b border-[#1b3d2b] pb-2">
           <div className="flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-widest text-emerald-400">
             <Sparkles className="w-3.5 h-3.5" />
             <span>Guía Rápida · Paso {currentStep + 1} de {TOUR_STEPS.length}</span>
@@ -223,7 +223,7 @@ export function OnboardingTour({ onComplete }: OnboardingTourProps) {
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center justify-between pt-4 mt-4 border-t border-[#1b3d2b]/30">
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-[#1b3d2b]">
           <button
             onClick={handleClose}
             className="text-[10px] font-bold uppercase tracking-wider text-slate-500 hover:text-slate-300 cursor-pointer"
