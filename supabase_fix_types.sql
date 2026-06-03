@@ -1,10 +1,3 @@
--- Fix: Reset group types to NULL so they appear in both Marcas and Retos tabs
--- Only 'default' stays as 'folder'. All others become unclassified (show in both tabs).
--- Run this in Supabase > SQL Editor > New Query
-
-UPDATE waypoint_groups
-  SET type = NULL
-  WHERE type = 'challenge' AND id != 'default';
-
--- Verify result:
-SELECT id, name, type FROM waypoint_groups ORDER BY name;
+-- ⚠️ DO NOT RUN THIS FILE - it was the cause of the Marcas/Retos classification bug.
+-- It incorrectly reset all group types to NULL, making groups appear in both tabs.
+-- This file is kept only for reference. See supabase_fix_null_types.sql for the fix.

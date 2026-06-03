@@ -806,8 +806,8 @@ export function MapContainer({
         existingMarker.off("click");
         existingMarker.on("click", handleClick);
 
-        // Update draggable status dynamically
-        if (!isBulkMode) {
+        // Update draggable status dynamically — only allow drag in editing mode
+        if (isEditingRoute && !isBulkMode) {
           existingMarker.dragging?.enable();
         } else {
           existingMarker.dragging?.disable();
@@ -815,13 +815,19 @@ export function MapContainer({
 
         // Re-attach dragend listener to prevent duplication
         existingMarker.off("dragend");
-        if (!isBulkMode) {
-          existingMarker.on("dragend", (e: any) => {
+        if (isEditingRoute && !isBulkMode) {
+          existingMarker.on("dragend", async (e: any) => {
             const newLatLng = e.target.getLatLng();
-            onUpdateWaypoint(wpt.id, {
-              lat: newLatLng.lat,
-              lng: newLatLng.lng,
-            });
+            const confirmed = await customConfirm(`¿Mover "${wpt.name}" a la nueva posición?`);
+            if (confirmed) {
+              onUpdateWaypoint(wpt.id, {
+                lat: newLatLng.lat,
+                lng: newLatLng.lng,
+              });
+            } else {
+              // Revert marker to original position
+              e.target.setLatLng([wpt.lat, wpt.lng]);
+            }
           });
         }
 
@@ -833,7 +839,7 @@ export function MapContainer({
       } else {
         const marker = L.marker([wpt.lat, wpt.lng], { 
           icon: customIcon,
-          draggable: !isBulkMode
+          draggable: isEditingRoute && !isBulkMode
         })
           .addTo(mapInstance)
           .bindTooltip(`
@@ -843,13 +849,19 @@ export function MapContainer({
           `, { direction: "top", offset: [0, -32], opacity: 0.9 })
           .on("click", handleClick);
 
-        if (!isBulkMode) {
-          marker.on("dragend", (e: any) => {
+        if (isEditingRoute && !isBulkMode) {
+          marker.on("dragend", async (e: any) => {
             const newLatLng = e.target.getLatLng();
-            onUpdateWaypoint(wpt.id, {
-              lat: newLatLng.lat,
-              lng: newLatLng.lng,
-            });
+            const confirmed = await customConfirm(`¿Mover "${wpt.name}" a la nueva posición?`);
+            if (confirmed) {
+              onUpdateWaypoint(wpt.id, {
+                lat: newLatLng.lat,
+                lng: newLatLng.lng,
+              });
+            } else {
+              // Revert marker to original position
+              e.target.setLatLng([wpt.lat, wpt.lng]);
+            }
           });
         }
         
@@ -857,7 +869,7 @@ export function MapContainer({
       }
     });
 
-  }, [mapInstance, waypoints, onEditWaypoint, isBulkMode, selectedWptIds, onSetSelectedWptIds, onUpdateWaypoint, highlightedWptId]);
+  }, [mapInstance, waypoints, onEditWaypoint, isBulkMode, selectedWptIds, onSetSelectedWptIds, onUpdateWaypoint, highlightedWptId, isEditingRoute]);
 
   // Leaflet mouse event-based click-and-drag Box Selection
   useEffect(() => {

@@ -162,6 +162,7 @@ export function useRoutePlanner(user: any | null = null) {
         description: "Marcadores generales y marcas personales del mapa.",
         color: "#10b981",
         visible: true,
+        type: "folder" as const,
         image: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=400&q=80",
       },
     ];
@@ -251,60 +252,56 @@ export function useRoutePlanner(user: any | null = null) {
   }, []);
   const [loading, setLoading] = useState(false);
 
-  // 2. Persist to LocalStorage on change ONLY if in Guest Mode
+  // 2. Persist to LocalStorage as write-through cache (both Guest and Logged-in modes)
+  // This ensures localStorage always has a backup copy of the latest state,
+  // preventing data loss on refresh/logout when Supabase writes are fire-and-forget.
   useEffect(() => {
-    if (user) return;
     try {
       localStorage.setItem("summit_route_collections", JSON.stringify(routeCollections));
     } catch (e) {
       console.error("Failed to save route collections to localStorage:", e);
     }
-  }, [routeCollections, user]);
+  }, [routeCollections]);
 
   useEffect(() => {
-    if (user) return;
     try {
       localStorage.setItem("summit_waypoint_groups", JSON.stringify(waypointGroups));
     } catch (e) {
       console.error("Failed to save waypoint groups to localStorage:", e);
     }
-  }, [waypointGroups, user]);
+  }, [waypointGroups]);
 
   useEffect(() => {
-    if (user) return;
     try {
       localStorage.setItem("summit_click_segments", JSON.stringify(clickSegments));
     } catch (e) {
       console.error("Failed to save click segments to localStorage:", e);
     }
-  }, [clickSegments, user]);
+  }, [clickSegments]);
 
   useEffect(() => {
-    if (user) return;
     try {
       localStorage.setItem("summit_tracks", JSON.stringify(tracks));
     } catch (e) {
       console.error("Failed to save tracks to localStorage:", e);
     }
-  }, [tracks, user]);
+  }, [tracks]);
 
   useEffect(() => {
-    if (user) return;
     try {
       localStorage.setItem("summit_active_track_id", JSON.stringify(activeTrackId));
     } catch (e) {
       console.error("Failed to save activeTrackId to localStorage:", e);
     }
-  }, [activeTrackId, user]);
+  }, [activeTrackId]);
 
   useEffect(() => {
-    if (user) return;
     try {
       localStorage.setItem("summit_areas", JSON.stringify(areas));
     } catch (e) {
       console.error("Failed to save areas to localStorage:", e);
     }
-  }, [areas, user]);
+  }, [areas]);
 
   useEffect(() => {
     localStorage.setItem('summit_routing_profile', routingProfile);
@@ -313,7 +310,6 @@ export function useRoutePlanner(user: any | null = null) {
   // Flush all data to localStorage synchronously before the page unloads (covers Vite HMR and tab close)
   useEffect(() => {
     const flush = () => {
-      if (user) return;
       try {
         localStorage.setItem("summit_tracks", JSON.stringify(tracks));
         localStorage.setItem("summit_areas", JSON.stringify(areas));
@@ -326,7 +322,7 @@ export function useRoutePlanner(user: any | null = null) {
     };
     window.addEventListener("beforeunload", flush);
     return () => window.removeEventListener("beforeunload", flush);
-  }, [user, tracks, areas, activeTrackId, routeCollections, waypointGroups]);
+  }, [tracks, areas, activeTrackId, routeCollections, waypointGroups]);
 
   // Load data reactively when user changes (Cloud or Guest Mode)
   useEffect(() => {
@@ -363,6 +359,7 @@ export function useRoutePlanner(user: any | null = null) {
                 description: "Marcadores generales y marcas personales del mapa.",
                 color: "#10b981",
                 visible: true,
+                type: "folder",
                 image: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=400&q=80",
               },
             ]);
@@ -464,7 +461,18 @@ export function useRoutePlanner(user: any | null = null) {
           const lsGroups = fromLocalStorage("summit_waypoint_groups");
           if (lsGroups.length > 0) {
             for (const g of lsGroups) {
-              await supabase.from("waypoint_groups").upsert({ ...g, user_id: user.id }).then(({ error }) => {
+              // Map localStorage field names to Supabase column names
+              await supabase.from("waypoint_groups").upsert({
+                id: g.id,
+                user_id: user.id,
+                name: g.name,
+                description: g.description || "",
+                color: g.color,
+                visible: g.visible !== false,
+                image: g.image || null,
+                type: g.type || "folder",
+                is_public: g.isPublic || false,
+              }).then(({ error }) => {
                 if (error) console.error("Failed to sync group:", error);
               });
             }
@@ -477,6 +485,7 @@ export function useRoutePlanner(user: any | null = null) {
               description: "Marcadores generales y marcas personales del mapa.",
               color: "#10b981",
               visible: true,
+              type: "folder",
               image: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=400&q=80",
             };
             const { error: insertErr } = await supabase.from("waypoint_groups").insert(defaultGroup);
@@ -501,27 +510,7 @@ export function useRoutePlanner(user: any | null = null) {
 
         if (!active) return;
 
-        const mappedAreas: Area[] = dbAreas.map((a: any) => ({
-          id: a.id,
-          name: a.name,
-          points: Array.isArray(a.points) ? a.points : [],
-          color: a.color,
-          visible: a.visible !== false,
-          areaM2: a.area_m2 || 0,
-          perimeterM: a.perimeter_m || 0,
-          collectionId: a.collection_id || undefined,
-        }));
-
-        if (mappedAreas.length > 0) {
-          setAreas(mappedAreas);
-        } else {
-          const savedAreas = localStorage.getItem("summit_areas");
-          if (savedAreas) {
-            setAreas(JSON.parse(savedAreas));
-          }
-        }
-
-        // Map route collections
+        // Map route collections (shared by both paths)
         const mappedCollections: RouteCollection[] = collections.map((c: any) => ({
           id: c.id,
           name: c.name,
@@ -531,7 +520,7 @@ export function useRoutePlanner(user: any | null = null) {
           image: c.image || undefined,
         }));
 
-        // Map waypoint groups
+        // Map waypoint groups — ensure type defaults to "folder" for any groups without it
         const mappedGroups: WaypointGroup[] = groups.map((g: any) => ({
           id: g.id,
           name: g.name,
@@ -539,47 +528,131 @@ export function useRoutePlanner(user: any | null = null) {
           color: g.color,
           visible: g.visible !== false,
           image: g.image || undefined,
-          type: (g.type as "folder" | "challenge") || "challenge",
-          isPublic: g.is_public || false,
+          type: (g.type as "folder" | "challenge") || "folder",
+          isPublic: g.is_public || g.isPublic || false,
         }));
 
-        const mappedTracks: Track[] = (dbTracks || []).map((t: any) => {
-          const trackWpts = (dbWaypoints || [])
-            .filter((w: any) => w.track_id === t.id)
-            .map((w: any) => ({
-              id: w.id,
-              name: w.name,
-              lat: w.lat,
-              lng: w.lng,
-              icon: w.icon,
-              note: w.note || "",
-              color: w.color,
-              groupId: w.group_id || "default",
-              completed: w.completed || false,
-              image: w.image || undefined,
-              link: w.link || undefined,
-            }));
+        // Declare final tracks at outer scope so activeTrackId logic can access it
+        let finalTracks: Track[] = [];
 
-          return {
-            id: t.id,
-            name: t.name,
-            points: Array.isArray(t.points) ? t.points : [],
-            waypoints: trackWpts,
-            visible: t.visible !== false,
-            color: t.color,
-            collectionId: t.collection_id || "default",
-            isPublic: t.is_public || false,
-          };
-        });
+        // === MIGRATION: Sync localStorage tracks/waypoints/areas to Supabase on first login ===
+        const lsTracks: Track[] = fromLocalStorage("summit_tracks");
+        const hasLocalData = lsTracks.length > 0 && lsTracks.some(
+          (t: any) => t.id !== "waypoints-global-track" || (t.waypoints && t.waypoints.length > 0)
+        );
 
-        // Ensure waypoint global track exists
-        if (!mappedTracks.some((t) => t.id === "waypoints-global-track")) {
-          const globalTrack = {
-            id: "waypoints-global-track",
-            name: "Marcadores Globales",
-            points: [],
-            waypoints: (dbWaypoints || [])
-              .filter((w: any) => w.track_id === "waypoints-global-track")
+        if (dbTracks.length === 0 && hasLocalData) {
+          console.log("[SummitGPS] Migrating localStorage tracks/waypoints to Supabase...");
+
+          for (const t of lsTracks) {
+            const { error: trackErr } = await supabase.from("tracks").upsert({
+              id: t.id,
+              user_id: user.id,
+              name: t.name,
+              points: t.points || [],
+              visible: t.visible !== false,
+              color: t.color || "#10b981",
+              collection_id: (t as any).collectionId || "default",
+              is_public: (t as any).isPublic || false,
+            });
+            if (trackErr) console.error("Migration: failed to insert track:", trackErr);
+
+            if (t.waypoints && t.waypoints.length > 0) {
+              const dbWpts = t.waypoints.map((w: any) => ({
+                id: w.id,
+                user_id: user.id,
+                track_id: t.id,
+                name: w.name,
+                lat: w.lat,
+                lng: w.lng,
+                icon: w.icon || "marker",
+                note: w.note || "",
+                color: w.color || "#10b981",
+                group_id: w.groupId === "default" ? null : (w.groupId || null),
+                completed: w.completed || false,
+                image: w.image || null,
+                link: w.link || null,
+                elevation: w.elevation || null,
+              }));
+              const { error: wptsErr } = await supabase.from("waypoints").upsert(dbWpts);
+              if (wptsErr) console.error("Migration: failed to insert waypoints:", wptsErr);
+            }
+          }
+
+          finalTracks = [...lsTracks];
+          if (!finalTracks.some(t => t.id === "waypoints-global-track")) {
+            finalTracks.push({
+              id: "waypoints-global-track",
+              name: "Marcadores Globales",
+              points: [],
+              waypoints: [],
+              visible: true,
+              color: "#10b981",
+            });
+          }
+
+          // Migrate areas too
+          const lsAreas: Area[] = fromLocalStorage("summit_areas");
+          if (lsAreas.length > 0) {
+            for (const area of lsAreas) {
+              await supabase.from("areas").upsert({
+                id: area.id,
+                user_id: user.id,
+                name: area.name,
+                points: area.points,
+                color: area.color,
+                visible: area.visible,
+                area_m2: area.areaM2 || 0,
+                perimeter_m: area.perimeterM || 0,
+                collection_id: area.collectionId || null,
+              }).then(({ error }) => {
+                if (error) console.warn("Migration: failed to sync area:", error);
+              });
+            }
+            setAreas(lsAreas);
+          }
+
+        } else {
+          // Normal flow: use Supabase data
+          const mappedAreas: Area[] = dbAreas.map((a: any) => ({
+            id: a.id,
+            name: a.name,
+            points: Array.isArray(a.points) ? a.points : [],
+            color: a.color,
+            visible: a.visible !== false,
+            areaM2: a.area_m2 || 0,
+            perimeterM: a.perimeter_m || 0,
+            collectionId: a.collection_id || undefined,
+          }));
+
+          if (mappedAreas.length > 0) {
+            setAreas(mappedAreas);
+          } else {
+            const savedAreas = localStorage.getItem("summit_areas");
+            if (savedAreas) {
+              const parsedAreas: Area[] = JSON.parse(savedAreas);
+              setAreas(parsedAreas);
+              for (const area of parsedAreas) {
+                supabase.from("areas").upsert({
+                  id: area.id,
+                  user_id: user.id,
+                  name: area.name,
+                  points: area.points,
+                  color: area.color,
+                  visible: area.visible,
+                  area_m2: area.areaM2 || 0,
+                  perimeter_m: area.perimeterM || 0,
+                  collection_id: area.collectionId || null,
+                }).then(({ error }) => {
+                  if (error) console.warn("Failed to sync area to Supabase:", error);
+                });
+              }
+            }
+          }
+
+          finalTracks = (dbTracks || []).map((t: any) => {
+            const trackWpts = (dbWaypoints || [])
+              .filter((w: any) => w.track_id === t.id)
               .map((w: any) => ({
                 id: w.id,
                 name: w.name,
@@ -592,30 +665,75 @@ export function useRoutePlanner(user: any | null = null) {
                 completed: w.completed || false,
                 image: w.image || undefined,
                 link: w.link || undefined,
-              })),
-            visible: true,
-            color: "#10b981",
-            collectionId: "default",
-          };
-          mappedTracks.push(globalTrack);
+                elevation: w.elevation || undefined,
+              }));
 
-          // Seed in Supabase
-          supabase.from("tracks").insert({
-            id: globalTrack.id,
-            user_id: user.id,
-            name: globalTrack.name,
-            points: globalTrack.points,
-            visible: globalTrack.visible,
-            color: globalTrack.color,
-            collection_id: "default",
-          }).then(({ error }) => {
-            if (error) console.error("Failed to seed global track in Supabase:", error);
+            return {
+              id: t.id,
+              name: t.name,
+              points: Array.isArray(t.points) ? t.points : [],
+              waypoints: trackWpts,
+              visible: t.visible !== false,
+              color: t.color,
+              collectionId: t.collection_id || "default",
+              isPublic: t.is_public || false,
+            };
           });
+
+          // Ensure waypoint global track exists
+          if (!finalTracks.some((t) => t.id === "waypoints-global-track")) {
+            const globalTrack = {
+              id: "waypoints-global-track",
+              name: "Marcadores Globales",
+              points: [],
+              waypoints: (dbWaypoints || [])
+                .filter((w: any) => w.track_id === "waypoints-global-track")
+                .map((w: any) => ({
+                  id: w.id,
+                  name: w.name,
+                  lat: w.lat,
+                  lng: w.lng,
+                  icon: w.icon,
+                  note: w.note || "",
+                  color: w.color,
+                  groupId: w.group_id || "default",
+                  completed: w.completed || false,
+                  image: w.image || undefined,
+                  link: w.link || undefined,
+                })),
+              visible: true,
+              color: "#10b981",
+              collectionId: "default",
+            };
+            finalTracks.push(globalTrack);
+
+            supabase.from("tracks").insert({
+              id: globalTrack.id,
+              user_id: user.id,
+              name: globalTrack.name,
+              points: globalTrack.points,
+              visible: globalTrack.visible,
+              color: globalTrack.color,
+              collection_id: "default",
+            }).then(({ error }) => {
+              if (error) console.error("Failed to seed global track in Supabase:", error);
+            });
+          }
         }
 
+        // Set state for all paths
         setRouteCollections(mappedCollections);
         setWaypointGroups(mappedGroups);
-        setTracks(mappedTracks);
+        setTracks(finalTracks);
+
+        // Also fix any existing groups in Supabase that have NULL type
+        for (const g of groups) {
+          if (!g.type) {
+            supabase.from("waypoint_groups").update({ type: "folder" }).eq("id", g.id).then(({ error }) => {
+              if (error) console.warn("Failed to backfill group type:", error);
+            });
+          }
+        }
 
         // Select active track
         const savedActiveId = localStorage.getItem("summit_active_track_id");
@@ -625,7 +743,7 @@ export function useRoutePlanner(user: any | null = null) {
         } catch {}
 
         if (parsedActiveId === "waypoints-global-track") parsedActiveId = null;
-        if (parsedActiveId && mappedTracks.some((t) => t.id === parsedActiveId && t.id !== "waypoints-global-track")) {
+        if (parsedActiveId && finalTracks.some((t) => t.id === parsedActiveId && t.id !== "waypoints-global-track")) {
           setActiveTrackId(parsedActiveId);
         } else {
           setActiveTrackId(null);
@@ -1390,7 +1508,7 @@ export function useRoutePlanner(user: any | null = null) {
         color: newGroup.color,
         visible: newGroup.visible,
         image: newGroup.image || null,
-        type: newGroup.type || "challenge",
+        type: newGroup.type || "folder",
         is_public: newGroup.isPublic || false,
       });
       if (error) {
@@ -2557,7 +2675,7 @@ export function useRoutePlanner(user: any | null = null) {
                 icon: w.icon,
                 note: w.note,
                 color: w.color,
-                group_id: w.groupId || "default",
+                group_id: w.groupId === "default" ? null : (w.groupId || null),
                 completed: w.completed || false,
                 image: w.image || null,
                 link: w.link || null

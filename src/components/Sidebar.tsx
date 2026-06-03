@@ -779,6 +779,7 @@ export function Sidebar({
             description: `Importado de OpenStreetMap (${parsedData.elements.length} nodos)`,
             color: "#3b82f6",
             visible: true,
+            type: "folder",
           });
           targetGroupId = newGroupId;
 
@@ -817,10 +818,11 @@ export function Sidebar({
           await onAddWaypointGroup({
             id: newGroupId,
             name: parsedData.name,
-            description: parsedData.description || "Reto importado",
+            description: parsedData.description || "Carpeta importada",
             color: parsedData.color || "#10b981",
             visible: true,
             image: parsedData.image,
+            type: parsedData.type || "folder",
           });
           targetGroupId = newGroupId;
 
@@ -854,6 +856,7 @@ export function Sidebar({
               : `Importación de lista con ${parsedData.length} marcas.`,
             color: "#eab308",
             visible: true,
+            type: "folder",
           });
           targetGroupId = newGroupId;
 
@@ -3471,9 +3474,10 @@ export function Sidebar({
                 <div className="space-y-3">
                   {waypointGroups.filter(g => {
                     if (g.id === "default") return !isChallengeMode;
-                    const hasType = g.type === "folder" || g.type === "challenge";
-                    if (isChallengeMode) return g.type === "challenge" || !hasType;
-                    return g.type === "folder" || !hasType;
+                    // Groups without a type default to "folder" (Marcas tab)
+                    // Only groups explicitly marked as "challenge" appear in Retos tab
+                    if (isChallengeMode) return g.type === "challenge";
+                    return g.type !== "challenge";
                   }).map((group) => {
                     const isExpanded = expandedGroupId === group.id;
                     
