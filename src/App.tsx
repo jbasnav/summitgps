@@ -4,6 +4,7 @@ import { MapContainer } from "./components/MapContainer";
 import { ElevationProfile } from "./components/ElevationProfile";
 import { WaypointModal } from "./components/WaypointModal";
 import { WaypointInfoModal } from "./components/WaypointInfoModal";
+import { Map3DContainer } from "./components/Map3DContainer";
 import { useRoutePlanner, type Waypoint, type RoutePoint } from "./hooks/useRoutePlanner";
 import { useImageLibrary } from "./hooks/useImageLibrary";
 import type { BaseLayerId, CustomLayer } from "./components/LayerSelector";
@@ -465,6 +466,11 @@ function AppContent() {
   const [isRouteConditionsOpen, setIsRouteConditionsOpen] = useState<boolean>(false);
   const [simulatedTime, setSimulatedTime] = useState<number>(720); // 12:00 PM in minutes
   const [is3DActive, setIs3DActive] = useState<boolean>(false);
+  // Capas públicas España (2D + 3D)
+  const [showProtectedAreas,  setShowProtectedAreas]  = useState(false);
+  const [showCaminoSantiago,  setShowCaminoSantiago]  = useState(false);
+  const [showSpainByBike,     setShowSpainByBike]     = useState(false);
+  const [showMountainRefuges, setShowMountainRefuges] = useState(false);
 
   // Floating Layer Selector & Map Overlay options
   const [isLayerSelectorOpen, setIsLayerSelectorOpen] = useState<boolean>(false);
@@ -1465,6 +1471,24 @@ function AppContent() {
         <div className={`flex-1 min-h-0 relative flex flex-col md:flex-row overflow-hidden`}>
           {/* Left/Top Map Area */}
           <div className={`flex-1 h-full relative ${isStreetViewActive && isStreetViewFullscreen ? 'hidden' : 'flex flex-col'}`}>
+
+          {/* 3D MapLibre view — renders on top when active */}
+          {is3DActive && (
+            <div className="absolute inset-0 z-[3000]">
+              <Map3DContainer
+                tracks={tracksWithCollectionVisibility as any}
+                activeTrackId={activeTrackId}
+                waypoints={waypoints}
+                mapCenter={mapCenter ?? null}
+                mapZoom={mapInstance?.getZoom() ?? 12}
+                showProtectedAreas={showProtectedAreas}
+                showCaminoSantiago={showCaminoSantiago}
+                showSpainByBike={showSpainByBike}
+                showMountainRefuges={showMountainRefuges}
+              />
+            </div>
+          )}
+
           <MapContainer
             tracks={tracksWithCollectionVisibility}
             activeTrackId={activeTrackId}
@@ -1531,6 +1555,10 @@ function AppContent() {
             showCyclingTrails={showCyclingTrails}
             showMtbTrails={showMtbTrails}
             showCommunityWaypoints={showCommunityWaypoints}
+            showProtectedAreas={showProtectedAreas}
+            showCaminoSantiago={showCaminoSantiago}
+            showSpainByBike={showSpainByBike}
+            showMountainRefuges={showMountainRefuges}
           />
           {/* Day/Night solar simulated illumination overlay */}
           {(() => {
@@ -1580,127 +1608,67 @@ function AppContent() {
 
             {/* Capas / Layer Selector */}
             <div className="relative group">
-              <button
-                onClick={() => setIsLayerSelectorOpen(prev => !prev)}
-                title="Capas del Mapa"
-                className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer border transition-all ${
-                  isLayerSelectorOpen
-                    ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.3)] animate-pulse"
-                    : "bg-[#131b17]/95 border-[#1b3d2b] hover:border-emerald-500/30 text-slate-300 hover:text-emerald-400"
-                }`}
-              >
+              <button onClick={() => setIsLayerSelectorOpen(prev => !prev)} title="Capas del Mapa"
+                className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer border transition-all duration-150 ${isLayerSelectorOpen ? "bg-[#131b17]/95 border-[#1b3d2b] text-emerald-400" : "bg-[#131b17]/95 border-[#1b3d2b] text-slate-400"} hover:text-emerald-400`}>
                 <Layers className="w-[18px] h-[18px]" />
               </button>
-              <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
-                Capas del Mapa
-              </span>
+              <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">Capas del Mapa</span>
             </div>
 
             {/* Printer */}
             <div className="relative group">
-              <button
-                onClick={() => setIsPrintModalOpen(true)}
-                title="Imprimir Mapa"
-                className="w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer bg-[#131b17]/95 hover:bg-[#182a20] border border-[#1b3d2b] hover:border-emerald-500/50 text-emerald-400 hover:text-emerald-300 transition-all"
-              >
+              <button onClick={() => setIsPrintModalOpen(true)} title="Imprimir Mapa"
+                className="w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer border transition-all duration-150 bg-[#131b17]/95 border-[#1b3d2b] text-slate-400 hover:text-emerald-400">
                 <Printer className="w-[18px] h-[18px]" />
               </button>
-              <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
-                Imprimir Mapa
-              </span>
+              <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">Imprimir Mapa</span>
             </div>
 
-            {/* Condiciones del Clima / Tiempo */}
+            {/* Condiciones del Clima */}
             <div className="relative group">
-              <button
-                onClick={() => setIsRouteConditionsOpen(prev => !prev)}
-                title="Condiciones de la Ruta"
-                className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer border transition-all ${
-                  isRouteConditionsOpen
-                    ? "bg-sky-500/20 border-sky-500/50 text-sky-400 shadow-[0_0_12px_rgba(56,189,248,0.3)] animate-pulse"
-                    : "bg-[#131b17]/95 border-[#1b3d2b] hover:border-sky-500/30 text-slate-300 hover:text-sky-400"
-                }`}
-              >
+              <button onClick={() => setIsRouteConditionsOpen(prev => !prev)} title="Condiciones de la Ruta"
+                className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer border transition-all duration-150 ${isRouteConditionsOpen ? "bg-[#131b17]/95 border-[#1b3d2b] text-emerald-400" : "bg-[#131b17]/95 border-[#1b3d2b] text-slate-400"} hover:text-emerald-400`}>
                 <CloudRain className="w-[18px] h-[18px]" />
               </button>
-              <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
-                Condiciones de la Ruta
-              </span>
+              <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">Condiciones de la Ruta</span>
             </div>
 
-            {/* Inclinación 3D del Terreno */}
+            {/* Perfil de Elevación toggle */}
             <div className="relative group">
-              <button
-                onClick={() => {
-                  if (!isPlusUser) {
-                    setIsPlusModalOpen(true);
-                  } else {
-                    setIs3DActive(prev => !prev);
-                  }
-                }}
-                title="Vista 3D"
-                className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer border transition-all ${
-                  is3DActive
-                    ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.3)]"
-                    : "bg-[#131b17]/95 border-[#1b3d2b] hover:border-emerald-500/30 text-slate-300 hover:text-emerald-400"
-                }`}
-              >
+              <button onClick={() => setIsChartCollapsed(prev => !prev)} title="Perfil de Elevación"
+                className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer border transition-all duration-150 ${!isChartCollapsed ? "bg-[#131b17]/95 border-[#1b3d2b] text-emerald-400" : "bg-[#131b17]/95 border-[#1b3d2b] text-slate-400"} hover:text-emerald-400`}>
+                <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 17L12 7l3 6 2-3 3 4" />
+                </svg>
+              </button>
+              <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">{isChartCollapsed ? "Mostrar Elevación" : "Ocultar Elevación"}</span>
+            </div>
+
+            {/* Vista 3D */}
+            <div className="relative group">
+              <button onClick={() => { if (!isPlusUser) { setIsPlusModalOpen(true); } else { setIs3DActive(prev => !prev); } }} title="Vista 3D"
+                className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer border transition-all duration-150 ${is3DActive ? "bg-[#131b17]/95 border-[#1b3d2b] text-emerald-400" : "bg-[#131b17]/95 border-[#1b3d2b] text-slate-400"} hover:text-emerald-400`}>
                 <span className="text-[10px] font-extrabold tracking-tighter">3D</span>
               </button>
-              <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
-                Vista 3D {!isPlusUser && "(Plus)"}
-              </span>
+              <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">Vista 3D {!isPlusUser && "(Plus)"}</span>
             </div>
 
             {/* Street View */}
             <div className="relative group">
-              <button
-                onClick={() => {
-                  setIsStreetViewActive((prev) => {
-                    const next = !prev;
-                    if (next) {
-                      setIsDrawing(false);
-                      setIsDrawingArea(false);
-                      setIsSplitting(false);
-                      setIsEditingRoute(false);
-                      setIsCleaningArea(false);
-                      if (!streetViewCoords && mapInstance) {
-                        const center = mapInstance.getCenter();
-                        setStreetViewCoords({ lat: center.lat, lng: center.lng });
-                      }
-                    }
-                    return next;
-                  });
-                }}
-                title={isStreetViewActive ? "Desactivar Vista de Calle" : "Activar Vista de Calle"}
-                className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer border transition-all ${
-                  isStreetViewActive
-                    ? "bg-yellow-500/20 border-yellow-500/50 text-yellow-400 shadow-[0_0_12px_rgba(234,179,8,0.3)] animate-pulse"
-                    : "bg-[#131b17]/95 border-[#1b3d2b] hover:border-yellow-500/30 text-slate-300 hover:text-yellow-400"
-                }`}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 fill-current" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
-                  <circle cx="12" cy="4" r="2"/>
-                  <path d="M12 6c-1.1 0-2 .9-2 2v5h1v7h2v-7h1V8c0-1.1-.9-2-2-2z"/>
-                </svg>
+              <button onClick={() => { setIsStreetViewActive((prev) => { const next = !prev; if (next) { setIsDrawing(false); setIsDrawingArea(false); setIsSplitting(false); setIsEditingRoute(false); setIsCleaningArea(false); if (!streetViewCoords && mapInstance) { const center = mapInstance.getCenter(); setStreetViewCoords({ lat: center.lat, lng: center.lng }); } } return next; }); }} title={isStreetViewActive ? "Desactivar Vista de Calle" : "Activar Vista de Calle"}
+                className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer border transition-all duration-150 ${isStreetViewActive ? "bg-[#131b17]/95 border-[#1b3d2b] text-emerald-400" : "bg-[#131b17]/95 border-[#1b3d2b] text-slate-400"} hover:text-emerald-400`}>
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 fill-current" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="4" r="2"/><path d="M12 6c-1.1 0-2 .9-2 2v5h1v7h2v-7h1V8c0-1.1-.9-2-2-2z"/></svg>
               </button>
-              <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
-                Vista de Calle (Street View)
-              </span>
+              <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">Vista de Calle</span>
             </div>
 
             {/* Keyboard Shortcuts */}
             <div className="relative group">
-              <button
-                onClick={() => setIsShortcutsModalOpen(true)}
-                title="Atajos de Teclado (?)"
-                className="w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer bg-[#131b17]/95 border border-[#1b3d2b] hover:border-white/20 text-slate-400 hover:text-emerald-400 transition-all"
-              >
+              <button onClick={() => setIsShortcutsModalOpen(true)} title="Atajos de Teclado (?)"
+                className="w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer border transition-all duration-150 bg-[#131b17]/95 border-[#1b3d2b] text-slate-400 hover:text-emerald-400">
                 <Compass className="w-[18px] h-[18px]" />
               </button>
-              <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">
-                Atajos de Teclado (?)
-              </span>
+              <span className="absolute top-1/2 right-full -translate-y-1/2 mr-2 whitespace-nowrap text-[9px] font-semibold text-slate-200 bg-[#0b100d] border border-[#1b3d2b] rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[9999] shadow-xl">Atajos de Teclado (?)</span>
             </div>
           </div>
 
@@ -1880,30 +1848,9 @@ function AppContent() {
         </div>
 
         {/* Collapsible Elevation Chart */}
-        {points.length > 0 && (
-          <div className="absolute bottom-5 right-5 left-5 md:left-auto md:w-[600px] z-[2000] flex flex-col pointer-events-auto transition-transform duration-300">
-            <button
-              onClick={() => setIsChartCollapsed(!isChartCollapsed)}
-              className="self-end px-3 py-1 bg-[#131b17]/95 border border-[#1b3d2b] border-b-0 rounded-t-xl text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-1 text-[10px] font-bold shadow-lg"
-            >
-              {isChartCollapsed ? (
-                <>
-                  <ChevronUp className="w-3.5 h-3.5" />
-                  Mostrar Elevación
-                </>
-              ) : (
-                <>
-                  <ChevronDown className="w-3.5 h-3.5" />
-                  Ocultar Elevación
-                </>
-              )}
-            </button>
-
-            <div
-              className={`transition-all duration-300 ${
-                isChartCollapsed ? "h-0 opacity-0 pointer-events-none" : "h-[200px] opacity-100"
-              }`}
-            >
+        {points.length > 0 && !isChartCollapsed && (
+          <div className="absolute bottom-4 right-16 z-[2000] pointer-events-auto w-[min(640px,calc(100%-200px))]">
+            <div className="h-[200px]">
               <ElevationProfile
                 points={points}
                 useImperial={useImperial}
@@ -2155,6 +2102,14 @@ function AppContent() {
         onToggleCyclingTrails={() => setShowCyclingTrails(prev => !prev)}
         showMtbTrails={showMtbTrails}
         onToggleMtbTrails={() => setShowMtbTrails(prev => !prev)}
+        showProtectedAreas={showProtectedAreas}
+        onToggleProtectedAreas={() => setShowProtectedAreas(prev => !prev)}
+        showCaminoSantiago={showCaminoSantiago}
+        onToggleCaminoSantiago={() => setShowCaminoSantiago(prev => !prev)}
+        showSpainByBike={showSpainByBike}
+        onToggleSpainByBike={() => setShowSpainByBike(prev => !prev)}
+        showMountainRefuges={showMountainRefuges}
+        onToggleMountainRefuges={() => setShowMountainRefuges(prev => !prev)}
         isPlusUser={isPlusUser}
         onOpenPlusModal={() => setIsPlusModalOpen(true)}
       />

@@ -48,6 +48,16 @@ interface FloatingLayerSelectorProps {
   showMtbTrails: boolean;
   onToggleMtbTrails: () => void;
 
+  // Capas públicas de seguridad y senderos
+  showProtectedAreas: boolean;
+  onToggleProtectedAreas: () => void;
+  showCaminoSantiago: boolean;
+  onToggleCaminoSantiago: () => void;
+  showSpainByBike: boolean;
+  onToggleSpainByBike: () => void;
+  showMountainRefuges: boolean;
+  onToggleMountainRefuges: () => void;
+
   isPlusUser: boolean;
   onOpenPlusModal: () => void;
 }
@@ -85,6 +95,14 @@ export function FloatingLayerSelector({
   onToggleCyclingTrails,
   showMtbTrails,
   onToggleMtbTrails,
+  showProtectedAreas,
+  onToggleProtectedAreas,
+  showCaminoSantiago,
+  onToggleCaminoSantiago,
+  showSpainByBike,
+  onToggleSpainByBike,
+  showMountainRefuges,
+  onToggleMountainRefuges,
   isPlusUser,
   onOpenPlusModal,
 }: FloatingLayerSelectorProps) {
@@ -510,6 +528,32 @@ export function FloatingLayerSelector({
                 >
                   <div className="w-3 h-3 rounded-full bg-[#0c120f] shadow-md" />
                 </button>
+              </div>
+
+              {/* ── Capas públicas de Seguridad y Senderos ── */}
+              <div className="pt-2 mt-1 border-t border-[#1b3d2b]/60">
+                <span className="text-[9px] font-bold text-emerald-400/70 uppercase tracking-widest block mb-2">
+                  🇪🇸 Capas Públicas España
+                </span>
+
+                <div className="space-y-1.5">
+                  {[
+                    { key: "protectedAreas",  label: "🌿 Red Natura 2000 (IDECyL · CyL)", value: showProtectedAreas,  toggle: onToggleProtectedAreas },
+                    { key: "caminoSantiago",  label: "⛩️ Caminos de Santiago (IGN)",  value: showCaminoSantiago,  toggle: onToggleCaminoSantiago },
+                    { key: "spainByBike",     label: "🚴 Spain by Bike / BTT",        value: showSpainByBike,     toggle: onToggleSpainByBike },
+                    { key: "mountainRefuges", label: "🏕️ Refugios de Montaña (OSM)",  value: showMountainRefuges, toggle: onToggleMountainRefuges },
+                  ].map(({ key, label, value, toggle }) => (
+                    <div key={key} className="flex items-center justify-between p-2.5 rounded-2xl bg-[#0c120f]/30 border border-[#1b3d2b] select-none">
+                      <span className="text-[11px] text-slate-200 font-medium">{label}</span>
+                      <button
+                        onClick={toggle}
+                        className={`w-7 h-4 rounded-full flex items-center p-0.5 transition-all cursor-pointer ${value ? "bg-emerald-400 justify-end" : "bg-[#18231e] justify-start"}`}
+                      >
+                        <div className="w-3 h-3 rounded-full bg-[#0c120f] shadow-md" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 

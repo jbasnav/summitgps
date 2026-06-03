@@ -51,6 +51,7 @@ import {
   Import,
 } from "lucide-react";
 import { LayerSelector, type BaseLayerId, type CustomLayer } from "./LayerSelector";
+import { CombinedElevationProfile } from "./CombinedElevationProfile";
 import { StatsPanel } from "./StatsPanel";
 import { parseGPX, exportToGPX } from "../utils/gpxExporter";
 import { parseGeoJSON, exportToGeoJSON } from "../utils/geojsonParser";
@@ -416,6 +417,7 @@ export function Sidebar({
   
   // Track Library selection state for merging
   const [selectedMergeIds, setSelectedMergeIds] = useState<string[]>([]);
+  const [showCombinedProfile, setShowCombinedProfile] = useState(false);
 
   // Centralized editing tool select handler implementing strict mutual exclusion
   const handleToolSelect = (tool: "draw" | "vertices" | "split" | "trim" | "simplify" | "clean" | "smooth" | "outliers" | "bucle" | "invertir") => {
@@ -1363,26 +1365,11 @@ export function Sidebar({
                       </button>
                     )}
                   </div>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {selectedMergeIds.length >= 2 && (
-                      <button
-                        onClick={handleMergeSelected}
-                        className="text-[9px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded-lg flex items-center gap-1 hover:bg-blue-500/30 transition-colors"
-                      >
-                        <Link className="w-3 h-3" />
-                        Unir Seleccionados
-                      </button>
-                    )}
-                    {selectedMergeIds.length >= 1 && (
-                      <button
-                        onClick={handleDeleteSelected}
-                        className="text-[9px] font-bold bg-red-500/20 text-red-300 border border-red-500/30 px-2 py-0.5 rounded-lg flex items-center gap-1 hover:bg-red-500/30 transition-colors"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                        Eliminar Seleccionados
-                      </button>
-                    )}
-                  </div>
+                  {selectedMergeIds.length > 0 && (
+                    <span className="text-[9px] font-bold text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded-full">
+                      {selectedMergeIds.length} seleccionadas
+                    </span>
+                  )}
                 </div>
 
                 {/* ACTION BUTTON TOOLBAR */}
@@ -1898,6 +1885,50 @@ export function Sidebar({
                                   {collCats.has("routes") ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
                                 </button>
                                 {!collCats.has("routes") && (<div className="space-y-1.5">
+                                  {/* ── Bulk track actions panel (inside folder, above tracks) ── */}
+                                  {(() => {
+                                    const collSelectedIds = selectedMergeIds.filter(id => filteredTracks.some(t => t.id === id));
+                                    if (collSelectedIds.length === 0) return null;
+                                    return (
+                                      <div className="bg-[#18231e] border border-blue-500/30 rounded-xl p-3 space-y-2 animate-fade-in">
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">
+                                            {collSelectedIds.length} {collSelectedIds.length === 1 ? "ruta" : "rutas"} seleccionadas
+                                          </span>
+                                          <button type="button" onClick={() => setSelectedMergeIds(prev => prev.filter(id => !collSelectedIds.includes(id)))}
+                                            className="text-[9px] font-bold text-slate-400 hover:text-slate-200 cursor-pointer">
+                                            Desmarcar
+                                          </button>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-1.5">
+                                          <button type="button" onClick={() => setShowCombinedProfile(true)}
+                                            className="py-1.5 bg-emerald-400/10 hover:bg-emerald-400/20 text-emerald-400 border border-emerald-500/20 text-[10px] font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1">
+                                            <TrendingUp className="w-3 h-3" /> Perfil
+                                          </button>
+                                          {collSelectedIds.length >= 2 && (
+                                            <button type="button" onClick={handleMergeSelected}
+                                              className="py-1.5 bg-blue-400/10 hover:bg-blue-400/20 text-blue-400 border border-blue-500/20 text-[10px] font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1">
+                                              <Link className="w-3 h-3" /> Unir
+                                            </button>
+                                          )}
+                                          <button type="button" onClick={handleDeleteSelected}
+                                            className="py-1.5 bg-red-400/10 hover:bg-red-400/20 text-red-400 border border-red-500/20 text-[10px] font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1">
+                                            <Trash2 className="w-3 h-3" /> Eliminar
+                                          </button>
+                                          <div className="col-span-2">
+                                            <select defaultValue="" onChange={(e) => { const v=e.target.value; if(!v) return; collSelectedIds.forEach(id=>onSetTrackCollection(id,v)); setSelectedMergeIds(prev=>prev.filter(id=>!collSelectedIds.includes(id))); e.target.value=""; }}
+                                              className="w-full bg-[#0a0f0d]/80 border border-[#1b3d2b] rounded-lg px-2 py-1.5 text-[10px] text-slate-100 focus:outline-none cursor-pointer">
+                                              <option value="" disabled>Mover a carpeta…</option>
+                                              {routeCollections.map(c=>(
+                                                <option key={c.id} value={c.id} className="bg-[#131b17]">{c.name}</option>
+                                              ))}
+                                            </select>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })()}
+
                                   {filteredTracks.length === 0 ? (
                                     <p className="text-[9.5px] text-slate-600 italic px-2">No hay rutas en esta carpeta.</p>
                                   ) : (
@@ -2205,6 +2236,7 @@ export function Sidebar({
                   </div>
               </div>
 
+              {/* ── FLOATING BULK TRACK ACTIONS PANEL ── */}
               {/* SECTION 2: ROUTE EDIT PANEL — rendered via Portal as a sibling of the sidebar */}
               {isRouteEditPanelOpen && activeTrackId && createPortal(
                 <div
@@ -4758,6 +4790,19 @@ export function Sidebar({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Combined elevation profile modal */}
+      {showCombinedProfile && (
+        <CombinedElevationProfile
+          tracks={selectedMergeIds
+            .map((id) => tracks.find((t) => t.id === id))
+            .filter(Boolean)
+            .filter((t) => t!.points.length > 1)
+            .map((t) => ({ id: t!.id, name: t!.name, color: t!.color || "#10b981", points: t!.points }))}
+          useImperial={useImperial}
+          onClose={() => setShowCombinedProfile(false)}
+        />
       )}
     </div>
   );

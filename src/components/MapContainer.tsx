@@ -94,6 +94,10 @@ interface MapContainerProps {
   showCyclingTrails?: boolean;
   showMtbTrails?: boolean;
   showCommunityWaypoints?: boolean;
+  showProtectedAreas?: boolean;
+  showCaminoSantiago?: boolean;
+  showSpainByBike?: boolean;
+  showMountainRefuges?: boolean;
 }
 
 // Map Tile Providers
@@ -184,6 +188,10 @@ export function MapContainer({
   showCyclingTrails = false,
   showMtbTrails = false,
   showCommunityWaypoints: _showCommunityWaypoints = false,
+  showProtectedAreas = false,
+  showCaminoSantiago = false,
+  showSpainByBike = false,
+  showMountainRefuges = false,
 }: MapContainerProps) {
   const { customConfirm } = useCustomDialog();
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -211,6 +219,11 @@ export function MapContainer({
   const mtbTrailsRef = useRef<L.TileLayer | null>(null);
   const osmPoiMarkersRef = useRef<Record<string, L.Marker>>({});
   const hoverIndicatorRef = useRef<L.CircleMarker | null>(null);
+  // Public WMS layers
+  const protectedAreasRef  = useRef<L.TileLayer.WMS | null>(null);
+  const caminoSantiagoRef  = useRef<L.TileLayer.WMS | null>(null);
+  const spainByBikeRef     = useRef<L.TileLayer.WMS | null>(null);
+  const mountainRefugesRef = useRef<L.TileLayer | null>(null);
   const markedLocationMarkerRef = useRef<L.Marker | null>(null);
   const pegmanMarkerRef = useRef<L.Marker | null>(null);
   const gridGroupRef = useRef<L.LayerGroup | null>(null);
@@ -409,6 +422,51 @@ export function MapContainer({
     showCyclingTrails,
     showMtbTrails,
   ]);
+
+  // ── Public WMS layers (2D Leaflet) ─────────────────────────────────────────
+  useEffect(() => {
+    if (!mapInstance) return;
+
+    const applyWms = (
+      flag: boolean,
+      ref: React.MutableRefObject<L.TileLayer.WMS | null>,
+      url: string,
+      layers: string,
+      version = "1.1.1",
+    ) => {
+      if (flag) {
+        if (!ref.current) {
+          ref.current = L.tileLayer.wms(url, {
+            layers,
+            format: "image/png",
+            transparent: true,
+            version,
+            opacity: 0.75,
+            zIndex: 65,
+          }).addTo(mapInstance);
+        }
+      } else if (ref.current) {
+        mapInstance.removeLayer(ref.current);
+        ref.current = null;
+      }
+    };
+
+    // Espacios Naturales — IDECyL JCyL (Castilla y León) · layers verified from GetCapabilities
+    applyWms(showProtectedAreas, protectedAreasRef,
+      "https://idecyl.jcyl.es/geoserver/espaciosnaturales/wms",
+      "en_cyl_rednatura2000_zec_vw,en_cyl_rednatura2000_zepa_vw,en_cyl_ren_limites_vw",
+      "1.3.0");
+    applyWms(showCaminoSantiago, caminoSantiagoRef,
+      "https://www.ign.es/wms-inspire/camino-santiago",
+      "camino_frances,caminos_galicia,caminos_norte,caminos_andaluces,caminos_centro,caminos_este,caminos_nordeste,caminos_sureste,caminos_insulares,caminos_francia,caminos_portugueses",
+      "1.3.0");
+    applyWms(showSpainByBike, spainByBikeRef,
+      "https://wms-spainbybike.idee.es/spainbybike", "etapas,centros_btt,puertos_pto");
+    applyWms(showMountainRefuges, mountainRefugesRef as any,
+      "https://www.ign.es/wms-inspire/ign-base", "refugio");
+
+    // No cleanup return — layers persist until explicitly toggled off
+  }, [mapInstance, showProtectedAreas, showCaminoSantiago, showSpainByBike, showMountainRefuges]);
 
   // Update Base Layer (supporting custom base layers)
   useEffect(() => {
@@ -1941,11 +1999,7 @@ export function MapContainer({
 
   return (
     <div className={`relative w-full h-full bg-[#0a0e0c] overflow-hidden ${isDrawing || isSelectingArea || isCleaningArea || isDrawingArea ? "leaflet-crosshair" : isSplitting ? "leaflet-scissors" : ""}`}>
-      <div 
-        ref={mapContainerRef} 
-        className="w-full h-full z-10 transition-all duration-700 ease-in-out origin-bottom" 
-        style={is3DActive ? { transform: 'perspective(1200px) rotateX(25deg) scale(1.03)' } : undefined}
-      />
+      <div ref={mapContainerRef} className="w-full h-full z-10" />
 
       {/* Map Drawing overlay badge */}
       {isDrawing && (

@@ -45,7 +45,7 @@ export function ElevationProfile({
 
   if (points.length === 0) {
     return (
-      <div className="h-full flex flex-col items-center justify-center text-slate-500 bg-[#0d1310] border border-[#1b3d2b]/25 rounded-2xl p-6">
+      <div className="h-full flex flex-col items-center justify-center text-slate-500 bg-[#131b17]/95 border border-[#1b3d2b] rounded-2xl p-6">
         <span className="text-sm font-semibold mb-1">Perfil de Elevación</span>
         <span className="text-xs text-center max-w-xs">
           Dibuja una ruta en el mapa o importa un archivo GPX para ver el perfil topográfico y las altitudes.
@@ -186,7 +186,7 @@ export function ElevationProfile({
   }
 
   return (
-    <div className="bg-[#070b09]/60 border border-[#1b3d2b]/20 backdrop-blur-md rounded-2xl p-5 h-full flex flex-col justify-between select-none">
+    <div className="bg-[#131b17]/95 border border-[#1b3d2b] backdrop-blur-md rounded-2xl p-5 h-full flex flex-col justify-between select-none">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <h4 className="text-xs font-semibold text-emerald-400/80 tracking-wider uppercase">
