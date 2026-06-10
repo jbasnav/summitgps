@@ -211,6 +211,16 @@ function AppContent() {
     setShowGridLabels((prev) => !prev);
   }, []);
 
+  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" ? window.innerWidth < 768 : false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   // Marked Location details for right side panel
   const [markedLocation, setMarkedLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [copiedCoords, setCopiedCoords] = useState<boolean>(false);
@@ -635,7 +645,7 @@ function AppContent() {
             );
           }
         });
-    }, 400); // 400ms debounce while dragging
+    }, 1100); // 1100ms debounce while dragging to satisfy Nominatim's 1 req/sec policy
 
     return () => {
       isMounted = false;
@@ -1099,11 +1109,18 @@ function AppContent() {
       />
 
       {/* Point Info Drawer expanding the Sidebar */}
-      {/* Point Info Drawer expanding the Sidebar */}
-      {!isSidebarCollapsed && markedLocation && (
+      {(isMobile || !isSidebarCollapsed) && markedLocation && (
         <div
-          className="absolute w-[340px] md:w-[380px] border-l border-r border-[#1b3d2b] bg-[#131b17]/95 shadow-2xl backdrop-blur-md overflow-hidden flex flex-col z-[9998] animate-slide-in-left pointer-events-auto transition-all duration-300"
-          style={{ left: isSidebarCollapsed ? 64 : 380, top: 144, height: 'calc(100vh - 144px)' }}
+          className={
+            isMobile
+              ? "fixed bottom-0 left-0 w-full rounded-t-2xl border-t border-[#1b3d2b] bg-[#131b17]/95 shadow-2xl backdrop-blur-md overflow-hidden flex flex-col z-[9998] animate-slide-in-bottom pointer-events-auto transition-all duration-300"
+              : "absolute w-[340px] md:w-[380px] border-l border-r border-[#1b3d2b] bg-[#131b17]/95 shadow-2xl backdrop-blur-md overflow-hidden flex flex-col z-[9998] animate-slide-in-left pointer-events-auto transition-all duration-300"
+          }
+          style={
+            isMobile
+              ? { height: '55vh', left: 0 }
+              : { left: isSidebarCollapsed ? 64 : 380, top: 144, height: 'calc(100vh - 144px)' }
+          }
         >
           {/* Panel Header (Styled like GaiaGPS Premium Card) */}
           <div className="flex items-center justify-between h-14 px-4 border-b border-[#1b3d2b] bg-[#0c120f]/60 select-none shrink-0">
@@ -1844,19 +1861,30 @@ function AppContent() {
         </div>
 
         {/* Collapsible Elevation Chart */}
-        {points.length > 0 && !isChartCollapsed && (
-          <div className="absolute bottom-4 right-16 z-[2000] pointer-events-auto w-[min(640px,calc(100%-200px))]">
-            <div className="h-[200px]">
-              <ElevationProfile
-                points={points}
-                useImperial={useImperial}
-                onHoverPoint={setHoverPoint}
-                selectedRange={selectedRange}
-                onSelectRange={setSelectedRange}
-              />
+        {points.length > 0 && !isChartCollapsed && (() => {
+          const leftSpacing = isSidebarCollapsed
+            ? 64
+            : (markedLocation && !isMobile ? 760 : 380);
+          return (
+            <div
+              className="absolute bottom-4 right-16 z-[2000] pointer-events-auto transition-all duration-300"
+              style={{
+                width: `calc(100vw - ${leftSpacing + 80}px)`,
+                maxWidth: '640px'
+              }}
+            >
+              <div className="h-[200px]">
+                <ElevationProfile
+                  points={points}
+                  useImperial={useImperial}
+                  onHoverPoint={setHoverPoint}
+                  selectedRange={selectedRange}
+                  onSelectRange={setSelectedRange}
+                />
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
 
       {/* Waypoint Info Modal */}

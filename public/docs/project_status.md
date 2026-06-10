@@ -8,11 +8,11 @@ Este documento consolida y prioriza todas las tareas, errores y sugerencias de m
 
 | Prioridad | Total Tareas | Pendientes | En Progreso | Completadas |
 | :--- | :---: | :---: | :---: | :---: |
-| 🔴 **Crítico** | 5 | 5 | 0 | 0 |
+| 🔴 **Crítico** | 5 | 0 | 0 | 5 |
 | 🟡 **Alto** | 2 | 2 | 0 | 0 |
 | 🟢 **Medio** | 5 | 5 | 0 | 0 |
 | 🔵 **Bajo** | 4 | 4 | 0 | 0 |
-| **Total** | **16** | **16** | **0** | **0** |
+| **Total** | **16** | **11** | **0** | **5** |
 
 ---
 
@@ -22,11 +22,11 @@ Este documento consolida y prioriza todas las tareas, errores y sugerencias de m
 
 | ID | Origen | Tarea / Bug | Descripción | Estado | Asignado a |
 | :--- | :--- | :--- | :--- | :---: | :--- |
-| **QA-1** | QA | **Pérdida de datos offline** | Al reconectarse y refrescar, si existen rutas en la nube (`dbTracks.length > 0`), el cliente sobrescribe `localStorage` con la base de datos desactualizada, borrando las rutas creadas/editadas sin conexión. | 🔴 Pendiente | `desarrollador_core` |
-| **QA-2** | QA | **Condición de carrera Undo/Redo** | Supabase ejecuta `.delete()` + `.insert()` asíncronos en deshacer/rehacer. Pulsaciones rápidas desordenan peticiones en red, causando violaciones de clave primaria e inconsistencias de estado. | 🔴 Pendiente | `desarrollador_core` |
-| **QA-3** | QA | **Límite de peticiones de Nominatim** | El arrastre de Street View tiene un debounce de 400ms. Si es continuo, supera el límite de 1 petición/s de Nominatim, devolviendo HTTP 429 y arriesgando bloqueo de IP. | 🔴 Pendiente | `desarrollador_core` |
-| **UX-1** | UX | **Desbordamiento Point Info Drawer** | En pantallas móviles/tablets (<768px), el panel se desborda lateralmente al usar `left: isSidebarCollapsed ? 64 : 380` con ancho rígido. | 🔴 Pendiente | `ux_designer` |
-| **UX-2** | UX | **Colisión Perfil Elevación / Sidebar** | En portátiles de 13" o iPads horizontales, el perfil de elevación colisiona visualmente con el sidebar expandido (380px), tapando controles del mapa. | 🔴 Pendiente | `ux_designer` |
+| **QA-1** | QA | **Pérdida de datos offline** | Al reconectarse y refrescar, si existen rutas en la nube (`dbTracks.length > 0`), el cliente sobrescribe `localStorage` con la base de datos desactualizada, borrando las rutas creadas/editadas sin conexión. | 🟢 Completado | `desarrollador_core` |
+| **QA-2** | QA | **Condición de carrera Undo/Redo** | Supabase ejecuta `.delete()` + `.insert()` asíncronos en deshacer/rehacer. Pulsaciones rápidas desordenan peticiones en red, causando violaciones de clave primaria e inconsistencias de estado. | 🟢 Completado | `desarrollador_core` |
+| **QA-3** | QA | **Límite de peticiones de Nominatim** | El arrastre de Street View tiene un debounce de 400ms. Si es continuo, supera el límite de 1 petición/s de Nominatim, devolviendo HTTP 429 y arriesgando bloqueo de IP. | 🟢 Completado | `desarrollador_core` |
+| **UX-1** | UX | **Desbordamiento Point Info Drawer** | En pantallas móviles/tablets (<768px), el panel se desborda lateralmente al usar `left: isSidebarCollapsed ? 64 : 380` con ancho rígido. | 🟢 Completado | `ux_designer` |
+| **UX-2** | UX | **Colisión Perfil Elevación / Sidebar** | En portátiles de 13" o iPads horizontales, el perfil de elevación colisiona visualmente con el sidebar expandido (380px), tapando controles del mapa. | 🟢 Completado | `ux_designer` |
 
 ### 🟡 Prioridad: Alto (Funcionalidades clave o problemas operativos importantes)
 
@@ -58,7 +58,7 @@ Este documento consolida y prioriza todas las tareas, errores y sugerencias de m
 
 ## 🚀 Primer Bloque de Trabajo (Sprint 1)
 
-El primer bloque de trabajo se centrará exclusivamente en la resolución de los **5 errores Críticos (QA-1, QA-2, QA-3, UX-1, UX-2)**. Estos fallos impactan de manera directa en la experiencia de usuario y en la seguridad de los datos almacenados de forma local y remota.
+El primer bloque de trabajo se centró exclusivamente en la resolución de los **5 errores Críticos (QA-1, QA-2, QA-3, UX-1, UX-2)**. Estos fallos impactan de manera directa en la experiencia de usuario y en la seguridad de los datos almacenados de forma local y remota.
 
 ### 📋 Detalle del Plan de Acción Inicial:
 
@@ -73,27 +73,27 @@ graph TD
     E --> F[Paso al Siguiente Bloque / Nuevas Funcionalidades]
 ```
 
-1. **Fase 1: Corrección de Pérdida de Datos Offline (QA-1)**
+1. **Fase 1: Corrección de Pérdida de Datos Offline (QA-1)** (🟢 Completado)
    * **Objetivo:** Modificar el flujo de sincronización inicial en la carga de la aplicación.
-   * **Estrategia:** En lugar de sobrescribir a ciegas el `localStorage` cuando `dbTracks.length > 0` al volver a estar online, implementaremos una estrategia de fusión (merge) inteligente o consultaremos al usuario si desea conservar el trabajo sin conexión local antes de actualizar.
+   * **Estrategia:** Se implementó una estrategia de fusión (merge) inteligente no destructiva. Cuando el usuario inicia sesión y vuelve a estar en línea, se leen los datos locales guardados bajo las claves del usuario (`summit_tracks_${user.id}` y `summit_areas_${user.id}`) y se fusionan con los datos recibidos de Supabase en lugar de sobrescribirlos. Cualquier cambio o elemento nuevo creado localmente fuera de línea se conserva y se sincroniza inmediatamente (en segundo plano) con la base de datos en la nube.
  
-2. **Fase 2: Resolución de Condición de Carrera en Undo/Redo (QA-2)**
+2. **Fase 2: Resolución de Condición de Carrera en Undo/Redo (QA-2)** (🟢 Completado)
    * **Objetivo:** Evitar las colisiones de clave primaria al deshacer/rehacer rápidamente.
-   * **Estrategia:** Implementar una cola de peticiones (queue) secuencial o un mecanismo de "mutación optimista con bloqueo / debounce de red" para garantizar que el `.delete()` y el `.insert()` de Supabase para los marcadores se completen en el orden correcto antes de procesar el siguiente cambio.
+   * **Estrategia:** Se implementó una cola secuencial (`syncQueueRef`) usando una referencia a una promesa que fuerza la ejecución secuencial de las llamadas de actualización a Supabase. De esta manera, cada operación de guardado, actualización o eliminación en la base de datos se ejecuta en el orden exacto esperado de manera serializada.
  
-3. **Fase 3: Control de Tasas en Nominatim (QA-3)**
+3. **Fase 3: Control de Tasas en Nominatim (QA-3)** (🟢 Completado)
    * **Objetivo:** Cumplir con la política de uso de OSM.
-   * **Estrategia:** Incrementar el debounce de geocodificación de Street View de 400ms a 1100ms, o limitar las peticiones a un máximo de 1 por segundo de manera estricta utilizando un limitador de flujo simple (throttling).
+   * **Estrategia:** Se incrementó el debounce de geocodificación reversa de Street View a 1100ms mientras el usuario arrastra el pegman por el mapa, limitando las solicitudes de Nominatim a menos de 1 petición por segundo para cumplir de manera estricta con la política de uso.
  
-4. **Fase 4: Adaptabilidad del Layout en Móviles y Portátiles (UX-1 y UX-2)**
+4. **Fase 4: Adaptabilidad del Layout en Móviles y Portátiles (UX-1 y UX-2)** (🟢 Completado)
    * **Objetivo:** Eliminar los desbordamientos de paneles y colisiones visuales.
    * **Estrategia:**
-     * Para **UX-1 (Point Info Drawer)**: Redefinir la posición lateral usando Tailwind dinámico, haciéndolo de ancho completo (`w-full`) o fijo en la parte inferior en pantallas móviles (<768px).
-     * Para **UX-2 (Perfil de Elevación / Sidebar)**: Rediseñar el contenedor del perfil de elevación para que se desplace o reduzca su ancho cuando el sidebar izquierdo esté expandido en pantallas medianas, o colapsar el sidebar automáticamente si se visualiza el perfil de elevación en dispositivos pequeños.
+     * **UX-1 (Point Info Drawer)**: Se añadió un detector dinámico `isMobile` basado en `window.innerWidth < 768`. Cuando la pantalla es menor a 768px, el cajón de información del punto se transforma de manera adaptativa en un panel inferior (bottom sheet) con altura de `55vh` posicionado fijamente abajo de la pantalla, evitando desbordamientos laterales.
+     * **UX-2 (Perfil de Elevación / Sidebar)**: El contenedor del gráfico de elevación ahora calcula dinámicamente su ancho restando el espacio ocupado por la barra lateral y el cajón de información del punto en ordenadores de sobremesa y laptops, manteniendo el gráfico dentro del área libre visible y libre de solapamientos.
 
 ---
 
 > [!NOTE]
 > **Próximos Pasos para el Coordinador (Tech Lead):**
-> 1. Crear las ramas del repositorio correspondientes a cada tarea o delegar en subagentes especializados.
-> 2. Una vez completado cada cambio, se ejecutará el comando `npm run build` para asegurar la total ausencia de regresiones.
+> 1. Validar las correcciones aplicadas para el Sprint 1 mediante la compilación y prueba de la aplicación.
+> 2. Planificar el Sprint 2 abordando las tareas de prioridad **Alto** y **Medio** (Offline Maps PWA y Trazados OSM).

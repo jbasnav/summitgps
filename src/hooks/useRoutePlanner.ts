@@ -1,5 +1,5 @@
 // Hook for managing Track Library, Multi-Route Drawing, Waypoints, LocalStorage, and Merge/Split Operations
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { calculateHaversineDistance, calculateElevationGainLoss } from "../utils/geoUtils";
 import { simplifyTrack } from "../utils/simplify";
 import { smoothTrackPoints, removeTrackOutliers } from "../utils/trackCleaner";
@@ -230,6 +230,7 @@ export function useRoutePlanner(user: any | null = null) {
 
   const [undoStack, setUndoStack] = useState<HistoryState[]>([]);
   const [redoStack, setRedoStack] = useState<HistoryState[]>([]);
+  const syncQueueRef = useRef<Promise<any>>(Promise.resolve());
 
   const pushToHistory = useCallback((currentTracks: Track[], currentAreas: Area[]) => {
     const clonedTracks = JSON.parse(JSON.stringify(currentTracks));
@@ -628,7 +629,7 @@ export function useRoutePlanner(user: any | null = null) {
 
         } else {
           // Normal flow: use Supabase data
-          const mappedAreas: Area[] = dbAreas.map((a: any) => ({
+          const mappedDbAreas: Area[] = dbAreas.map((a: any) => ({
             id: a.id,
             name: a.name,
             points: Array.isArray(a.points) ? a.points : [],
@@ -639,8 +640,51 @@ export function useRoutePlanner(user: any | null = null) {
             collectionId: a.collection_id || undefined,
           }));
 
-          if (mappedAreas.length > 0) {
-            setAreas(mappedAreas);
+          const localUserAreas: Area[] = fromLocalStorage(`summit_areas_${user.id}`);
+          let finalAreas = [...mappedDbAreas];
+          for (const localA of localUserAreas) {
+            const dbA = finalAreas.find(a => a.id === localA.id);
+            if (!dbA) {
+              finalAreas.push(localA);
+              supabase.from("areas").upsert({
+                id: localA.id,
+                user_id: user.id,
+                name: localA.name,
+                points: localA.points,
+                color: localA.color,
+                visible: localA.visible,
+                area_m2: localA.areaM2 || 0,
+                perimeter_m: localA.perimeterM || 0,
+                collection_id: localA.collectionId || null,
+              }).then(({ error }) => {
+                if (error) console.warn("Offline sync: failed to sync area:", error);
+              });
+            } else {
+              const hasChanges = JSON.stringify(localA) !== JSON.stringify(dbA);
+              if (hasChanges) {
+                const idx = finalAreas.findIndex(a => a.id === localA.id);
+                if (idx !== -1) {
+                  finalAreas[idx] = localA;
+                }
+                supabase.from("areas").upsert({
+                  id: localA.id,
+                  user_id: user.id,
+                  name: localA.name,
+                  points: localA.points,
+                  color: localA.color,
+                  visible: localA.visible,
+                  area_m2: localA.areaM2 || 0,
+                  perimeter_m: localA.perimeterM || 0,
+                  collection_id: localA.collectionId || null,
+                }).then(({ error }) => {
+                  if (error) console.warn("Offline sync: failed to update area:", error);
+                });
+              }
+            }
+          }
+
+          if (finalAreas.length > 0) {
+            setAreas(finalAreas);
           } else {
             const savedAreas = localStorage.getItem("summit_areas");
             if (savedAreas) {
@@ -664,7 +708,7 @@ export function useRoutePlanner(user: any | null = null) {
             }
           }
 
-          finalTracks = (dbTracks || []).map((t: any) => {
+          const mappedDbTracks: Track[] = (dbTracks || []).map((t: any) => {
             const trackWpts = (dbWaypoints || [])
               .filter((w: any) => w.track_id === t.id)
               .map((w: any) => ({
@@ -693,6 +737,93 @@ export function useRoutePlanner(user: any | null = null) {
               isPublic: t.is_public || false,
             };
           });
+
+          const localUserTracks: Track[] = fromLocalStorage(`summit_tracks_${user.id}`);
+          finalTracks = [...mappedDbTracks];
+
+          for (const localT of localUserTracks) {
+            const dbT = finalTracks.find(t => t.id === localT.id);
+            if (!dbT) {
+              finalTracks.push(localT);
+              supabase.from("tracks").upsert({
+                id: localT.id,
+                user_id: user.id,
+                name: localT.name,
+                points: localT.points || [],
+                visible: localT.visible !== false,
+                color: localT.color || "#10b981",
+                collection_id: localT.collectionId || "default",
+                is_public: localT.isPublic || false,
+              }).then(({ error }) => {
+                if (error) console.error("Offline sync: failed to insert track:", error);
+              });
+              if (localT.waypoints && localT.waypoints.length > 0) {
+                const dbWpts = localT.waypoints.map((w: any) => ({
+                  id: w.id,
+                  user_id: user.id,
+                  track_id: localT.id,
+                  name: w.name,
+                  lat: w.lat,
+                  lng: w.lng,
+                  icon: w.icon || "marker",
+                  note: w.note || "",
+                  color: w.color || "#10b981",
+                  group_id: w.groupId === "default" ? null : (w.groupId || null),
+                  completed: w.completed || false,
+                  image: w.image || null,
+                  link: w.link || null,
+                  elevation: w.elevation || null,
+                }));
+                supabase.from("waypoints").upsert(dbWpts).then(({ error }) => {
+                  if (error) console.error("Offline sync: failed to insert waypoints:", error);
+                });
+              }
+            } else {
+              const hasChanges = JSON.stringify(localT) !== JSON.stringify(dbT);
+              if (hasChanges) {
+                const idx = finalTracks.findIndex(t => t.id === localT.id);
+                if (idx !== -1) {
+                  finalTracks[idx] = localT;
+                }
+                supabase.from("tracks").upsert({
+                  id: localT.id,
+                  user_id: user.id,
+                  name: localT.name,
+                  points: localT.points || [],
+                  visible: localT.visible !== false,
+                  color: localT.color || "#10b981",
+                  collection_id: localT.collectionId || "default",
+                  is_public: localT.isPublic || false,
+                }).then(({ error }) => {
+                  if (error) console.error("Offline sync: failed to update track:", error);
+                });
+
+                supabase.from("waypoints").delete().eq("track_id", localT.id).then(() => {
+                  if (localT.waypoints && localT.waypoints.length > 0) {
+                    const dbWpts = localT.waypoints.map((w: any) => ({
+                      id: w.id,
+                      user_id: user.id,
+                      track_id: localT.id,
+                      name: w.name,
+                      lat: w.lat,
+                      lng: w.lng,
+                      icon: w.icon || "marker",
+                      note: w.note || "",
+                      color: w.color || "#10b981",
+                      group_id: w.groupId === "default" ? null : (w.groupId || null),
+                      completed: w.completed || false,
+                      image: w.image || null,
+                      link: w.link || null,
+                      elevation: w.elevation || null,
+                    }));
+                    supabase.from("waypoints").upsert(dbWpts).then(({ error }) => {
+                      if (error) console.error("Offline sync: failed to sync waypoints:", error);
+                    });
+                  }
+                });
+              }
+            }
+          }
 
           // Ensure waypoint global track exists
           if (!finalTracks.some((t) => t.id === "waypoints-global-track")) {
@@ -2661,23 +2792,33 @@ export function useRoutePlanner(user: any | null = null) {
   const syncChangedTracksToSupabase = useCallback((nextTracks: Track[]) => {
     if (!user || !isSupabaseConfigured) return;
 
-    nextTracks.forEach((nextTrack) => {
-      const currentTrack = tracks.find(t => t.id === nextTrack.id);
-      if (!currentTrack || JSON.stringify(currentTrack) !== JSON.stringify(nextTrack)) {
-        supabase.from("tracks").upsert({
-          id: nextTrack.id,
-          user_id: user.id,
-          name: nextTrack.name,
-          points: nextTrack.points,
-          visible: nextTrack.visible,
-          color: nextTrack.color,
-          collection_id: nextTrack.collectionId || "default"
-        }).then(({ error }) => {
-          if (error) console.error("Failed to sync track on undo/redo to Supabase:", error);
-        });
+    syncQueueRef.current = syncQueueRef.current.then(async () => {
+      for (const nextTrack of nextTracks) {
+        const currentTrack = tracks.find(t => t.id === nextTrack.id);
+        const isTrackNew = !currentTrack;
+        const isTrackChanged = isTrackNew || JSON.stringify(currentTrack) !== JSON.stringify(nextTrack);
 
-        if (!currentTrack || JSON.stringify(currentTrack.waypoints) !== JSON.stringify(nextTrack.waypoints)) {
-          supabase.from("waypoints").delete().eq("track_id", nextTrack.id).then(() => {
+        if (isTrackChanged) {
+          const { error: trackErr } = await supabase.from("tracks").upsert({
+            id: nextTrack.id,
+            user_id: user.id,
+            name: nextTrack.name,
+            points: nextTrack.points,
+            visible: nextTrack.visible,
+            color: nextTrack.color,
+            collection_id: nextTrack.collectionId || "default"
+          });
+          if (trackErr) {
+            console.error("Failed to sync track on undo/redo to Supabase:", trackErr);
+          }
+
+          const isWaypointsChanged = isTrackNew || JSON.stringify(currentTrack.waypoints) !== JSON.stringify(nextTrack.waypoints);
+          if (isWaypointsChanged) {
+            const { error: deleteErr } = await supabase.from("waypoints").delete().eq("track_id", nextTrack.id);
+            if (deleteErr) {
+              console.error("Failed to delete waypoints before insert on undo/redo:", deleteErr);
+            }
+
             if (nextTrack.waypoints.length > 0) {
               const dbWaypoints = nextTrack.waypoints.map(w => ({
                 id: w.id,
@@ -2694,20 +2835,22 @@ export function useRoutePlanner(user: any | null = null) {
                 image: w.image || null,
                 link: w.link || null
               }));
-              supabase.from("waypoints").insert(dbWaypoints).then(({ error }) => {
-                if (error) console.error("Failed to sync waypoints on undo/redo to Supabase:", error);
-              });
+              const { error: insertErr } = await supabase.from("waypoints").insert(dbWaypoints);
+              if (insertErr) {
+                console.error("Failed to sync waypoints on undo/redo to Supabase:", insertErr);
+              }
             }
-          });
+          }
         }
       }
-    });
 
-    tracks.forEach((currTrack) => {
-      if (!nextTracks.some(t => t.id === currTrack.id)) {
-        supabase.from("tracks").delete().eq("id", currTrack.id).then(({ error }) => {
-          if (error) console.error("Failed to delete track on undo/redo in Supabase:", error);
-        });
+      for (const currTrack of tracks) {
+        if (!nextTracks.some(t => t.id === currTrack.id)) {
+          const { error: deleteTrackErr } = await supabase.from("tracks").delete().eq("id", currTrack.id);
+          if (deleteTrackErr) {
+            console.error("Failed to delete track on undo/redo in Supabase:", deleteTrackErr);
+          }
+        }
       }
     });
   }, [user, tracks]);
