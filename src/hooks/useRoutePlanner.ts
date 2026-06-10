@@ -1010,7 +1010,7 @@ export function useRoutePlanner(user: any | null = null) {
           const routeDist = data.routes[0].distance / 1000;
           const straightDist = calculateHaversineDistance(start, end);
 
-          if (routeDist > straightDist * 2.5) {
+          if (routeDist > straightDist * 4.0) {
             return [start, end];
           }
 
@@ -1089,7 +1089,7 @@ export function useRoutePlanner(user: any | null = null) {
         // Sanity check: reject absurd detours
         const routeDistKm = (path.distance || 0) / 1000;
         const straightDist = calculateHaversineDistance(start, end);
-        if (routeDistKm > straightDist * 3) {
+        if (routeDistKm > straightDist * 4.5) {
           throw new Error("GraphHopper route suspiciously long, trying fallback");
         }
 

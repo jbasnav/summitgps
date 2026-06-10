@@ -100,6 +100,7 @@ interface MapContainerProps {
   showHidrografia?: boolean;
   showOcupacionSuelo?: boolean;
   showTransportes?: boolean;
+  previewTrack?: any | null;
 }
 
 // Map Tile Providers
@@ -196,6 +197,7 @@ export function MapContainer({
   showHidrografia = false,
   showOcupacionSuelo = false,
   showTransportes = false,
+  previewTrack,
 }: MapContainerProps) {
   const { customConfirm } = useCustomDialog();
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -758,6 +760,47 @@ export function MapContainer({
       }
     });
   }, [mapInstance, tracks, activeTrackId, isDrawing, isEditingRoute, onInsertIntermediatePoint, trackColorMode]);
+
+  // Render Community Route Preview
+  const previewPolylineRef = useRef<L.Polyline | null>(null);
+
+  useEffect(() => {
+    if (!mapInstance) return;
+
+    if (previewPolylineRef.current) {
+      mapInstance.removeLayer(previewPolylineRef.current);
+      previewPolylineRef.current = null;
+    }
+
+    if (!previewTrack || !previewTrack.points || previewTrack.points.length === 0) return;
+
+    const latlngs = previewTrack.points.map((p: any) => L.latLng(p.lat, p.lng));
+    const polyline = L.polyline(latlngs, {
+      color: "#ff3366", // color distintivo rosa brillante
+      weight: 6,
+      opacity: 0.9,
+      lineCap: "round" as const,
+      lineJoin: "round" as const,
+      dashArray: "10, 10", // línea discontinua llamativa
+    }).addTo(mapInstance);
+
+    previewPolylineRef.current = polyline;
+
+    // Automatically zoom to the preview track bounds
+    try {
+      const bounds = L.latLngBounds(latlngs);
+      mapInstance.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+    } catch (e) {
+      console.error("Failed to fit bounds for preview track:", e);
+    }
+
+    return () => {
+      if (previewPolylineRef.current && mapInstance) {
+        mapInstance.removeLayer(previewPolylineRef.current);
+        previewPolylineRef.current = null;
+      }
+    };
+  }, [mapInstance, previewTrack]);
 
   // Render Brushing Selection Highlight and handle auto-zoom
   useEffect(() => {

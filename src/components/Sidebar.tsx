@@ -231,6 +231,10 @@ interface SidebarProps {
   trimTrack?: (id: string, startIdx: number, endIdx: number) => void;
   applySmoothTrack?: (id: string, strength: number) => void;
   applyRemoveOutliers?: (id: string, threshold: number) => void;
+  onHoverPoint?: (point: any) => void;
+  mapInstance?: any;
+  previewTrack?: any | null;
+  onPreviewTrack?: (track: any | null) => void;
 }
 
 type TabId = "search" | "layers" | "route" | "waypoints" | "challenges" | "community" | "settings";
@@ -372,6 +376,10 @@ export function Sidebar({
   onOpenPlusModal = () => {},
   isRouteConditionsOpen = false,
   onToggleRouteConditions = () => {},
+  onHoverPoint,
+  mapInstance,
+  previewTrack,
+  onPreviewTrack,
 }: SidebarProps) {
   const { customAlert, customConfirm, customPrompt } = useCustomDialog();
   const [activeTab, setActiveTab] = useState<TabId>("route");
@@ -4504,6 +4512,25 @@ export function Sidebar({
                 </div>
               )}
 
+              {previewTrack && onPreviewTrack && (
+                <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-3 flex items-center justify-between gap-2 text-rose-300 shrink-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Eye className="w-4 h-4 text-rose-400 shrink-0 animate-pulse" />
+                    <div className="min-w-0">
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-rose-400 leading-none">Previsualización Activa</p>
+                      <p className="text-[11px] font-bold truncate mt-0.5">{previewTrack.name}</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onPreviewTrack(null)}
+                    className="shrink-0 flex items-center gap-1 px-2.5 py-1 bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/30 rounded-lg text-[9px] font-bold text-rose-200 cursor-pointer transition-all"
+                  >
+                    <X className="w-3.5 h-3.5" /> Quitar
+                  </button>
+                </div>
+              )}
+
               <div className="space-y-2 overflow-y-auto flex-1">
                 {filtered.map((item: any) => {
                   const author = item.profiles?.display_name || "Usuario";
@@ -4518,42 +4545,71 @@ export function Sidebar({
                       </div>
                     )}
                     <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <p className="text-[11px] font-bold text-slate-200 truncate">{item.name}</p>
                         <p className="text-[9px] text-slate-500">por <span className="text-slate-400">{author}</span> · <span className={kindColor}>{kindLabel}</span>{wptCount > 0 ? ` · ${wptCount} marcas` : ""}</p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (!await customConfirm(`¿Importar "${item.name}" a tu cuenta?`)) return;
-                          if (item._kind === "track") {
-                            const pts = Array.isArray(item.points) ? item.points : [];
-                            const wpts = Array.isArray(item.waypoints) ? item.waypoints : [];
-                            onImportRoute(item.name, pts, wpts.map((w: any) => ({ ...w, groupId: "default", id: `wpt-${Date.now()}-${Math.random().toString(36).substr(2,5)}` })));
-                          } else {
-                            try {
-                              const newGroupId = await onAddWaypointGroup({
-                                name: item.name,
-                                description: item.description || "",
-                                color: item.color || "#10b981",
-                                visible: true,
-                                image: item.image,
-                                type: item._kind === "challenge" ? "challenge" : "folder",
-                              } as any);
-                              if (item.waypoints?.length && onAddWaypointToMarkers) {
-                                item.waypoints.forEach((w: any) => {
-                                  onAddWaypointToMarkers({ name: w.name, lat: w.lat, lng: w.lng, icon: w.icon || "marker", note: w.note || "", color: w.color || item.color || "#10b981", groupId: newGroupId, completed: false, elevation: w.elevation, link: w.link, image: w.image });
-                                });
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {item._kind === "track" && onPreviewTrack && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (previewTrack?.id === item.id) {
+                                onPreviewTrack(null);
+                              } else {
+                                onPreviewTrack(item);
                               }
-                            } catch (e) {
-                              await customAlert("Error al importar: " + (e as Error).message);
+                            }}
+                            className={`flex items-center gap-1 px-2 py-1.5 border rounded-lg text-[9px] font-bold cursor-pointer transition-all ${
+                              previewTrack?.id === item.id
+                                ? "bg-rose-500/20 border-rose-500/40 text-rose-300 hover:bg-rose-500/30"
+                                : "bg-blue-500/15 hover:bg-blue-500/30 border-blue-500/20 text-blue-400"
+                            }`}
+                          >
+                            {previewTrack?.id === item.id ? (
+                              <>
+                                <EyeOff className="w-3 h-3" /> Quitar
+                              </>
+                            ) : (
+                              <>
+                                <Eye className="w-3 h-3" /> Previsualizar
+                              </>
+                            )}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!await customConfirm(`¿Importar "${item.name}" a tu cuenta?`)) return;
+                            if (item._kind === "track") {
+                              const pts = Array.isArray(item.points) ? item.points : [];
+                              const wpts = Array.isArray(item.waypoints) ? item.waypoints : [];
+                              onImportRoute(item.name, pts, wpts.map((w: any) => ({ ...w, groupId: "default", id: `wpt-${Date.now()}-${Math.random().toString(36).substr(2,5)}` })));
+                            } else {
+                              try {
+                                const newGroupId = await onAddWaypointGroup({
+                                  name: item.name,
+                                  description: item.description || "",
+                                  color: item.color || "#10b981",
+                                  visible: true,
+                                  image: item.image,
+                                  type: item._kind === "challenge" ? "challenge" : "folder",
+                                } as any);
+                                if (item.waypoints?.length && onAddWaypointToMarkers) {
+                                  item.waypoints.forEach((w: any) => {
+                                    onAddWaypointToMarkers({ name: w.name, lat: w.lat, lng: w.lng, icon: w.icon || "marker", note: w.note || "", color: w.color || item.color || "#10b981", groupId: newGroupId, completed: false, elevation: w.elevation, link: w.link, image: w.image });
+                                  });
+                                }
+                              } catch (e) {
+                                await customAlert("Error al importar: " + (e as Error).message);
+                              }
                             }
-                          }
-                        }}
-                        className="shrink-0 flex items-center gap-1 px-2 py-1 bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/20 rounded-lg text-[9px] font-bold text-emerald-400 cursor-pointer transition-all"
-                      >
-                        <Import className="w-3 h-3" /> Importar
-                      </button>
+                          }}
+                          className="flex items-center gap-1 px-2 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/20 rounded-lg text-[9px] font-bold text-emerald-400 cursor-pointer transition-all"
+                        >
+                          <Import className="w-3 h-3" /> Importar
+                        </button>
+                      </div>
                     </div>
                     {item.description && (
                       <p className="text-[9px] text-slate-600 leading-relaxed line-clamp-2">{item.description}</p>
@@ -4933,6 +4989,8 @@ export function Sidebar({
             .map((t) => ({ id: t!.id, name: t!.name, color: t!.color || "#10b981", points: t!.points }))}
           useImperial={useImperial}
           onClose={() => setShowCombinedProfile(false)}
+          onHoverPoint={onHoverPoint}
+          mapInstance={mapInstance}
         />
       )}
     </div>

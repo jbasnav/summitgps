@@ -10,9 +10,9 @@ Este documento consolida y prioriza todas las tareas, errores y sugerencias de m
 | :--- | :---: | :---: | :---: | :---: |
 | 🔴 **Crítico** | 5 | 0 | 0 | 5 |
 | 🟡 **Alto** | 2 | 0 | 0 | 2 |
-| 🟢 **Medio** | 5 | 5 | 0 | 0 |
+| 🟢 **Medio** | 5 | 0 | 0 | 5 |
 | 🔵 **Bajo** | 4 | 4 | 0 | 0 |
-| **Total** | **16** | **9** | **0** | **7** |
+| **Total** | **16** | **4** | **0** | **12** |
 
 ---
 
@@ -39,11 +39,11 @@ Este documento consolida y prioriza todas las tareas, errores y sugerencias de m
 
 | ID | Origen | Tarea / Bug | Descripción | Estado | Asignado a |
 | :--- | :--- | :--- | :--- | :---: | :--- |
-| **UX-3** | UX | **Interactividad en Perfil Combinado** | El componente `CombinedElevationProfile.tsx` es un gráfico estático. Requiere interactividad de hover sincronizado con el mapa y zoom al seleccionar rango (`fitBounds`). | 🟡 Pendiente | `ux_designer` |
-| **QA-4** | QA | **Fallback vacío de Wikipedia** | Manejo de respuestas de Wikipedia usa `.catch(() => {})`. Si falla la red o CORS, el spinner desaparece y muestra "No se encontraron artículos cercanos" erróneamente. | 🟡 Pendiente | `desarrollador_core` |
-| **QA-5** | QA | **Falta de feedback Overpass en 3D** | El visor 3D solo conecta al servidor principal de Overpass (sin usar los 4 respaldos del sidebar). Si cae, no se cargan los refugios y no hay feedback de error. | 🟡 Pendiente | `desarrollador_core` |
-| **QA-7** | QA | **Filtro estricto de GraphHopper/OSRM** | El verificador de fallbacks descarta la ruta si el trazado calculado supera por 3 el trazado lineal directo. En montañas sinuosas, esto obliga a trazar líneas rectas erróneas. | 🟡 Pendiente | `desarrollador_core` |
-| **PM-2** | PM | **Buscador Social de Rutas** | Desarrollar una galería y mapa de descubrimiento para que los usuarios busquen y exploren rutas públicas (`is_public = true`) de otros miembros. | 🟡 Pendiente | `desarrollador_social` |
+| **UX-3** | UX | **Interactividad en Perfil Combinado** | El componente `CombinedElevationProfile.tsx` es un gráfico estático. Requiere interactividad de hover sincronizado con el mapa y zoom al seleccionar rango (`fitBounds`). | 🟢 Completado | `ux_designer` |
+| **QA-4** | QA | **Fallback vacío de Wikipedia** | Manejo de respuestas de Wikipedia usa `.catch(() => {})`. Si falla la red o CORS, el spinner desaparece y muestra "No se encontraron artículos cercanos" erróneamente. | 🟢 Completado | `desarrollador_core` |
+| **QA-5** | QA | **Falta de feedback Overpass en 3D** | El visor 3D solo conecta al servidor principal de Overpass (sin usar los 4 respaldos del sidebar). Si cae, no se cargan los refugios y no hay feedback de error. | 🟢 Completado | `desarrollador_core` |
+| **QA-7** | QA | **Filtro estricto de GraphHopper/OSRM** | El verificador de fallbacks descarta la ruta si el trazado calculado supera por 3 el trazado lineal directo. En montañas sinuosas, esto obliga a trazar líneas rectas erróneas. | 🟢 Completado | `desarrollador_core` |
+| **PM-2** | PM | **Buscador Social de Rutas** | Desarrollar una galería y mapa de descubrimiento para que los usuarios busquen y exploren rutas públicas (`is_public = true`) de otros miembros. | 🟢 Completado | `desarrollador_social` |
 
 ### 🔵 Prioridad: Bajo (Estética, accesibilidad o mejoras menores)
 
@@ -67,13 +67,21 @@ Este documento consolida y prioriza todas las tareas, errores y sugerencias de m
 * **Resultado:**
   1. **Algoritmo de Ensamblado de Relaciones OSM (QA-6):** Se reemplazó la concatenación simple con un algoritmo de agrupación geométrica por cercanía de extremos (tolerancia <25m) con volteado automático de sentidos y unión con vecino más cercano.
   2. **Modo Offline PWA (PM-1):**
-     * Registro de Service Worker para interceptar y guardar en caché dinámicamente recursos estáticos y teselas de mapas (incluyendo subdominios de OSM, CartoDB, OpenTopoMap, WMS y servidores de ArcGIS).
-     * Creación de almacenamiento local IndexedDB (`summit_offline_db`) para persistir de manera transparente la ruta activa y las áreas de interés del usuario cuando se navega sin cobertura o falla la conexión con Supabase.
-     * Implementación del descargador de teselas de mapas (`mapDownloader.ts`) que procesa los niveles de zoom de montaña (12 a 15) mediante un pool asíncrono optimizado con concurrencia controlada (máximo 8 descargas simultáneas).
-     * Integración de una interfaz gráfica de progreso de descarga dentro del menú de edición de la ruta activa en `Sidebar.tsx`, indicando porcentajes y número de teselas cacheadas.
+     * Registro de Service Worker para interceptar y guardar en caché dinámicamente recursos estáticos y teselas de mapas.
+     * Almacenamiento local IndexedDB (`summit_offline_db`) para persistir de manera transparente la ruta activa.
+     * Pool de descargas asíncronas de teselas de zoom 12 a 15 y UI de progreso de caché.
+
+### Sprint 3: Interactividad, Resiliencia de APIs y Exploración Social (Completado)
+* **Objetivos:** Implementar y resolver 5 tareas de prioridad media (**UX-3, QA-4, QA-5, QA-7, PM-2**).
+* **Resultado:**
+  1. **Interactividad en Perfil Combinado (UX-3):** Gráfico interactivo en `CombinedElevationProfile.tsx` que admite hover sincronizado interpolando distancias (`onHoverPoint`) y zoom mediante arrastre de cursor calculando coordenadas extremas (`fitBounds` sobre `mapInstance`).
+  2. **Resiliencia en Wikipedia API (QA-4):** Modificado `WaypointInfoModal.tsx` para interceptar de forma amigable los fallos de red y CORS, impidiendo spinners infinitos y falsos mensajes de "no encontrado".
+  3. **Servidores Fallback Overpass 3D (QA-5):** En `Map3DContainer.tsx`, se añadieron llamadas secuenciales en cascada a los 4 servidores Overpass secundarios con notificaciones `customAlert` si todos fallan. Se eliminó la dependencia `center` en el hook de actualización de datos para impedir loops de red infinitos.
+  4. **Ratio de Ruteo Tolerante (QA-7):** Modificado `useRoutePlanner.ts` extendiendo los ratios tolerables de longitud de ruta frente a línea recta (4.0 para OSRM y 4.5 para GraphHopper), eliminando el descarte incorrecto de trazados sinuosos de montaña.
+  5. **Buscador y Mapa de Descubrimiento Social (PM-2):** Se implementó una opción de **Previsualización** en la pestaña de Comunidad (`Sidebar.tsx`) y una capa efímera en `MapContainer.tsx` que dibuja en rosa brillante discontinuo (`#ff3366`) y hace `fitBounds` a la ruta elegida sin forzar su importación, incluyendo banners interactivos flotantes en `App.tsx` para desactivarla con facilidad.
 
 ---
 
 > [!NOTE]
 > **Próximos Pasos para el Coordinador (Tech Lead):**
-> 1. Iniciar la planificación del Sprint 3 centrado en la **Interactividad en Perfil Combinado (UX-3)** y robustez de llamadas a APIs externas como Wikipedia y Overpass 3D.
+> 1. Iniciar planificación del Sprint 4 para abordar mejoras estéticas y de accesibilidad de prioridad baja (**UX-4, UX-5, UX-6, PM-3**).

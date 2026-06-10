@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { Waypoint, RoutePoint } from "../hooks/useRoutePlanner";
+import { useCustomDialog } from "./CustomDialog";
 
 interface Track {
   id: string;
@@ -91,9 +92,9 @@ export function Map3DContainer({
   const [isFlying, setIsFlying]       = useState(false);
   const [refugesData, setRefugesData] = useState<GeoJSON.FeatureCollection | null>(null);
   const [exaggeration, setExaggeration] = useState(1.5);
+  const { customAlert } = useCustomDialog();
 
   const activeTrack = tracks.find((t) => t.id === activeTrackId && t.visible);
-  const center = mapCenter;
 
   // ── Init map ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -267,21 +268,52 @@ export function Map3DContainer({
       `node["amenity"="shelter"](${bbox.getSouth()},${bbox.getWest()},${bbox.getNorth()},${bbox.getEast()}););` +
       `out body;`;
 
-    fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`)
-      .then((r) => r.json())
-      .then((data) => {
-        const fc: GeoJSON.FeatureCollection = {
-          type: "FeatureCollection",
-          features: (data.elements || []).map((el: any) => ({
-            type: "Feature",
-            properties: { name: el.tags?.name || el.tags?.["name:es"] || "Refugio", type: el.tags?.tourism || el.tags?.amenity },
-            geometry: { type: "Point", coordinates: [el.lon, el.lat] },
-          })),
-        };
-        setRefugesData(fc);
-      })
-      .catch(() => {});
-  }, [showMountainRefuges, mapReady, center]);
+    const endpoints = [
+      "https://overpass-api.de/api/interpreter",
+      "https://overpass.kumi.systems/api/interpreter",
+      "https://lz4.overpass-api.de/api/interpreter",
+      "https://z.overpass-api.de/api/interpreter"
+    ];
+
+    const fetchRefuges = async () => {
+      let data = null;
+
+      for (const endpoint of endpoints) {
+        try {
+          const url = `${endpoint}?data=${encodeURIComponent(query)}`;
+          const response = await fetch(url);
+          if (response.ok) {
+            data = await response.json();
+            break;
+          } else {
+            console.warn(`Overpass 3D endpoint ${endpoint} returned status ${response.status}`);
+          }
+        } catch (err: any) {
+          console.warn(`Overpass 3D endpoint ${endpoint} failed:`, err);
+        }
+      }
+
+      if (!data) {
+        customAlert(
+          "No se pudieron descargar los refugios de montaña. Todos los servidores de OpenStreetMap / Overpass fallaron.",
+          "Error de Conexión"
+        );
+        return;
+      }
+
+      const fc: GeoJSON.FeatureCollection = {
+        type: "FeatureCollection",
+        features: (data.elements || []).map((el: any) => ({
+          type: "Feature",
+          properties: { name: el.tags?.name || el.tags?.["name:es"] || "Refugio", type: el.tags?.tourism || el.tags?.amenity },
+          geometry: { type: "Point", coordinates: [el.lon, el.lat] },
+        })),
+      };
+      setRefugesData(fc);
+    };
+
+    fetchRefuges();
+  }, [showMountainRefuges, mapReady, customAlert]);
 
   // Render refuges GeoJSON
   useEffect(() => {

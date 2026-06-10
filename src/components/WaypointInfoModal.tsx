@@ -113,10 +113,13 @@ export function WaypointInfoModal({ isOpen, waypoint, onClose }: WaypointInfoMod
                 Buscando...
               </div>
             )}
-            {!loading && articles.length === 0 && (
+            {!loading && error && (
+              <p className="text-red-400 text-[11px] py-1.5">{error}</p>
+            )}
+            {!loading && !error && articles.length === 0 && (
               <p className="text-slate-500 text-xs py-2">No se encontraron artículos cercanos.</p>
             )}
-            {!loading && articles.length > 0 && (
+            {!loading && !error && articles.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {articles.map((a) => (
                   <button
@@ -144,7 +147,10 @@ export function WaypointInfoModal({ isOpen, waypoint, onClose }: WaypointInfoMod
                 Cargando artículo...
               </div>
             )}
-            {!summaryLoading && selectedSummary && (
+            {!summaryLoading && summaryError && (
+              <p className="text-red-400 text-xs py-4 text-center">{summaryError}</p>
+            )}
+            {!summaryLoading && !summaryError && selectedSummary && (
               <div className="space-y-3">
                 {selectedSummary.thumbnail?.source && (
                   <img

@@ -8,7 +8,7 @@ import { Map3DCesiumModal } from "./components/Map3DCesiumModal";
 import { useRoutePlanner, type Waypoint, type RoutePoint } from "./hooks/useRoutePlanner";
 import { useImageLibrary } from "./hooks/useImageLibrary";
 import type { BaseLayerId, CustomLayer } from "./components/LayerSelector";
-import { Search, X, Compass, Loader, MapPin, Printer, CloudRain, Layers } from "lucide-react";
+import { Search, X, Compass, Loader, MapPin, Printer, CloudRain, Layers, Eye } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "./utils/supabaseClient";
 import { AuthScreen } from "./components/AuthScreen";
 import PrintMapModal from "./components/PrintMapModal";
@@ -27,6 +27,7 @@ function AppContent() {
     return true;
   });
   const [authChecking, setAuthChecking] = useState<boolean>(isSupabaseConfigured); // Check session if Supabase is configured
+  const [previewTrack, setPreviewTrack] = useState<any | null>(null);
 
   // Image library (custom cover images for groups/collections/retos)
   const { images: libraryImages, uploading: libraryUploading, addImage: addLibraryImage, deleteImage: deleteLibraryImage, renameImage: renameLibraryImage } = useImageLibrary(user?.id ?? null);
@@ -1042,6 +1043,8 @@ function AppContent() {
           setEditingWaypoint(null);
           setIsWptModalOpen(true);
         }, [mapCenter])}
+        previewTrack={previewTrack}
+        onPreviewTrack={setPreviewTrack}
         user={user}
         onSignOut={handleSignOut}
         onSignInClick={useCallback(() => setShowAuthScreen(true), [])}
@@ -1106,6 +1109,8 @@ function AppContent() {
         selectedSplitNumber={selectedSplitNumber}
         onSelectSplit={setSelectedSplitNumber}
         onHighlightWpt={setHighlightedWptId}
+        onHoverPoint={setHoverPoint}
+        mapInstance={mapInstance}
       />
 
       {/* Point Info Drawer expanding the Sidebar */}
@@ -1501,6 +1506,7 @@ function AppContent() {
           />
 
           <MapContainer
+            previewTrack={previewTrack}
             tracks={tracksWithCollectionVisibility}
             activeTrackId={activeTrackId}
             isDrawing={isDrawing}
@@ -1600,6 +1606,28 @@ function AppContent() {
               />
             );
           })()}
+
+          {/* Banner de previsualización activa en el mapa */}
+          {previewTrack && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[4500] pointer-events-auto animate-fade-in">
+              <div className="flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-[#0c120f]/95 border border-rose-500/40 text-slate-100 shadow-2xl backdrop-blur-md">
+                <div className="w-8 h-8 rounded-xl bg-rose-500/10 border border-rose-500/35 flex items-center justify-center text-rose-400 shrink-0">
+                  <Eye className="w-4 h-4 animate-pulse" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[9px] font-extrabold text-rose-400 uppercase tracking-wider leading-none">Previsualizando Ruta Pública</p>
+                  <p className="text-xs font-bold truncate mt-0.5 max-w-[200px] md:max-w-xs">{previewTrack.name}</p>
+                </div>
+                <div className="h-6 w-px bg-white/10 mx-1"></div>
+                <button
+                  onClick={() => setPreviewTrack(null)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500 hover:bg-rose-600 active:scale-95 text-white font-extrabold text-[10px] rounded-xl transition-all cursor-pointer shadow-lg shadow-rose-500/20"
+                >
+                  <X className="w-3.5 h-3.5" /> Quitar
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* ── Fin Ruta floating button (visible only while drawing) ── */}
           {isDrawing && (
