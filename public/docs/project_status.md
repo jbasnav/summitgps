@@ -9,10 +9,10 @@ Este documento consolida y prioriza todas las tareas, errores y sugerencias de m
 | Prioridad | Total Tareas | Pendientes | En Progreso | Completadas |
 | :--- | :---: | :---: | :---: | :---: |
 | 🔴 **Crítico** | 5 | 0 | 0 | 5 |
-| 🟡 **Alto** | 2 | 2 | 0 | 0 |
+| 🟡 **Alto** | 2 | 0 | 0 | 2 |
 | 🟢 **Medio** | 5 | 5 | 0 | 0 |
 | 🔵 **Bajo** | 4 | 4 | 0 | 0 |
-| **Total** | **16** | **11** | **0** | **5** |
+| **Total** | **16** | **9** | **0** | **7** |
 
 ---
 
@@ -32,18 +32,18 @@ Este documento consolida y prioriza todas las tareas, errores y sugerencias de m
 
 | ID | Origen | Tarea / Bug | Descripción | Estado | Asignado a |
 | :--- | :--- | :--- | :--- | :---: | :--- |
-| **PM-1** | PM | **Modo Fuera de Línea (Offline Maps)** | Implementar caché de teselas de mapas y almacenamiento IndexedDB de la ruta activa mediante PWA para uso seguro en montaña sin cobertura. | 🟡 Pendiente | `desarrollador_offline` |
-| **QA-6** | QA | **Trazado caótico en Relaciones OSM** | Si una ruta de OSM está fragmentada o desordenada (o incluye sub-relaciones como senderos GR), la importación dibuja líneas en zigzag caóticas en el mapa. | 🟡 Pendiente | `desarrollador_core` |
+| **PM-1** | PM | **Modo Fuera de Línea (Offline Maps)** | Implementar caché de teselas de mapas y almacenamiento IndexedDB de la ruta activa mediante PWA para uso seguro en montaña sin cobertura. | 🟢 Completado | `desarrollador_offline` |
+| **QA-6** | QA | **Trazado caótico en Relaciones OSM** | Si una ruta de OSM está fragmentada o desordenada (o incluye sub-relaciones como senderos GR), la importación dibuja líneas en zigzag caóticas en el mapa. | 🟢 Completado | `desarrollador_core` |
 
 ### 🟢 Prioridad: Medio (Mejoras de usabilidad e interactividad)
 
 | ID | Origen | Tarea / Bug | Descripción | Estado | Asignado a |
 | :--- | :--- | :--- | :--- | :---: | :--- |
-| **UX-3** | UX | **Interactividad en Perfil Combinado** | El componente `CombinedElevationProfile.tsx` es un gráfico estático. Requiere interactividad de hover sincronizado con el mapa y zoom al seleccionar rango (`fitBounds`). | 🟢 Pendiente | `ux_designer` |
-| **QA-4** | QA | **Fallback vacío de Wikipedia** | Manejo de respuestas de Wikipedia usa `.catch(() => {})`. Si falla la red o CORS, el spinner desaparece y muestra "No se encontraron artículos cercanos" erróneamente. | 🟢 Pendiente | `desarrollador_core` |
-| **QA-5** | QA | **Falta de feedback Overpass en 3D** | El visor 3D solo conecta al servidor principal de Overpass (sin usar los 4 respaldos del sidebar). Si cae, no se cargan los refugios y no hay feedback de error. | 🟢 Pendiente | `desarrollador_core` |
-| **QA-7** | QA | **Filtro estricto de GraphHopper/OSRM** | El verificador de fallbacks descarta la ruta si el trazado calculado supera por 3 el trazado lineal directo. En montañas sinuosas, esto obliga a trazar líneas rectas erróneas. | 🟢 Pendiente | `desarrollador_core` |
-| **PM-2** | PM | **Buscador Social de Rutas** | Desarrollar una galería y mapa de descubrimiento para que los usuarios busquen y exploren rutas públicas (`is_public = true`) de otros miembros. | 🟢 Pendiente | `desarrollador_social` |
+| **UX-3** | UX | **Interactividad en Perfil Combinado** | El componente `CombinedElevationProfile.tsx` es un gráfico estático. Requiere interactividad de hover sincronizado con el mapa y zoom al seleccionar rango (`fitBounds`). | 🟡 Pendiente | `ux_designer` |
+| **QA-4** | QA | **Fallback vacío de Wikipedia** | Manejo de respuestas de Wikipedia usa `.catch(() => {})`. Si falla la red o CORS, el spinner desaparece y muestra "No se encontraron artículos cercanos" erróneamente. | 🟡 Pendiente | `desarrollador_core` |
+| **QA-5** | QA | **Falta de feedback Overpass en 3D** | El visor 3D solo conecta al servidor principal de Overpass (sin usar los 4 respaldos del sidebar). Si cae, no se cargan los refugios y no hay feedback de error. | 🟡 Pendiente | `desarrollador_core` |
+| **QA-7** | QA | **Filtro estricto de GraphHopper/OSRM** | El verificador de fallbacks descarta la ruta si el trazado calculado supera por 3 el trazado lineal directo. En montañas sinuosas, esto obliga a trazar líneas rectas erróneas. | 🟡 Pendiente | `desarrollador_core` |
+| **PM-2** | PM | **Buscador Social de Rutas** | Desarrollar una galería y mapa de descubrimiento para que los usuarios busquen y exploren rutas públicas (`is_public = true`) de otros miembros. | 🟡 Pendiente | `desarrollador_social` |
 
 ### 🔵 Prioridad: Bajo (Estética, accesibilidad o mejoras menores)
 
@@ -56,44 +56,24 @@ Este documento consolida y prioriza todas las tareas, errores y sugerencias de m
 
 ---
 
-## 🚀 Primer Bloque de Trabajo (Sprint 1)
+## 🚀 Entregas de Trabajo por Sprints
 
-El primer bloque de trabajo se centró exclusivamente en la resolución de los **5 errores Críticos (QA-1, QA-2, QA-3, UX-1, UX-2)**. Estos fallos impactan de manera directa en la experiencia de usuario y en la seguridad de los datos almacenados de forma local y remota.
+### Sprint 1: Estabilización de Datos y Layout (Completado)
+* **Objetivos:** Corrección de los 5 errores Críticos (**QA-1, QA-2, QA-3, UX-1, UX-2**).
+* **Resultado:** Se estabilizaron el flujo de fusión no destructiva local/nube, la cola secuencial de escritura a Supabase, el debounce de geocodificación de Street View a 1100ms y el layout responsivo del Drawer.
 
-### 📋 Detalle del Plan de Acción Inicial:
-
-```mermaid
-graph TD
-    A[Estabilización de Datos y Layout] --> B[Bloque Offline & Sincronización - QA-1]
-    A --> C[Bloque Undo/Redo & Nominatim - QA-2, QA-3]
-    A --> D[Bloque Layout Responsivo - UX-1, UX-2]
-    B --> E[Pruebas e Integración npm run build]
-    C --> E
-    D --> E
-    E --> F[Paso al Siguiente Bloque / Nuevas Funcionalidades]
-```
-
-1. **Fase 1: Corrección de Pérdida de Datos Offline (QA-1)** (🟢 Completado)
-   * **Objetivo:** Modificar el flujo de sincronización inicial en la carga de la aplicación.
-   * **Estrategia:** Se implementó una estrategia de fusión (merge) inteligente no destructiva. Cuando el usuario inicia sesión y vuelve a estar en línea, se leen los datos locales guardados bajo las claves del usuario (`summit_tracks_${user.id}` y `summit_areas_${user.id}`) y se fusionan con los datos recibidos de Supabase en lugar de sobrescribirlos. Cualquier cambio o elemento nuevo creado localmente fuera de línea se conserva y se sincroniza inmediatamente (en segundo plano) con la base de datos en la nube.
- 
-2. **Fase 2: Resolución de Condición de Carrera en Undo/Redo (QA-2)** (🟢 Completado)
-   * **Objetivo:** Evitar las colisiones de clave primaria al deshacer/rehacer rápidamente.
-   * **Estrategia:** Se implementó una cola secuencial (`syncQueueRef`) usando una referencia a una promesa que fuerza la ejecución secuencial de las llamadas de actualización a Supabase. De esta manera, cada operación de guardado, actualización o eliminación en la base de datos se ejecuta en el orden exacto esperado de manera serializada.
- 
-3. **Fase 3: Control de Tasas en Nominatim (QA-3)** (🟢 Completado)
-   * **Objetivo:** Cumplir con la política de uso de OSM.
-   * **Estrategia:** Se incrementó el debounce de geocodificación reversa de Street View a 1100ms mientras el usuario arrastra el pegman por el mapa, limitando las solicitudes de Nominatim a menos de 1 petición por segundo para cumplir de manera estricta con la política de uso.
- 
-4. **Fase 4: Adaptabilidad del Layout en Móviles y Portátiles (UX-1 y UX-2)** (🟢 Completado)
-   * **Objetivo:** Eliminar los desbordamientos de paneles y colisiones visuales.
-   * **Estrategia:**
-     * **UX-1 (Point Info Drawer)**: Se añadió un detector dinámico `isMobile` basado en `window.innerWidth < 768`. Cuando la pantalla es menor a 768px, el cajón de información del punto se transforma de manera adaptativa en un panel inferior (bottom sheet) con altura de `55vh` posicionado fijamente abajo de la pantalla, evitando desbordamientos laterales.
-     * **UX-2 (Perfil de Elevación / Sidebar)**: El contenedor del gráfico de elevación ahora calcula dinámicamente su ancho restando el espacio ocupado por la barra lateral y el cajón de información del punto en ordenadores de sobremesa y laptops, manteniendo el gráfico dentro del área libre visible y libre de solapamientos.
+### Sprint 2: Capacidades Offline y Ensamblado de OSM (Completado)
+* **Objetivos:** Implementación de las 2 características de alta prioridad (**PM-1** y **QA-6**).
+* **Resultado:**
+  1. **Algoritmo de Ensamblado de Relaciones OSM (QA-6):** Se reemplazó la concatenación simple con un algoritmo de agrupación geométrica por cercanía de extremos (tolerancia <25m) con volteado automático de sentidos y unión con vecino más cercano.
+  2. **Modo Offline PWA (PM-1):**
+     * Registro de Service Worker para interceptar y guardar en caché dinámicamente recursos estáticos y teselas de mapas (incluyendo subdominios de OSM, CartoDB, OpenTopoMap, WMS y servidores de ArcGIS).
+     * Creación de almacenamiento local IndexedDB (`summit_offline_db`) para persistir de manera transparente la ruta activa y las áreas de interés del usuario cuando se navega sin cobertura o falla la conexión con Supabase.
+     * Implementación del descargador de teselas de mapas (`mapDownloader.ts`) que procesa los niveles de zoom de montaña (12 a 15) mediante un pool asíncrono optimizado con concurrencia controlada (máximo 8 descargas simultáneas).
+     * Integración de una interfaz gráfica de progreso de descarga dentro del menú de edición de la ruta activa en `Sidebar.tsx`, indicando porcentajes y número de teselas cacheadas.
 
 ---
 
 > [!NOTE]
 > **Próximos Pasos para el Coordinador (Tech Lead):**
-> 1. Validar las correcciones aplicadas para el Sprint 1 mediante la compilación y prueba de la aplicación.
-> 2. Planificar el Sprint 2 abordando las tareas de prioridad **Alto** y **Medio** (Offline Maps PWA y Trazados OSM).
+> 1. Iniciar la planificación del Sprint 3 centrado en la **Interactividad en Perfil Combinado (UX-3)** y robustez de llamadas a APIs externas como Wikipedia y Overpass 3D.

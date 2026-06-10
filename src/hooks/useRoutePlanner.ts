@@ -4,6 +4,7 @@ import { calculateHaversineDistance, calculateElevationGainLoss } from "../utils
 import { simplifyTrack } from "../utils/simplify";
 import { smoothTrackPoints, removeTrackOutliers } from "../utils/trackCleaner";
 import { supabase, isSupabaseConfigured } from "../utils/supabaseClient";
+import { saveActiveRoute, loadActiveRoute } from "../utils/offlineDb";
 
 export type RoutingProfile = 'hike' | 'cycle' | 'drive' | 'straight';
 
@@ -897,7 +898,39 @@ export function useRoutePlanner(user: any | null = null) {
         // Clear click segments for DB tracks
         setClickSegments({});
       } catch (err) {
-        console.error("Failed to load user data from Supabase:", err);
+        console.error("Failed to load user data from Supabase, attempting to load active route from IndexedDB:", err);
+        try {
+          const offlineData = await loadActiveRoute();
+          if (offlineData && active) {
+            console.log("[SummitGPS] Loaded active route from IndexedDB:", offlineData);
+            const loadedTrack = offlineData.track;
+            const loadedAreas = offlineData.areas;
+
+            if (loadedTrack) {
+              setTracks((prev) => {
+                const filtered = prev.filter((t) => t.id !== loadedTrack.id);
+                const updated = [...filtered, loadedTrack];
+                if (!updated.some((t) => t.id === "waypoints-global-track")) {
+                  updated.push({
+                    id: "waypoints-global-track",
+                    name: "Marcadores Globales",
+                    points: [],
+                    waypoints: [],
+                    visible: true,
+                    color: "#10b981",
+                  });
+                }
+                return updated;
+              });
+              setActiveTrackId(loadedTrack.id);
+            }
+            if (loadedAreas && loadedAreas.length > 0) {
+              setAreas(loadedAreas);
+            }
+          }
+        } catch (dbErr) {
+          console.error("Failed to load active route from IndexedDB:", dbErr);
+        }
       } finally {
         if (active) setLoading(false);
       }
@@ -936,6 +969,14 @@ export function useRoutePlanner(user: any | null = null) {
     const elevations = activePoints.map((p) => p.elevation);
     return calculateElevationGainLoss(elevations);
   }, [activePoints]);
+
+  // Guardar ruta activa en IndexedDB cuando cambie la ruta activa o las áreas visibles
+  useEffect(() => {
+    if (loading) return;
+    saveActiveRoute(activeTrack, areas).catch((err) => {
+      console.error("Error auto-saving active route to IndexedDB:", err);
+    });
+  }, [activeTrack, areas, loading]);
 
   // 4. API Calls
   const fetchElevations = useCallback(async (coords: [number, number][]): Promise<number[]> => {

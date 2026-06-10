@@ -62,6 +62,7 @@ import type { LibraryImage } from "../hooks/useImageLibrary";
 import { formatArea, calculatePolygonPerimeter } from "../utils/geoUtils";
 import { useCustomDialog } from "./CustomDialog";
 import { WPT_ICONS } from "../utils/iconLibrary";
+import { downloadRouteTiles, type DownloadProgress } from "../utils/mapDownloader";
 
 
 
@@ -376,6 +377,7 @@ export function Sidebar({
   const [activeTab, setActiveTab] = useState<TabId>("route");
 
   // Routing editor local states
+  const [offlineDownloadProgress, setOfflineDownloadProgress] = useState<DownloadProgress | null>(null);
   const [showSimplifyPanel, setShowSimplifyPanel] = useState<boolean>(false);
   const [showTrimPanel, setShowTrimPanel] = useState<boolean>(false);
   const [showSmoothPanel, setShowSmoothPanel] = useState<boolean>(false);
@@ -2978,6 +2980,58 @@ export function Sidebar({
                         GeoJSON
                       </button>
                     </div>
+                  </div>
+
+                  {/* Mapa Fuera de Línea */}
+                  <div className="pt-3 border-t border-[#1b3d2b] space-y-2 select-none">
+                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest flex items-center justify-center gap-1.5">
+                      <Download className="w-3 h-3 text-slate-500" /> Mapa Fuera de Línea
+                    </span>
+                    
+                    {(!offlineDownloadProgress || offlineDownloadProgress.status === "completed" || offlineDownloadProgress.status === "error") ? (
+                      <div className="space-y-1.5">
+                        <button
+                          onClick={() => {
+                            downloadRouteTiles(points, activeBaseLayer, showContours, (progress) => {
+                              setOfflineDownloadProgress(progress);
+                            }).catch((err) => {
+                              console.error("Failed downloading map tiles:", err);
+                            });
+                          }}
+                          disabled={points.length === 0}
+                          title="Descargar teselas del mapa para navegar sin conexión"
+                          className="w-full py-2.5 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03] hover:bg-emerald-500/[0.08] text-[10px] font-bold text-emerald-400 hover:text-emerald-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer text-center flex items-center justify-center gap-1.5"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          Descargar Mapa Offline (Zooms 12-15)
+                        </button>
+                        
+                        {offlineDownloadProgress && (
+                          <div className={`text-[9.5px] text-center font-semibold ${offlineDownloadProgress.status === "completed" ? "text-emerald-400" : "text-red-400"}`}>
+                            {offlineDownloadProgress.message}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="bg-[#0c120f]/60 border border-[#1b3d2b] rounded-xl p-3 space-y-2">
+                        <div className="flex justify-between items-center text-[10px] text-slate-300 font-medium">
+                          <span className="truncate max-w-[190px]">{offlineDownloadProgress.message}</span>
+                          <span className="font-bold">{offlineDownloadProgress.total > 0 ? Math.round((offlineDownloadProgress.downloaded / offlineDownloadProgress.total) * 100) : 0}%</span>
+                        </div>
+                        
+                        <div className="w-full bg-[#131b17] rounded-full h-1.5 overflow-hidden">
+                          <div
+                            className="bg-emerald-500 h-1.5 rounded-full transition-all duration-300 ease-out"
+                            style={{ width: `${offlineDownloadProgress.total > 0 ? (offlineDownloadProgress.downloaded / offlineDownloadProgress.total) * 100 : 0}%` }}
+                          />
+                        </div>
+                        
+                        <div className="flex justify-between text-[8px] text-slate-500">
+                          <span>Concurrencia: 8 hilos</span>
+                          <span>{offlineDownloadProgress.downloaded} / {offlineDownloadProgress.total}</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
