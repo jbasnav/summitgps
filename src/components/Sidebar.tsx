@@ -689,23 +689,100 @@ export function Sidebar({
       }
       if (!data) throw new Error("No se pudo obtener la geometría");
 
-      // Collect ordered way geometry from the relation
-      const relElement = data.elements.find((e: any) => e.type === "relation" && e.id === rel.id);
-      const wayIds: number[] = (relElement?.members || [])
-        .filter((m: any) => m.type === "way")
-        .map((m: any) => m.ref);
+      // Collect all way geometry elements in the response (including sub-relations)
+      const allWays = data.elements.filter((e: any) => e.type === "way" && e.geometry && e.geometry.length > 0);
+      if (allWays.length === 0) throw new Error("La ruta no tiene geometría disponible");
 
-      const wayMap: Record<number, any> = {};
-      data.elements.forEach((e: any) => { if (e.type === "way") wayMap[e.id] = e; });
+      const segments: { lat: number; lng: number }[][] = allWays.map((w: any) =>
+        w.geometry.map((pt: any) => ({ lat: pt.lat, lng: pt.lon }))
+      );
 
-      const points: { lat: number; lng: number }[] = [];
-      for (const wid of wayIds) {
-        const way = wayMap[wid];
-        if (!way?.geometry) continue;
-        way.geometry.forEach((pt: any) => points.push({ lat: pt.lat, lng: pt.lon }));
+      const getDist = (p1: { lat: number; lng: number }, p2: { lat: number; lng: number }) => {
+        const dy = (p1.lat - p2.lat) * 111000;
+        const dx = (p1.lng - p2.lng) * 111000 * Math.cos(((p1.lat + p2.lat) * Math.PI) / 360);
+        return Math.sqrt(dx * dx + dy * dy);
+      };
+
+      const pool = [...segments];
+      const tracks: { lat: number; lng: number }[][] = [];
+
+      while (pool.length > 0) {
+        let currentTrack = pool.shift()!;
+        let extended = true;
+
+        while (extended) {
+          extended = false;
+          const end = currentTrack[currentTrack.length - 1];
+          const start = currentTrack[0];
+
+          for (let i = 0; i < pool.length; i++) {
+            const s = pool[i];
+            const sStart = s[0];
+            const sEnd = s[s.length - 1];
+
+            if (getDist(end, sStart) < 25) {
+              currentTrack = [...currentTrack, ...s.slice(1)];
+              pool.splice(i, 1);
+              extended = true;
+              break;
+            } else if (getDist(end, sEnd) < 25) {
+              currentTrack = [...currentTrack, ...[...s].reverse().slice(1)];
+              pool.splice(i, 1);
+              extended = true;
+              break;
+            } else if (getDist(start, sEnd) < 25) {
+              currentTrack = [...s, ...currentTrack.slice(1)];
+              pool.splice(i, 1);
+              extended = true;
+              break;
+            } else if (getDist(start, sStart) < 25) {
+              currentTrack = [...[...s].reverse(), ...currentTrack.slice(1)];
+              pool.splice(i, 1);
+              extended = true;
+              break;
+            }
+          }
+        }
+        tracks.push(currentTrack);
       }
 
-      if (points.length === 0) throw new Error("La ruta no tiene geometría disponible");
+      // Join disconnected tracks using a greedy nearest-neighbor approach
+      let points: { lat: number; lng: number }[] = [];
+      if (tracks.length > 0) {
+        let current = tracks.shift()!;
+        points = [...current];
+        while (tracks.length > 0) {
+          let bestIdx = -1;
+          let bestDist = Infinity;
+          let invertBest = false;
+          const lastPt = points[points.length - 1];
+
+          for (let i = 0; i < tracks.length; i++) {
+            const t = tracks[i];
+            const dStart = getDist(lastPt, t[0]);
+            const dEnd = getDist(lastPt, t[t.length - 1]);
+
+            if (dStart < bestDist) {
+              bestDist = dStart;
+              bestIdx = i;
+              invertBest = false;
+            }
+            if (dEnd < bestDist) {
+              bestDist = dEnd;
+              bestIdx = i;
+              invertBest = true;
+            }
+          }
+
+          if (bestIdx !== -1) {
+            let nextTrack = tracks.splice(bestIdx, 1)[0];
+            if (invertBest) {
+              nextTrack.reverse();
+            }
+            points = [...points, ...nextTrack];
+          }
+        }
+      }
 
       const name = rel.tags?.name || rel.tags?.["name:es"] || `Ruta OSM ${rel.id}`;
       onImportRoute(name, points, []);
