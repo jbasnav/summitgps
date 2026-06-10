@@ -71,7 +71,9 @@ export function Map3DCesiumModal({
 
         // Enable realistic atmosphere and shadows
         viewer.scene.globe.enableLighting = true;
-        viewer.scene.skyAtmosphere.show = true;
+        if (viewer.scene.skyAtmosphere) {
+          viewer.scene.skyAtmosphere.show = true;
+        }
         viewer.scene.sun = new Cesium.Sun();
         viewer.scene.globe.depthTestAgainstTerrain = true;
 

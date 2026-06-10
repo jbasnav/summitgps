@@ -8,7 +8,7 @@ import { Map3DCesiumModal } from "./components/Map3DCesiumModal";
 import { useRoutePlanner, type Waypoint, type RoutePoint } from "./hooks/useRoutePlanner";
 import { useImageLibrary } from "./hooks/useImageLibrary";
 import type { BaseLayerId, CustomLayer } from "./components/LayerSelector";
-import { ChevronDown, ChevronUp, Search, X, Compass, Loader, MapPin, Printer, CloudRain, Layers } from "lucide-react";
+import { Search, X, Compass, Loader, MapPin, Printer, CloudRain, Layers } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "./utils/supabaseClient";
 import { AuthScreen } from "./components/AuthScreen";
 import PrintMapModal from "./components/PrintMapModal";
@@ -972,7 +972,6 @@ function AppContent() {
         onAddWaypointToTrack={addWaypointToTrack}
         allGlobalWaypoints={allGlobalWaypoints}
         onEditWaypoint={handleEditWaypoint}
-        onShowWaypointInfo={handleShowWaypointInfo}
         onUpdateWaypoint={updateWaypoint}
         onCreateNewTrack={createNewTrack}
         onDeleteTrack={deleteTrack}
@@ -1540,7 +1539,6 @@ function AppContent() {
             showSlopeShading={showSlopeShading}
             slopeShadingOpacity={slopeShadingOpacity}
             highlightedWptId={highlightedWptId}
-            is3DActive={is3DActive}
             showDistanceMarkers={showDistanceMarkers}
             showPersonalHeatmap={showPersonalHeatmap}
             showCommunityHeatmap={showCommunityHeatmap}

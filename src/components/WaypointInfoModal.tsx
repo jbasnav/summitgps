@@ -63,8 +63,6 @@ export function WaypointInfoModal({ isOpen, waypoint, onClose }: WaypointInfoMod
 
   if (!isOpen || !waypoint) return null;
 
-  const lang = navigator.language.startsWith("es") ? "es" : "en";
-
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />

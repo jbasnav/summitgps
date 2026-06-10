@@ -550,7 +550,7 @@ export function FloatingLayerSelector({
 
                 <div className="space-y-1.5">
                   {[
-                    { key: "protectedAreas",  label: "🌿 Red Natura 2000 (IDECyL · CyL)", value: showProtectedAreas,  toggle: onToggleProtectedAreas },
+                    { key: "protectedAreas",  label: "🌿 Lugares Protegidos (INSPIRE)", value: showProtectedAreas,  toggle: onToggleProtectedAreas },
                     { key: "caminoSantiago",  label: "⛩️ Caminos de Santiago (IGN)",  value: showCaminoSantiago,  toggle: onToggleCaminoSantiago },
                     { key: "spainByBike",     label: "🚴 Spain by Bike / BTT",        value: showSpainByBike,     toggle: onToggleSpainByBike },
                     { key: "mountainRefuges", label: "🏕️ Refugios de Montaña (OSM)",  value: showMountainRefuges, toggle: onToggleMountainRefuges },

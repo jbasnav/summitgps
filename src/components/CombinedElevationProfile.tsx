@@ -29,12 +29,6 @@ interface CombinedElevationProfileProps {
 
 const SAMPLE_POINTS = 300;
 
-function samplePoints(points: RoutePoint[], n: number): RoutePoint[] {
-  if (points.length <= n) return points;
-  const step = (points.length - 1) / (n - 1);
-  return Array.from({ length: n }, (_, i) => points[Math.round(i * step)]);
-}
-
 const CustomTooltip = ({ active, payload, useImperial }: any) => {
   if (!active || !payload?.length) return null;
   return (
@@ -172,7 +166,6 @@ export function CombinedElevationProfile({ tracks, useImperial = false, onClose 
           {tracks.map((t) => {
             const last = t.points[t.points.length - 1];
             const dist = last?.distance ?? 0;
-            const elevs = t.points.map((p) => p.elevation);
             const gain = t.points.reduce((acc, p, i) => {
               if (i === 0) return acc;
               const diff = p.elevation - t.points[i - 1].elevation;

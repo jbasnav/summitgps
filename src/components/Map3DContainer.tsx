@@ -50,7 +50,7 @@ const WMS_LAYERS: Record<string, { url: string; layers: string; label: string }>
   protectedAreas: {
     url: "https://wms.mapama.gob.es/sig/Biodiversidad/ENP/wms.aspx",
     layers: "PS.ProtectedSite",
-    label: "Espacios Naturales (MITECO)",
+    label: "Lugares Protegidos (INSPIRE)",
   },
   caminoSantiago: {
     url: "https://www.ign.es/wms-inspire/camino-santiago",
@@ -93,6 +93,7 @@ export function Map3DContainer({
   const [exaggeration, setExaggeration] = useState(1.5);
 
   const activeTrack = tracks.find((t) => t.id === activeTrackId && t.visible);
+  const center = mapCenter;
 
   // ── Init map ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -106,7 +107,6 @@ export function Map3DContainer({
       pitch: 55,
       bearing: -10,
       maxPitch: 85,
-      antialias: true,
     });
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
@@ -249,11 +249,9 @@ export function Map3DContainer({
   useEffect(() => { toggleWmsLayer("caminoSantiago", showCaminoSantiago); }, [showCaminoSantiago, toggleWmsLayer]);
   useEffect(() => { toggleWmsLayer("spainByBike",    showSpainByBike);    }, [showSpainByBike,    toggleWmsLayer]);
 
-  // ── Mountain refuges (Overpass API) ──────────────────────────────────────
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    const srcId   = "refuges-geojson";
     const layerId = "refuges-layer";
 
     if (!showMountainRefuges) {
@@ -261,7 +259,6 @@ export function Map3DContainer({
       return;
     }
 
-    const center = map.getCenter();
     const bbox   = map.getBounds();
     const query  =
       `[out:json][timeout:20];` +
@@ -377,8 +374,6 @@ export function Map3DContainer({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapReady]);
 
-  // ── Fake center var to avoid dependency warning in refuges useEffect ──────
-  const center = mapCenter;
 
   return (
     <div className="w-full h-full relative">
@@ -424,7 +419,7 @@ export function Map3DContainer({
 
       {/* Active WMS badges */}
       <div className="absolute top-3 left-3 z-[4000] flex flex-col gap-1 pointer-events-none">
-        {showProtectedAreas && <span className="text-[9px] bg-green-700/80 text-white px-2 py-0.5 rounded-full font-semibold">🌿 Espacios Naturales</span>}
+        {showProtectedAreas && <span className="text-[9px] bg-green-700/80 text-white px-2 py-0.5 rounded-full font-semibold">🌿 Lugares Protegidos</span>}
         {showCaminoSantiago && <span className="text-[9px] bg-amber-700/80 text-white px-2 py-0.5 rounded-full font-semibold">⛩️ Caminos de Santiago</span>}
         {showSpainByBike    && <span className="text-[9px] bg-blue-700/80 text-white px-2 py-0.5 rounded-full font-semibold">🚴 Spain by Bike</span>}
         {showMountainRefuges && <span className="text-[9px] bg-orange-700/80 text-white px-2 py-0.5 rounded-full font-semibold">🏕️ Refugios</span>}

@@ -84,7 +84,6 @@ interface MapContainerProps {
   onToggleUnits?: () => void;
   coordinateFormat?: "dd" | "ddm" | "dms" | "utm" | "mgrs";
   highlightedWptId?: string | null;
-  is3DActive?: boolean;
   showDistanceMarkers?: boolean;
   showPersonalHeatmap?: boolean;
   showCommunityHeatmap?: boolean;
@@ -181,7 +180,6 @@ export function MapContainer({
   onToggleUnits,
   coordinateFormat = "dd",
   highlightedWptId = null,
-  is3DActive = false,
   showDistanceMarkers = true,
   showPersonalHeatmap = false,
   showCommunityHeatmap = false,
@@ -460,10 +458,10 @@ export function MapContainer({
       }
     };
 
-    // Espacios Naturales — IDECyL JCyL (Castilla y León) · layers verified from GetCapabilities
+    // Lugares Protegidos (INSPIRE) — MITECO (España)
     applyWms(showProtectedAreas, protectedAreasRef,
-      "https://idecyl.jcyl.es/geoserver/espaciosnaturales/wms",
-      "en_cyl_rednatura2000_zec_vw,en_cyl_rednatura2000_zepa_vw,en_cyl_ren_limites_vw",
+      "https://wms.mapama.gob.es/sig/Biodiversidad/ENP/wms.aspx",
+      "PS.ProtectedSite",
       "1.3.0");
     applyWms(showCaminoSantiago, caminoSantiagoRef,
       "https://www.ign.es/wms-inspire/camino-santiago",
