@@ -1,73 +1,84 @@
-# React + TypeScript + Vite
+# ⛰️ SummitGPS
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+**SummitGPS** es una aplicación web interactiva y avanzada de planificación y análisis de rutas de montaña, senderismo y ciclismo en 2D y 3D. Ha sido diseñada con un enfoque riguroso de seguridad en montaña y rendimiento deportivo.
 
-Currently, two official plugins are available:
+La aplicación permite trazar rutas inteligentes sobre senderos reales, analizar desniveles y meteorología en cumbres, visualizar el terreno físico tridimensional en relieve real, gestionar sistemas de cuadrículas militares para rescates (UTM/MGRS), e importar datos biométricos y de rendimiento grabados por dispositivos GPS (archivos FIT).
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+---
 
-## React Compiler
+## 🌟 Características Principales
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+* **Planificación Avanzada (2D):**
+  * Trazado inteligente con imán (**Snap-to-Trail**) optimizado para senderismo, ciclismo de carretera y MTB, impulsado por **GraphHopper** y fallbacks locales a **BRouter**.
+  * Herramientas completas de edición geométrica en el mapa: cortar rutas (Split), suavizado (Smooth), simplificación (algoritmo Douglas-Peucker) y borrado por caja (Clean Area).
+* **Capas Especiales WMS y Rescate:**
+  * Superposición en tiempo real de capas oficiales del IGN de España: Espacios Protegidos del MITECO, variantes del Camino de Santiago y la red *Spain by Bike*.
+  * Cuadrículas de coordenadas geográficas en pantalla: Decimales (DD), Sexagesimales (DMS), UTM y MGRS con etiquetas de rejilla activas.
+* **Seguridad y Meteorología (OpenSnow):**
+  * Predicción meteorológica de cota real. Incorpora la **tasa de descenso adiabática (-0.65 °C por cada 100m)** calculada a través del modelo de elevación digital para estimar la temperatura real en cumbres.
+  * Extracción automática de artículos de Wikipedia cercanos a tus marcadores.
+  * Simulador dinámico del arco solar y cálculo de sombras sobre el relieve del terreno.
+* **Visualización en 3D Real:**
+  * Renderizado interactivo tridimensional con relieve real utilizando **MapLibre GL** y **CesiumJS** (ArcGIS World Elevation).
+  * Simulador de **vuelo en primera persona** (estilo video de Relive) a lo largo del track, con factor de exageración de relieve ajustable.
+* **Análisis de Rendimiento Deportivo (Archivos FIT):**
+  * Parser nativo de archivos `.fit` (Garmin/Wahoo). Extrae y sincroniza en las rutas los datos biométricos de sensores: **Frecuencia Cardíaca, Potencia (W), Cadencia y Velocidad**.
+  * Pintado degradado del track en el mapa basado en el esfuerzo físico.
+* **Capacidades Offline PWA:**
+  * Descargador automático de teselas de mapas para la ruta activa (zooms de montaña 12-15) con concurrencia optimizada.
+  * Persistencia en base de datos local **IndexedDB** y Service Worker PWA para funcionamiento offline completo en montaña.
 
-## Expanding the ESLint configuration
+---
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## 🛠️ Stack Tecnológico
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+* **Core:** React 19 (TypeScript), Vite 8.
+* **Mapas e Interacción:** Leaflet (2D), MapLibre GL / CesiumJS (3D).
+* **Base de Datos y Auth:** Supabase (PostgreSQL).
+* **Diseño y Estética:** Tailwind CSS 4, Vanilla CSS (tema premium oscuro).
+* **Gráficos:** Recharts.
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+---
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+## 🚀 Instalación y Desarrollo Local
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+1. **Clonar el repositorio:**
+   ```bash
+   git clone https://github.com/jbasnav/summitgps.git
+   cd summitgps
+   ```
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+2. **Instalar dependencias:**
+   ```bash
+   npm install
+   ```
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+3. **Variables de Entorno:**
+   Crea un archivo `.env.local` en la raíz del proyecto y añade tus claves de APIs:
+   ```env
+   # Supabase
+   VITE_SUPABASE_URL=https://tu-proyecto.supabase.co
+   VITE_SUPABASE_ANON_KEY=tu-clave-anonima-supabase
+
+   # GraphHopper Routing API (Para Snap-to-Trail)
+   VITE_GRAPHHOPPER_KEY=tu-clave-graphhopper
+   ```
+
+4. **Ejecutar servidor de desarrollo:**
+   ```bash
+   npm run dev
+   ```
+
+5. **Compilar para producción:**
+   ```bash
+   npm run build
+   ```
+
+---
+
+## 📁 Documentación del Proyecto
+
+Toda la documentación y estado del proyecto se encuentra disponible en la carpeta de documentación pública:
+* **[Guía de Despliegue de Servidores](file:///C:/Users/jbast/OneDrive/Escritorio/00.CODING-CODE/PIXDEMIA/SummitGPS/public/docs/deployment_guide.md):** Instrucciones detalladas para alojar SummitGPS en Vercel/Netlify, servidores VPS con Nginx o hostings con cPanel.
+* **[Manual de Usuario de la App](file:///C:/Users/jbast/OneDrive/Escritorio/00.CODING-CODE/PIXDEMIA/SummitGPS/public/docs/manual_usuario.md):** Manual completo en español sobre cómo exprimir todas las funciones del trazador y meteorología.
+* **[Tablero de Estado y Backlog](file:///C:/Users/jbast/OneDrive/Escritorio/00.CODING-CODE/PIXDEMIA/SummitGPS/public/docs/project_status.md):** Estado del desarrollo actual de la app gestionado por el agente coordinador del equipo.

@@ -28,25 +28,35 @@ export function WaypointInfoModal({ isOpen, waypoint, onClose }: WaypointInfoMod
   const [selectedSummary, setSelectedSummary] = useState<WikiSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [summaryLoading, setSummaryLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen || !waypoint) return;
     setArticles([]);
     setSelectedSummary(null);
+    setError(null);
     setLoading(true);
 
     const lang = navigator.language.startsWith("es") ? "es" : "en";
     const url = `https://${lang}.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${waypoint.lat}|${waypoint.lng}&gsradius=20000&gslimit=6&format=json&origin=*`;
 
     fetch(url)
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error("Wikimedia API response not OK");
+        return r.json();
+      })
       .then((data) => {
+        if (data.error) throw new Error(data.error.info || "Wikimedia API error");
         setArticles(data.query?.geosearch || []);
         if (data.query?.geosearch?.length > 0) {
           loadSummary(data.query.geosearch[0].title, lang);
         }
       })
-      .catch(() => {})
+      .catch((err) => {
+        console.error("Failed to load wikipedia search results:", err);
+        setError("Error al cargar artículos cercanos de Wikipedia. Por favor comprueba tu conexión.");
+      })
       .finally(() => setLoading(false));
   }, [isOpen, waypoint]);
 
@@ -54,10 +64,17 @@ export function WaypointInfoModal({ isOpen, waypoint, onClose }: WaypointInfoMod
     const l = lang || (navigator.language.startsWith("es") ? "es" : "en");
     setSummaryLoading(true);
     setSelectedSummary(null);
+    setSummaryError(null);
     fetch(`https://${l}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`)
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error("Wikimedia REST API response not OK");
+        return r.json();
+      })
       .then((data) => setSelectedSummary(data))
-      .catch(() => {})
+      .catch((err) => {
+        console.error("Failed to load wikipedia article summary:", err);
+        setSummaryError("Error al cargar la descripción de Wikipedia.");
+      })
       .finally(() => setSummaryLoading(false));
   }
 
